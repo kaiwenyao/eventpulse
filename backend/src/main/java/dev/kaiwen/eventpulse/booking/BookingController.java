@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -108,6 +109,7 @@ public class BookingController {
     }
 
     @Operation(summary = "Organiser redemption; atomic single use, repeat scans return the original result")
+    @PreAuthorize("hasRole('ORGANISER') or hasRole('ADMIN')")
     @PostMapping("/organiser/tickets/redeem")
     public RedeemResult redeem(@AuthenticationPrincipal AuthUser user,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
