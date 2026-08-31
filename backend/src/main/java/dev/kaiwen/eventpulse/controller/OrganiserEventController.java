@@ -1,6 +1,5 @@
 package dev.kaiwen.eventpulse.controller;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -19,11 +18,10 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import dev.kaiwen.eventpulse.security.AuthUser;
-import dev.kaiwen.eventpulse.batch.BookingCancellationBatch;
+import dev.kaiwen.eventpulse.service.EventCancellationService;
 import dev.kaiwen.eventpulse.service.OrganiserCatalogueService;
 import dev.kaiwen.eventpulse.dto.CatalogueDtos.CapacityRequest;
 import dev.kaiwen.eventpulse.dto.CatalogueDtos.CreateEventRequest;
-import dev.kaiwen.eventpulse.dto.CatalogueDtos.FunnelRow;
 import dev.kaiwen.eventpulse.dto.CatalogueDtos.UpdateEventRequest;
 import dev.kaiwen.eventpulse.common.web.TraceIdFilter;
 
@@ -37,11 +35,12 @@ import jakarta.validation.Valid;
 public class OrganiserEventController {
 
     private final OrganiserCatalogueService service;
-    private final BookingCancellationBatch cancellationBatch;
+    private final EventCancellationService eventCancellationService;
 
-    public OrganiserEventController(OrganiserCatalogueService service, BookingCancellationBatch cancellationBatch) {
+    public OrganiserEventController(OrganiserCatalogueService service,
+            EventCancellationService eventCancellationService) {
         this.service = service;
-        this.cancellationBatch = cancellationBatch;
+        this.eventCancellationService = eventCancellationService;
     }
 
     @Operation(summary = "Create draft event with tiers and inventory")
@@ -75,8 +74,8 @@ public class OrganiserEventController {
     @PreAuthorize("hasRole('ORGANISER') or hasRole('ADMIN')")
     public Map<String, Object> cancel(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id,
             @RequestBody(required = false) Map<String, String> body) {
-        service.cancelEvent(user, id, body == null ? null : body.get("reason"));
-        BookingCancellationBatch.BatchResult result = cancellationBatch.runForEvent(id);
+        EventCancellationService.CancellationResult result = eventCancellationService.cancelEvent(user, id,
+                body == null ? null : body.get("reason"));
         return java.util.Map.of("cancelled", result.cancelled(), "failed", result.failed());
     }
 

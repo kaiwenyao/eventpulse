@@ -11,7 +11,8 @@
 - 单 Spring Boot 部署单元；模块间只通过服务方法通信，不跨模块写表。代码目录采用技术分层
   （controller / service / service.impl / dto / exception / config / common，以及 batch、outbox、
   payment 等基础设施包）：controller 只负责请求校验、获取当前用户与组装响应，业务接口在 service，
-  实现与全部 SQL 在 service.impl。这只改变代码的组织目录与依赖方式，领域模块的业务职责与下方的
+  业务实现以及从 Controller 抽离的业务 SQL 在 service.impl；认证、批处理、outbox、payment 等
+  基础设施 SQL 仍由对应组件维护。这只改变代码的组织目录与依赖方式，领域模块的业务职责与下方的
   事务边界约束保持原状（2026-08 目录结构重构，见文末注记）。
 - **Booking、Reservation、Inventory、Quota、Tickets、Payment Balance、Idempotency、
   Outbox 的写入都在同一个 PostgreSQL 事务边界内**；任何跨边界的写操作都必须拆分为
@@ -25,7 +26,8 @@
 使用 Spring JDBC（JdbcClient/JdbcTemplate）而非 JPA/Hibernate：本项目的不变量
 依赖精确 SQL（`FOR UPDATE`、部分唯一索引、条件 UPDATE、`RETURNING`、同一行 CHECK），
 JDBC 消除脏检查/缓存的意外行为，记录结构用 Java record 显式映射。代价是没有
-仓储抽象层——每个 SQL 集中在对应 service 实现（`service.impl`），可读性优先。
+仓储抽象层——业务 SQL 集中在对应 service 实现（`service.impl`），基础设施 SQL 保留在其所属
+组件中，可读性优先。
 
 ## 后果
 

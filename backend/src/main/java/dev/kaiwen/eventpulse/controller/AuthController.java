@@ -4,7 +4,6 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -13,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import dev.kaiwen.eventpulse.common.web.RateLimiter;
 import dev.kaiwen.eventpulse.security.AuthUser;
 import dev.kaiwen.eventpulse.service.AuthService;
 import dev.kaiwen.eventpulse.service.AuthService.LoginRequest;
@@ -33,11 +31,9 @@ import jakarta.validation.Valid;
 public class AuthController {
 
     private final AuthService authService;
-    private final RateLimiter rateLimiter;
 
-    public AuthController(AuthService authService, RateLimiter rateLimiter) {
+    public AuthController(AuthService authService) {
         this.authService = authService;
-        this.rateLimiter = rateLimiter;
     }
 
     @Operation(summary = "Register a normal user; role/status/owner are server-assigned")
