@@ -318,9 +318,13 @@ public class AdminController {
         List<Map<String, Object>> out = new ArrayList<>(rows.size());
         for (Map<String, Object> row : rows) {
             Map<String, Object> masked = new LinkedHashMap<>(row);
+            // Mask any non-empty sensitive value (even short ones) so the full
+            // value never reaches the admin view. A fixed 4-char prefix plus the
+            // marker keeps enough for triage without leaking the remainder.
             for (String col : new String[] {"provider_key", "last_error", "lease_owner"}) {
-                if (masked.get(col) instanceof String s && s.length() > 8) {
-                    masked.put(col, s.substring(0, 8) + "…");
+                if (masked.get(col) instanceof String s && !s.isBlank()) {
+                    String prefix = s.length() <= 4 ? s : s.substring(0, 4);
+                    masked.put(col, prefix + "…");
                 }
             }
             out.add(masked);

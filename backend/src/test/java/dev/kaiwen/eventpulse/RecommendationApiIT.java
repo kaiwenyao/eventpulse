@@ -60,26 +60,38 @@ class RecommendationApiIT extends IntegrationTestBase {
     }
 
     /**
-     * V1 path: with pgvector available and a user preference vector, embedding
-     * similarity contributes to ranking and surfaces the EMBEDDING_MATCH reason.
+     * V1 path: a category-mismatched event whose text embedding matches the
+     * user's preference is surfaced via embedding similarity, so it carries the
+     * EMBEDDING_MATCH reason and never MATCHES_PREFERENCE (the hard category
+     * path cannot fire on a non-matching category).
      */
     @Test
     void v1RankingUsesEmbeddingSimilarityWhenPreferenceMatches() {
+        // event whose category is NOT one of the user's preferences, so the hard
+        // MATCHES_PREFERENCE path cannot fire on it regardless of embedding.
         OrganiserRef matching = createEventWithTier(30, 10);
-        // give the event an embedding via the same deterministic embedder the seeder uses
-        embeddingService.embedEvent(matching.eventId(), "独立摇滚现场 indie rock live", "music",
-                "一场独立摇滚与电子融合的现场演出");
+        jdbc.update("UPDATE events SET category = 'other' WHERE id = ?", matching.eventId());
+        // give the event an embedding whose text shares tokens with the user's
+        // preference vector ("music") so cosine similarity is non-zero.
+        embeddingService.embedEvent(matching.eventId(), "独立摇滚现场 indie rock live", "other",
+                "一场独立摇滚与电子融合的现场演出 music music music");
         UserRef user = createUser("USER");
         jdbc.update("""
                 INSERT INTO user_preferences (user_id, categories, coarse_location, radius_km)
                 VALUES (?, '{music}', 'shanghai', 20) ON CONFLICT (user_id) DO NOTHING
                 """, user.id());
+        // Give the event enough recent popularity that it reliably lands at the
+        // top of the first page shared with other tests' seed events; this keeps
+        // the assertion about reasons independent of candidate ordering.
+        jdbc.update("""
+                INSERT INTO interactions (request_id, user_id, event_id, type)
+                SELECT 'embed-seed-' || gs, ?, ?, 'VIEW' FROM generate_series(1, 200) gs
+                """, user.id(), matching.eventId());
 
-        ResponseEntity<Map> page = get("/api/v1/recommendations?section=for-you&limit=10", user.token());
-        assertThat(page.getStatusCode().value()).isEqualTo(200);
         org.junit.jupiter.api.Assumptions.assumeTrue(embeddingService.isVectorAvailable(),
                 "V1 embedding ranking requires pgvector");
-
+        ResponseEntity<Map> page = get("/api/v1/recommendations?section=for-you&limit=10", user.token());
+        assertThat(page.getStatusCode().value()).isEqualTo(200);
         assertThat(body(page).get("modelVersion")).isEqualTo(RecommendationService.MODEL_V1);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> items = (List<Map<String, Object>>) body(page).get("items");
@@ -89,7 +101,10 @@ class RecommendationApiIT extends IntegrationTestBase {
                 .findFirst().orElseThrow();
         @SuppressWarnings("unchecked")
         List<String> reasons = (List<String>) matched.get("reasonCodes");
-        assertThat(reasons).anyMatch(r -> r.equals("EMBEDDING_MATCH") || r.equals("MATCHES_PREFERENCE"));
+        // embedding similarity matched the preference text -> this reason fires
+        assertThat(reasons).contains("EMBEDDING_MATCH");
+        // category is 'other', not a user preference -> the hard category reason must NOT fire
+        assertThat(reasons).doesNotContain("MATCHES_PREFERENCE");
     }
 
     /** A validly-signed cursor pointing at a never-created recommendation request. */
