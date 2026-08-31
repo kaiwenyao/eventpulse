@@ -106,7 +106,7 @@ make test-frontend         # ESLint + Vitest coverage（80%）+ Playwright
 make test-all              # 上面两层
 ```
 
-CI 在 `.github/workflows/ci.yml`：gitleaks、backend `mvn verify`、frontend lint + coverage + build + e2e。
+CI 在 `.github/workflows/ci.yml`：gitleaks 密钥扫描、dependency check（`npm audit` + `mvn dependency:tree`）、backend `mvn verify`、frontend lint + coverage + build + e2e。
 
 ## API（统一包在 `Result` 里）
 
