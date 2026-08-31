@@ -1,0 +1,23 @@
+# Integration-test defaults: real Postgres/PostGIS via Testcontainers (@ServiceConnection).
+# Schedulers are stretched so tests drive ticks deterministically; Redis is absent,
+# the rate limiter falls back to in-process windows.
+eventpulse:
+  booking:
+    expiry-scan-interval: PT1H
+  commands:
+    dispatcher-interval: PT1H
+  relay:
+    interval: PT1H
+  gateway:
+    unknown-resolve-interval: PT1H
+  seed:
+    enabled: false
+
+logging:
+  level:
+    com.eventpulse: DEBUG
+
+spring:
+  kafka:
+    listener:
+      auto-startup: false

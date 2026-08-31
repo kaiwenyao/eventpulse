@@ -1,0 +1,103 @@
+# EventPulse demo stack. Single-node Kafka (KRaft) / Redis / Postgres are demo
+# conveniences, not fault-tolerant production deployments.
+
+services:
+  postgres:
+    build:
+      context: ./deploy/postgres
+    image: eventpulse/postgres:18-3.6-pgvector
+    environment:
+      POSTGRES_DB: eventpulse
+      POSTGRES_USER: eventpulse
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-eventpulse}
+    ports:
+      - "5432:5432"
+    # PostgreSQL 18 official image manages its data under /var/lib/postgresql
+    # (keeps pg_upgrade possible across majors); do not mount .../data directly.
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventpulse -d eventpulse"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  kafka:
+    image: apache/kafka:4.3.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+  redis:
+    image: redis:8.2.9-alpine
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../deploy/backend/Dockerfile
+    image: eventpulse/backend:0.1.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: demo
+      DB_URL: jdbc:postgresql://postgres:5432/eventpulse
+      DB_USER: eventpulse
+      DB_PASSWORD: ${DB_PASSWORD:-eventpulse}
+      KAFKA_BOOTSTRAP: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SECRET_KEY: ${SECRET_KEY:-change-me-please-32-bytes-minimum-secret!!}
+      TOKEN_PEPPER: ${TOKEN_PEPPER:-change-me-please-32-bytes-minimum-pepper!!}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      GATEWAY_SCENARIO_RULES: ${GATEWAY_SCENARIO_RULES:-}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/frontend/Dockerfile
+    image: eventpulse/frontend:0.1.0
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:

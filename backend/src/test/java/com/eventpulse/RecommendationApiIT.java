@@ -1,0 +1,112 @@
+package com.eventpulse;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import com.eventpulse.IntegrationTestBase.OrganiserRef;
+import com.eventpulse.IntegrationTestBase.UserRef;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.http.ResponseEntity;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Recommendation endpoints: fresh request with frozen cursor pages, hard
+ * filters, anonymous access and interactions batching with dedupe/limits.
+ */
+class RecommendationApiIT extends IntegrationTestBase {
+
+    @Test
+    void recommendationsFreezeCandidatesAndPageThroughCursor() {
+        OrganiserRef fixture = createEventWithTier(30, 10);
+        UserRef user = createUser("USER");
+        jdbc.update("""
+                INSERT INTO user_preferences (user_id, categories, coarse_location, radius_km)
+                VALUES (?, '{music}', 'shanghai', 20) ON CONFLICT (user_id) DO NOTHING
+                """, user.id());
+        jdbc.update("""
+                INSERT INTO interactions (request_id, user_id, event_id, type)
+                VALUES ('it-seed', ?, ?, 'VIEW')
+                """, user.id(), fixture.eventId());
+
+        ResponseEntity<Map> page = get("/api/v1/recommendations?section=for-you&limit=2", user.token());
+        assertThat(page.getStatusCode().value()).isEqualTo(200);
+        assertThat(body(page).get("requestId")).isNotNull();
+        assertThat(body(page).get("modelVersion")).isEqualTo("v0-popularity");
+        assertThat(body(page).get("featureVersion")).isNotNull();
+        String cursor = (String) body(page).get("nextCursor");
+
+        if (cursor != null) {
+            ResponseEntity<Map> next = get("/api/v1/recommendations?cursor=" + cursor, user.token());
+            assertThat(next.getStatusCode().value()).isEqualTo(200);
+        }
+
+        // anonymous request also works
+        ResponseEntity<Map> anon = get("/api/v1/recommendations?section=nearby", null);
+        assertThat(anon.getStatusCode().value()).isEqualTo(200);
+
+        // unknown cursor id -> expired
+        String forgedCursor = forgeCursorWithUnknownRequest();
+        assertThat(get("/api/v1/recommendations?cursor=" + forgedCursor, user.token())
+                .getStatusCode().value()).isEqualTo(400);
+    }
+
+    /** A validly-signed cursor pointing at a never-created recommendation request. */
+    private String forgeCursorWithUnknownRequest() {
+        com.eventpulse.catalogue.CursorCodec codec = context.getBean(
+                com.eventpulse.catalogue.CursorCodec.class);
+        com.eventpulse.catalogue.SearchCursor cursor = new com.eventpulse.catalogue.SearchCursor(1, "rec",
+                "rec", List.of(UUID.randomUUID().toString(), 0), java.time.Instant.now(),
+                java.time.Instant.now().plusSeconds(600));
+        return codec.encode(cursor);
+    }
+
+    @Test
+    void interactionsBatchAcceptsDedupesAndEnforcesLimits() {
+        OrganiserRef fixture = createEventWithTier(30, 10);
+        UserRef user = createUser("USER");
+        String requestId = "it-batch-" + UUID.randomUUID();
+
+        ResponseEntity<Map> batch = post("/api/v1/interactions", user.token(), Map.of(
+                "requestId", requestId,
+                "sessionId", "sess-1",
+                "events", List.of(
+                        Map.of("eventId", fixture.eventId().toString(), "type", "VIEW", "position", 1),
+                        Map.of("eventId", fixture.eventId().toString(), "type", "IMPRESSION"),
+                        Map.of("eventId", fixture.eventId().toString(), "type", "BOOK_ATTEMPT"))));
+        assertThat(batch.getStatusCode().value()).isEqualTo(202);
+        assertThat(((Number) batch.getBody().get("accepted")).intValue()).isEqualTo(3);
+
+        // duplicate batch (same requestId + events) is fully deduped
+        ResponseEntity<Map> replay = post("/api/v1/interactions", user.token(), Map.of(
+                "requestId", requestId,
+                "events", List.of(
+                        Map.of("eventId", fixture.eventId().toString(), "type", "VIEW", "position", 1),
+                        Map.of("eventId", fixture.eventId().toString(), "type", "IMPRESSION"))));
+        assertThat(replay.getStatusCode().value()).isEqualTo(202);
+        assertThat(((Number) replay.getBody().get("accepted")).intValue()).isZero();
+
+        // invalid type is skipped, missing requestId rejected
+        ResponseEntity<Map> invalid = post("/api/v1/interactions", user.token(), Map.of(
+                "requestId", "it-batch-" + UUID.randomUUID(),
+                "events", List.of(Map.of("eventId", fixture.eventId().toString(), "type", "BOGUS"))));
+        assertThat(invalid.getStatusCode().value()).isEqualTo(202);
+
+        List<Map<String, Object>> oversized = new java.util.ArrayList<>();
+        for (int i = 0; i < 51; i++) {
+            oversized.add(Map.of("eventId", fixture.eventId().toString(), "type", "VIEW"));
+        }
+        ResponseEntity<Map> rejected = post("/api/v1/interactions", user.token(), Map.of(
+                "requestId", "it-batch-" + UUID.randomUUID(), "events", oversized));
+        assertThat(rejected.getStatusCode().value()).isEqualTo(400);
+
+        ResponseEntity<Map> noRequestId = post("/api/v1/interactions", user.token(),
+                Map.of("events", List.of()));
+        assertThat(noRequestId.getStatusCode().value()).isEqualTo(400);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.context.ApplicationContext context;
+}

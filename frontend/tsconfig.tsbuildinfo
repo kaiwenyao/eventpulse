@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/auth.tsx","./src/main.tsx","./src/pages/admin.tsx","./src/pages/bookingdetail.tsx","./src/pages/checkout.tsx","./src/pages/discovery.tsx","./src/pages/eventdetail.tsx","./src/pages/login.tsx","./src/pages/orders.tsx","./src/pages/organiser.tsx","./src/pages/redeem.tsx"],"version":"5.9.3"}

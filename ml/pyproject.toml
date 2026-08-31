@@ -1,0 +1,18 @@
+[project]
+name = "eventpulse-recommendation-eval"
+version = "0.1.0"
+description = "Offline, reproducible evaluation of EventPulse recommendation pipelines (synthetic data only)."
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.1",
+    "scikit-learn>=1.8",
+    "pytest>=8.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.uv]
+# The plan pins full patch versions via lockfile: run `uv lock` to generate
+# uv.lock locally before CI usage.
