@@ -33,6 +33,43 @@ interface NotificationVo {
   createdAt: string
 }
 
+const CATEGORIES = [
+  { key: 'music', label: '音乐' },
+  { key: 'tech', label: '科技' },
+  { key: 'sports', label: '运动' },
+  { key: 'art', label: '艺术' },
+] as const
+
+const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.label]))
+
+function CategoryPill({ category }: { category: string }) {
+  const label = CATEGORY_LABELS[category] ?? category
+  return <span className={`pill pill-${category}`}>{label}</span>
+}
+
+function SoldBar({ sold, capacity }: { sold: number; capacity: number }) {
+  const ratio = capacity > 0 ? Math.min(sold / capacity, 1) : 0
+  const level = ratio >= 0.85 ? 'hot' : ratio >= 0.5 ? 'mid' : 'low'
+  return (
+    <div className="sold">
+      <div className={`sold-track ${level}`}>
+        <span className="sold-fill" style={{ width: `${ratio * 100}%` }} />
+      </div>
+      <span className="sold-label">{capacity - sold} 张余票</span>
+    </div>
+  )
+}
+
+function EmptyState({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="empty">
+      <div className="empty-dot" aria-hidden />
+      <p className="empty-title">{title}</p>
+      <p className="muted">{hint}</p>
+    </div>
+  )
+}
+
 function TopBar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -48,10 +85,10 @@ function TopBar() {
         {user?.role === 'ORGANISER' && <NavLink to="/organiser">主办方</NavLink>}
       </nav>
       {user ? (
-        <span className="row">
-          <span className="muted">{user.email}</span>
+        <span className="row user-box">
+          <span className="muted hide-sm">{user.email}</span>
           <button
-            className="secondary"
+            className="btn-secondary"
             onClick={() => {
               logout()
               navigate('/')
@@ -61,7 +98,9 @@ function TopBar() {
           </button>
         </span>
       ) : (
-        <NavLink to="/login">登录 / 注册</NavLink>
+        <NavLink to="/login" className="btn-ghost">
+          登录 / 注册
+        </NavLink>
       )}
     </header>
   )
@@ -70,24 +109,73 @@ function TopBar() {
 function EventsPage() {
   const [events, setEvents] = useState<EventVo[]>([])
   const [q, setQ] = useState('')
+  const [cat, setCat] = useState('')
   useEffect(() => {
-    api<EventVo[]>('GET', `/api/events${q ? `?q=${encodeURIComponent(q)}` : ''}`).then(setEvents).catch(() => setEvents([]))
-  }, [q])
+    const params = new URLSearchParams()
+    if (q) params.set('q', q)
+    if (cat) params.set('category', cat)
+    api<EventVo[]>('GET', `/api/events${params.size ? `?${params}` : ''}`)
+      .then(setEvents)
+      .catch(() => setEvents([]))
+  }, [q, cat])
   return (
     <div>
-      <h1>发现活动</h1>
-      <input placeholder="搜索活动…" value={q} onChange={(e) => setQ(e.target.value)} />
-      <div className="grid">
-        {events.map((event) => (
-          <NavLink key={event.id} to={`/events/${event.id}`} className="event-card">
-            <div className="title">{event.title}</div>
-            <div className="meta">
-              {event.city} · {event.category} · {formatMoney(event.priceCents)}
-            </div>
-            <div className="muted">余票 {event.remaining}</div>
-          </NavLink>
-        ))}
+      <section className="hero">
+        <p className="eyebrow">EventPulse · 城市活动预订</p>
+        <h1>发现今晚的城市脉搏</h1>
+        <p className="muted hero-sub">音乐、科技、运动、艺术 —— 找到你的下一张票。</p>
+      </section>
+      <div className="search-row">
+        <input
+          className="search"
+          placeholder="搜索活动…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label="搜索活动"
+        />
+        <div className="chips" role="group" aria-label="按分类筛选">
+          <button className={`chip ${cat === '' ? 'active' : ''}`} onClick={() => setCat('')}>
+            全部
+          </button>
+          {CATEGORIES.map((c) => (
+            <button key={c.key} className={`chip ${cat === c.key ? 'active' : ''}`} onClick={() => setCat(c.key)}>
+              {c.label}
+            </button>
+          ))}
+        </div>
       </div>
+      {events.length === 0 ? (
+        <EmptyState title="还没有活动" hint="换个关键词或分类试试，也可以切换其他城市。" />
+      ) : (
+        <div className="grid">
+          {events.map((event) => (
+            <NavLink key={event.id} to={`/events/${event.id}`} className="ticket">
+              <div className="ticket-main">
+                <div className="ticket-head">
+                  <CategoryPill category={event.category} />
+                  <span className="ticket-city">{event.city}</span>
+                </div>
+                <h2 className="ticket-title">{event.title}</h2>
+                <p className="ticket-time">
+                  <svg viewBox="0 0 16 16" aria-hidden focusable="false">
+                    <circle cx="8" cy="8" r="6.5" />
+                    <path d="M8 4.5V8l2.5 1.5" />
+                  </svg>
+                  {formatTime(event.startsAt)}
+                </p>
+                <SoldBar sold={event.sold} capacity={event.capacity} />
+              </div>
+              <div className="ticket-stub">
+                <span className="stub-price">{event.priceCents === 0 ? '免费' : formatMoney(event.priceCents)}</span>
+                <span className="stub-caption">预订</span>
+                <svg className="stub-arrow" viewBox="0 0 16 16" aria-hidden focusable="false">
+                  <path d="M2 8h12M10 4l4 4-4 4" />
+                </svg>
+              </div>
+            </NavLink>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -101,33 +189,53 @@ function EventDetailPage() {
   useEffect(() => {
     api<EventVo>('GET', `/api/events/${id}`).then(setEvent).catch(() => setError('活动不存在'))
   }, [id])
-  if (error) return <p className="muted">{error}</p>
-  if (!event) return <p>加载中…</p>
+  if (error)
+    return (
+      <EmptyState
+        title={error}
+        hint="这个活动可能已下架，或链接有误。"
+      />
+    )
+  if (!event) return <p className="muted">加载中…</p>
   return (
-    <div className="card">
+    <article className="card detail-card">
+      <div className="detail-top">
+        <CategoryPill category={event.category} />
+        <span className="ticket-city">{event.city}</span>
+      </div>
       <h1>{event.title}</h1>
-      <p className="muted">
-        {event.city} · {formatTime(event.startsAt)} · {formatMoney(event.priceCents)}
+      <p className="muted detail-meta">
+        <svg viewBox="0 0 16 16" aria-hidden focusable="false">
+          <circle cx="8" cy="8" r="6.5" />
+          <path d="M8 4.5V8l2.5 1.5" />
+        </svg>
+        {formatTime(event.startsAt)}
       </p>
-      <p>{event.description}</p>
-      <p>余票 {event.remaining}</p>
-      {user ? (
-        <button
-          onClick={async () => {
-            try {
-              await api('POST', '/api/bookings', { eventId: event.id, quantity: 1 })
-              navigate('/bookings')
-            } catch (e) {
-              setError(e instanceof ApiError ? e.message : '预订失败')
-            }
-          }}
-        >
-          预订 1 张
-        </button>
-      ) : (
-        <NavLink to="/login">登录后预订</NavLink>
-      )}
-    </div>
+      <p className="detail-desc">{event.description}</p>
+      <div className="detail-side">
+        <div className="detail-price">{event.priceCents === 0 ? '免费' : formatMoney(event.priceCents)}</div>
+        <SoldBar sold={event.sold} capacity={event.capacity} />
+        {user ? (
+          <button
+            onClick={async () => {
+              try {
+                await api('POST', '/api/bookings', { eventId: event.id, quantity: 1 })
+                navigate('/bookings')
+              } catch (e) {
+                setError(e instanceof ApiError ? e.message : '预订失败')
+              }
+            }}
+          >
+            预订 1 张
+          </button>
+        ) : (
+          <NavLink to="/login" className="btn-ghost">
+            登录后预订
+          </NavLink>
+        )}
+        {error && <p className="error-text">{error}</p>}
+      </div>
+    </article>
   )
 }
 
@@ -150,24 +258,29 @@ function LoginPage() {
     }
   }
   return (
-    <form className="card" onSubmit={onSubmit}>
+    <form className="card auth-card" onSubmit={onSubmit}>
+      <p className="eyebrow">EventPulse</p>
       <h1>{mode === 'login' ? '登录' : '注册'}</h1>
-      <label>邮箱</label>
-      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      <label>密码</label>
-      <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+      <label htmlFor="auth-email">邮箱</label>
+      <input id="auth-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+      <label htmlFor="auth-password">密码</label>
+      <input id="auth-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       {mode === 'register' && (
         <>
-          <label>昵称</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
+          <label htmlFor="auth-name">昵称</label>
+          <input id="auth-name" value={name} onChange={(e) => setName(e.target.value)} required />
         </>
       )}
-      {error && <p className="muted">{error}</p>}
-      <button type="submit">{mode === 'login' ? '登录' : '注册'}</button>
-      <button type="button" className="secondary" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
+      {error && <p className="error-text">{error}</p>}
+      <button type="submit" className="btn-primary btn-block">
+        {mode === 'login' ? '登录' : '注册'}
+      </button>
+      <button type="button" className="btn-secondary btn-block" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
         {mode === 'login' ? '去注册' : '去登录'}
       </button>
-      <p className="muted">演示账号 user@eventpulse.dev / User123456 ，主办方 organiser@eventpulse.dev / Organiser123456</p>
+      <p className="muted demo-hint">
+        演示账号 user@eventpulse.dev / User123456 ，主办方 organiser@eventpulse.dev / Organiser123456
+      </p>
     </form>
   )
 }
@@ -180,25 +293,31 @@ function BookingsPage() {
   return (
     <div>
       <h1>我的预订</h1>
-      {items.map((b) => (
-        <div key={b.id} className="card">
-          <h3>{b.eventTitle}</h3>
-          <p>
-            {b.quantity} 张 · {b.status}
-          </p>
-          {b.status === 'CONFIRMED' && (
-            <button
-              className="secondary"
-              onClick={async () => {
-                const updated = await api<BookingVo>('POST', `/api/bookings/${b.id}/cancel`)
-                setItems((prev) => prev.map((x) => (x.id === b.id ? updated : x)))
-              }}
-            >
-              取消
-            </button>
-          )}
-        </div>
-      ))}
+      {items.length === 0 ? (
+        <EmptyState title="还没有预订" hint="去活动页挑一张喜欢的票吧。" />
+      ) : (
+        items.map((b) => (
+          <div key={b.id} className="card booking-row">
+            <div>
+              <h3>{b.eventTitle}</h3>
+              <p className="muted">
+                {b.quantity} 张 · {b.status}
+              </p>
+            </div>
+            {b.status === 'CONFIRMED' && (
+              <button
+                className="btn-secondary"
+                onClick={async () => {
+                  const updated = await api<BookingVo>('POST', `/api/bookings/${b.id}/cancel`)
+                  setItems((prev) => prev.map((x) => (x.id === b.id ? updated : x)))
+                }}
+              >
+                取消
+              </button>
+            )}
+          </div>
+        ))
+      )}
     </div>
   )
 }
@@ -212,11 +331,19 @@ function NotificationsPage() {
     <div>
       <h1>Kafka 消息</h1>
       <p className="muted">预订成功后，消费者会往这里写一条通知。</p>
-      {items.map((n) => (
-        <div key={n.id} className="card">
-          {n.message}
-        </div>
-      ))}
+      {items.length === 0 ? (
+        <EmptyState title="还没有消息" hint="预订一场活动后，Kafka 会把通知送到这里。" />
+      ) : (
+        items.map((n) => (
+          <div key={n.id} className="card notification-row">
+            <span className="notification-dot" aria-hidden />
+            <div>
+              <p>{n.message}</p>
+              <p className="muted small">{formatTime(n.createdAt)}</p>
+            </div>
+          </div>
+        ))
+      )}
     </div>
   )
 }
@@ -250,17 +377,26 @@ function OrganiserPage() {
           await reload()
         }}
       >
-        <label>标题</label>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} />
-        <label>城市</label>
-        <input value={city} onChange={(e) => setCity(e.target.value)} />
-        <button type="submit">发布</button>
+        <label htmlFor="org-title">标题</label>
+        <input id="org-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <label htmlFor="org-city">城市</label>
+        <input id="org-city" value={city} onChange={(e) => setCity(e.target.value)} />
+        <button type="submit" className="btn-primary">
+          发布
+        </button>
       </form>
-      {mine.map((event) => (
-        <div key={event.id} className="card">
-          {event.title} · {event.status}
-        </div>
-      ))}
+      {mine.length === 0 ? (
+        <EmptyState title="还没有发布过活动" hint="用上面的表单发布第一场活动。" />
+      ) : (
+        mine.map((event) => (
+          <div key={event.id} className="card booking-row">
+            <div>
+              <h3>{event.title}</h3>
+              <p className="muted">{event.status}</p>
+            </div>
+          </div>
+        ))
+      )}
     </div>
   )
 }
