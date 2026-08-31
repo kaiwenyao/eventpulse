@@ -6,22 +6,18 @@
 2. `docker compose logs backend | grep <traceId>` → 找到失败步骤与 module 标签。
 3. 按场景进入下列 runbook；`/api/v1/admin/exceptions` 是所有队列的统一视图。
 
-## R1 支付 UNKNOWN（不猜测结果）
+## R1 钱包余额不足
 
-- 现象：`commands.state = 'UNKNOWN_QUERY'`，意图 `CAPTURE_SUBMITTED` 后无结果。
-- 自动行为：dispatcher 按 `unknown-resolve-interval` 调 `queryStatus(providerKey)`；
-  结果只有 SUCCESS / FAILURE / 继续 UNKNOWN 三种。
-- 超过 max-attempts → `MANUAL_REVIEW`。
-- 人工：`/api/v1/admin/exceptions` → 命令"重试"（复用原 providerKey，审计记录）。
-  只有确认远端从未执行时才允许新 key（当前未开放 API，需 DBA + 双人批准）。
+- 现象：`POST /bookings/{id}/pay` 返回 `409 INSUFFICIENT_BALANCE`。
+- 自动行为：订单仍为 `PAYMENT_PENDING`，库存保持 reserved；到期由超时调度释放。
+- 人工：本仓库无充值 API。演示可直接更新 `user_wallets.available_amount_minor` 后重试同一幂等键（claim 随 409 回滚）。
 
-## R2 迟到 capture / 额外成功
+## R2 支付与超时竞争
 
-- 现象：`booking.late_capture_compensated` 事件，或 `commands` 里出现 `rf-late-*` REFUND。
-- 自动行为：订单不复活，补偿退款自动创建（key 唯一，不会双退），金额守恒
-  `refunded == captured`。无需人工介入；在 admin 异常视图可观察。
+- 现象：同一订单同时 pay 与 expire。
+- 自动行为：协议 B 先锁 booking；只有一方从 `PAYMENT_PENDING` 迁出。过期不扣钱包；支付成功则已确认，expire 成为 no-op。
 
-## R3 退款失败 / 预占卡住
+## R3 退款预占卡住
 
 - 现象：`refunds.state = FAILED / MANUAL_REVIEW`，balance.refund_reserved > 0 且 `refund_reserved_age` 持续增长。
 - 原则：预占保留，避免另一个命令再次退同一额度。

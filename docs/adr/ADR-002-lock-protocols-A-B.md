@@ -17,7 +17,8 @@
 **协议 B —— 既有订单迁移**（`BookingTransitions` 全部入口）：
 
 1. 无锁读 booking 拿到关联 ID（tier/quota 等）。
-2. 正式锁定顺序固定：**booking → quota → inventory → reservation → tickets → payment balance**。
+2. 正式锁定顺序固定：**booking → quota → inventory → reservation → tickets → payment_balance → user_wallet**。
+   `user_wallet` 必须在 booking 之后，避免与钱包交叉死锁。
 3. 锁后重新校验 booking status/version，竞态失败方重读并返回无副作用结果。
 
 容量调整只锁 inventory；活动取消批次按每笔订单独立执行协议 B，
@@ -27,7 +28,7 @@
 ## 验证
 
 - `BookingConcurrencyIT`：100 并发 vs 50 容量；首次 quota 行并发。
-- `BookingLifecycleIT`：支付 vs 超时、迟到 capture、取消退款。
+- `BookingLifecycleIT`：支付 vs 超时、余额不足、取消退款。
 - 数据库 deadlock 指标（micrometer）在 dashboard 中可见。
 
 ## 后果

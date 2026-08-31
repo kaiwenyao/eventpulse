@@ -6,6 +6,8 @@ export interface SessionUser {
   email: string
   role: string
   displayName: string | null
+  availableAmountMinor?: number | null
+  currency?: string | null
 }
 
 interface AuthContextValue {

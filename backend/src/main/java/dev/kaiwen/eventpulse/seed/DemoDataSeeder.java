@@ -56,6 +56,15 @@ public class DemoDataSeeder implements CommandLineRunner {
         if (eventCount == null || eventCount == 0) {
             seedEvents(organiserId);
         }
+        grantWallets();
+    }
+
+    private void grantWallets() {
+        jdbc.update("""
+                INSERT INTO user_wallets (user_id, currency, available_amount_minor)
+                SELECT id, 'CNY', 1000000 FROM users
+                ON CONFLICT (user_id) DO NOTHING
+                """);
     }
 
     private UUID ensureUser(String email, String password, String role, String displayName) {

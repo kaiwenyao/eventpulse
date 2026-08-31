@@ -3,6 +3,11 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, formatMoney, formatTime, newIdempotencyKey, ApiError } from '../api'
 
+interface WalletView {
+  availableAmountMinor: number
+  currency: string
+}
+
 interface BookingView {
   id: string
   eventId: string
@@ -56,6 +61,10 @@ export default function Checkout() {
     queryFn: () => api<BookingView>('GET', `/api/v1/bookings/${bookingId}`),
     refetchInterval: 2000,
   })
+  const wallet = useQuery({
+    queryKey: ['me'],
+    queryFn: () => api<WalletView>('GET', '/api/v1/auth/me'),
+  })
 
   async function pay() {
     setPaying(true)
@@ -63,9 +72,14 @@ export default function Checkout() {
     payKeyRef.current = newIdempotencyKey()
     try {
       await api('POST', `/api/v1/bookings/${bookingId}/pay`, {}, { idempotencyKey: payKeyRef.current })
-      await booking.refetch()
+      await Promise.all([booking.refetch(), wallet.refetch()])
     } catch (err) {
-      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : '网络错误')
+      if (err instanceof ApiError && err.code === 'INSUFFICIENT_BALANCE') {
+        setError('钱包余额不足，无法完成支付。订单仍为待支付，到期将释放库存。')
+      } else {
+        setError(err instanceof ApiError ? `${err.code}: ${err.message}` : '网络错误')
+      }
+      await wallet.refetch()
     } finally {
       setPaying(false)
     }
@@ -89,20 +103,17 @@ export default function Checkout() {
         <p>
           应付金额 <span className="big-price">{formatMoney(b.totalMinor, b.currency)}</span>
         </p>
+        <p>
+          钱包余额 <span className="big-price">{formatMoney(wallet.data?.availableAmountMinor, wallet.data?.currency ?? b.currency)}</span>
+        </p>
         <p className="muted">
           价格与政策来自购买时快照（政策 v{String(b.policySnapshot?.['policyVersion'] ?? '')}）；
-          支付按钮绑定当前唯一的活动支付意图——重复点击或多标签页都会恢复同一意图，不会双扣。
+          支付从钱包扣款并立即确认出票。同一订单只有一个活动支付意图，重复点击不会双扣。
         </p>
-        {b.status === 'PAYMENT_PENDING' && !b.activeIntent && (
+        {b.status === 'PAYMENT_PENDING' && (
           <button onClick={pay} disabled={paying}>
-            {paying ? '处理中…' : b.activeIntent ? '继续支付' : '发起支付'}
+            {paying ? '处理中…' : '发起支付'}
           </button>
-        )}
-        {b.status === 'PAYMENT_PENDING' && b.activeIntent && (
-          <div>
-            <p className="ok-text">支付已提交，等待网关结果（意图 {b.activeIntent.state}）…</p>
-            <button className="secondary" onClick={() => booking.refetch()}>刷新状态</button>
-          </div>
         )}
         {b.status === 'CONFIRMED' && (
           <p className="ok-text">

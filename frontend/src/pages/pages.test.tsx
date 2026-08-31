@@ -11,6 +11,7 @@ import Organiser from './Organiser'
 import Redeem from './Redeem'
 import Admin from './Admin'
 import App from '../App'
+import { ApiError } from '../api'
 
 const apiMock = vi.hoisted(() => ({ fn: vi.fn() }))
 const authMock = vi.hoisted(() => ({
@@ -63,6 +64,10 @@ beforeEach(() => {
     })
     if (path === '/api/v1/events/event-1') return Promise.resolve(event)
     if (path === '/api/v1/bookings/booking-1') return Promise.resolve(booking)
+    if (path === '/api/v1/auth/me') return Promise.resolve({
+      id: 'user-1', email: 'user@example.test', role: 'USER', displayName: 'Test User',
+      availableAmountMinor: 1000000, currency: 'CNY',
+    })
     if (path === '/api/v1/bookings') return Promise.resolve([{ id: 'booking-1', tierName: '标准票', quantity: 1,
       status: 'CONFIRMED', refundState: 'NONE', totalMinor: 10000, currency: 'CNY', expiresAt: booking.expiresAt }])
     if (path === '/api/v1/organiser/funnel') return Promise.resolve([])
@@ -124,20 +129,39 @@ describe('customer pages', () => {
     })
   })
 
-  it('pays a pending booking with an idempotency key and displays failures', async () => {
+  it('pays a pending booking from the wallet and shows insufficient-balance errors', async () => {
+    let paid = false
+    apiMock.fn.mockImplementation((_method: string, path: string) => {
+      if (path === '/api/v1/auth/me') return Promise.resolve({
+        availableAmountMinor: paid ? 990000 : 1000000, currency: 'CNY',
+      })
+      if (path === '/api/v1/bookings/booking-1') {
+        return Promise.resolve(paid ? { ...booking, status: 'CONFIRMED' } : booking)
+      }
+      if (path.endsWith('/pay')) {
+        paid = true
+        return Promise.resolve({ id: 'pi', state: 'SUCCEEDED', providerKey: 'pi-1' })
+      }
+      return Promise.resolve({})
+    })
     renderPage(<Checkout />, '/checkout/booking-1')
     expect(await screen.findByText('发起支付')).toBeInTheDocument()
+    expect(screen.getByText(/钱包余额/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '发起支付' }))
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/v1/bookings/booking-1/pay', {}, expect.anything()))
+    expect(await screen.findByText(/出票成功/)).toBeInTheDocument()
     cleanup()
     apiMock.fn.mockImplementation((_method: string, path: string) => {
       if (path === '/api/v1/bookings/booking-1') return Promise.resolve(booking)
-      if (path.endsWith('/pay')) return Promise.reject(new Error('gateway unavailable'))
+      if (path === '/api/v1/auth/me') return Promise.resolve({ availableAmountMinor: 0, currency: 'CNY' })
+      if (path.endsWith('/pay')) {
+        return Promise.reject(new ApiError(409, 'INSUFFICIENT_BALANCE', 'wallet balance is insufficient'))
+      }
       return Promise.resolve({})
     })
     renderPage(<Checkout />, '/checkout/booking-1')
     fireEvent.click(await screen.findByRole('button', { name: '发起支付' }))
-    expect(await screen.findByText('网络错误')).toBeInTheDocument()
+    expect(await screen.findByText(/钱包余额不足/)).toBeInTheDocument()
   })
 
   it('shows orders and booking details, including ticket reveal and cancel', async () => {

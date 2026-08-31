@@ -14,7 +14,7 @@
 | `/api/v1/auth/login` | POST | 公开 | Argon2id；限流 |
 | `/api/v1/auth/refresh` | POST | cookie/body | 旋转 + family 重用检测；检测到重用吊销全部会话 |
 | `/api/v1/auth/logout` | POST | 登录 | family 置 ROTATED |
-| `/api/v1/auth/me` · `/auth/me/preferences` | GET/POST | 登录 | 偏好独立记录；位置降精度存储 |
+| `/api/v1/auth/me` · `/auth/me/preferences` | GET/POST | 登录 | 偏好独立记录；位置降精度存储；`me` 含钱包 `availableAmountMinor` / `currency` |
 | `/api/v1/events` | GET | 公开 | 签名 keyset cursor（filter hash + queryAsOf 服务端生成 + 过期）；稳定排序元组；只返回可见字段 |
 | `/api/v1/events/nearby` | GET | 公开 | lat/lng/radius（上限 50km）；PostGIS ST_DWithin |
 | `/api/v1/events/{id}` | GET | 公开 | 可见性过滤；ETag/304；结算时重验 |
@@ -23,8 +23,8 @@
 | `/api/v1/interactions` | POST | 公开（登录增强） | 批量上限 50；服务端去重（唯一索引）；限流；接收时间为事实 |
 | `/api/v1/bookings` | POST | 登录 | 幂等先解析；canonical hash；协议 A；返回 DB 时钟 expiresAt |
 | `/api/v1/bookings` / `/{id}` | GET | 登录 | 逐对象所有权；合并履约 + 财务状态 |
-| `/api/v1/bookings/{id}/pay` | POST | 登录 | scoped 幂等；单活动 intent；只创建 CAPTURE command |
-| `/api/v1/bookings/{id}/cancel` | POST | 登录 | 快照政策；协议 B；退款额度预占；可追踪状态 |
+| `/api/v1/bookings/{id}/pay` | POST | 登录 | scoped 幂等；单活动 intent；事务内扣钱包并确认出票 |
+| `/api/v1/bookings/{id}/cancel` | POST | 登录 | 快照政策；协议 B；退款额度预占后贷记钱包；响应即为 CANCELLED |
 | `/api/v1/bookings/{id}/tickets/reveal` | POST | owner | 授权响应内展示原始 token，可重复读取；AES-GCM 暂存 + TTL，仅服务器保留 pepper 哈希；不进 URL/日志/Kafka |
 | `/api/v1/bookings/{id}/events` | GET (SSE) | owner | 最小 SSE：Origin allowlist + 所有权 404 策略 + 心跳；断线后经 REST 同步事实 |
 | `/api/v1/organiser/tickets/redeem` | POST | ORGANISER | owner 授权；原子单次使用（ACTIVE→USED）；重复扫码返回原结果；USED/REVOKED 不可枚举错误；限流 |
@@ -47,4 +47,4 @@ OpenAPI UI：`http://localhost:8080/swagger-ui/index.html`（springdoc）。
 `VALIDATION_FAILED` / `IDEMPOTENCY_KEY_REUSED` / `INSUFFICIENT_INVENTORY` /
 `PER_USER_LIMIT_EXCEEDED` / `SALE_WINDOW_CLOSED` / `BOOKING_NOT_PAYABLE` /
 `BOOKING_NOT_CANCELLABLE` / `TICKET_NOT_REDEEMABLE` / `AGE_REQUIREMENT_NOT_CONFIRMED` /
-`CURSOR_INVALID` / `CURSOR_EXPIRED` / `REAUTH_REQUIRED` / `RATE_LIMITED`
+`INSUFFICIENT_BALANCE` / `CURSOR_INVALID` / `CURSOR_EXPIRED` / `REAUTH_REQUIRED` / `RATE_LIMITED`

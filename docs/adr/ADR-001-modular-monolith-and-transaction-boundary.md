@@ -14,11 +14,11 @@
   业务实现以及从 Controller 抽离的业务 SQL 在 service.impl；认证、批处理、outbox、payment 等
   基础设施 SQL 仍由对应组件维护。这只改变代码的组织目录与依赖方式，领域模块的业务职责与下方的
   事务边界约束保持原状（2026-08 目录结构重构，见文末注记）。
-- **Booking、Reservation、Inventory、Quota、Tickets、Payment Balance、Idempotency、
-  Outbox 的写入都在同一个 PostgreSQL 事务边界内**；任何跨边界的写操作都必须拆分为
+- **Booking、Reservation、Inventory、Quota、Tickets、Payment Balance、User Wallet、
+  Idempotency、Outbox 的写入都在同一个 PostgreSQL 事务边界内**；任何跨边界的写操作都必须拆分为
   可重试的 durable command。
-- 外部调用（支付网关、Kafka 发布）一律不在业务事务内执行：先落 command/outbox，
-  dispatcher/relay 在事务外执行，结果以新事务落库。
+- 外部调用（Kafka 发布）一律不在业务事务内执行：先落 outbox，relay 在事务外执行，
+  结果以新事务落库。支付与退款在订单事务内借记/贷记 `user_wallets`，不再经过隔离网关。
 - 数据库是事实源：Redis、Kafka、SSE、推荐分数都只是提示，提交时以数据库条件更新为准。
 
 ## 数据访问

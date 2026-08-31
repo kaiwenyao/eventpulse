@@ -28,15 +28,11 @@
 | eventType | 触发 | payload 关键字段 | 消费者副作用（notification-consumer） |
 | --- | --- | --- | --- |
 | `booking.created` | 协议 A 成功 | bookingId, userId, eventId, tierId, quantity | 记录 cursor（分析用） |
-| `payment.intent_created` | 单飞意图创建 | bookingId, userId, intentId, providerKey, amountMinor | — |
-| `booking.confirmed` | capture 成功 | bookingId, userId, amountMinor | 通知用户 |
-| `payment.failed` | capture 失败（仍待支付） | bookingId, userId | 通知用户 |
+| `payment.intent_created` | 钱包扣款成功并创建 SUCCEEDED 意图 | bookingId, userId, intentId, providerKey, amountMinor | — |
+| `booking.confirmed` | 同一事务出票 | bookingId, userId, amountMinor | 通知用户 |
 | `booking.expired` | 超时调度 | bookingId, userId | 通知用户 |
-| `booking.cancelled` | 支付前取消 / 无退款取消 | bookingId, userId, phase | 通知用户 |
-| `refund.requested` | 退款预占 + REFUND command | bookingId, userId, refundId, amountMinor | — |
-| `refund.succeeded` | 退款成功 | bookingId, refundId, amountMinor | 通知用户 |
-| `refund.failed` | 退款转人工 | bookingId, refundId, manualReview | 通知用户 |
-| `booking.late_capture_compensated` | 迟到 capture 补偿 | bookingId, userId, amountMinor | 通知用户 |
+| `booking.cancelled` | 支付前取消 / 确认后取消（含退款） | bookingId, userId, phase | 通知用户 |
+| `refund.succeeded` | 取消确认订单时贷记钱包 | bookingId, refundId, amountMinor | 通知用户 |
 | `booking.cancellation_rejected_used_ticket` | USED 票券拒绝整单取消 | bookingId, usedTickets | 人工队列可见 |
 | `ticket.issued` | 确认出票 | bookingId, eventId, sequence | — |
 | `ticket.redeemed` | 原子核销 | ticketId, bookingId, organiserId | — |

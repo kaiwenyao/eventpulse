@@ -97,11 +97,9 @@ eventpulse:
   relay:
     interval: PT0.5S
     batch-size: 200
-  gateway:
-    # Demo-only scenario rules, matched by provider-key prefix.
-    # In 'prod' profile a non-empty user-controllable rule set fails startup (see GatewayConfig assertion).
-    scenario-rules-spec: ${GATEWAY_SCENARIO_RULES:}
-    unknown-resolve-interval: PT5S
+  wallet:
+    # Credited onto user_wallets at register / demo seed. Not a top-up API.
+    signup-grant-minor: 1000000
   tickets:
     # Reveal staging TTL for unrevealed raw tokens. Tokens are stored AES-GCM
     # encrypted (key derived from token-pepper + secret-key) and are popped on
