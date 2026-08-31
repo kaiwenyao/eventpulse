@@ -94,7 +94,7 @@ public class CatalogueServiceImpl implements CatalogueService {
         int pageSize = limit == null || limit < 1 || limit > 50 ? 20 : limit;
 
         StringBuilder where = new StringBuilder(
-                " e.status = 'PUBLISHED' AND e.starts_at >= COALESCE(?, now() - interval '1 hour') ");
+                " e.status = 'PUBLISHED' AND e.starts_at >= ? ");
         if (to != null) {
             where.append("AND e.starts_at <= ? ");
         }
@@ -126,13 +126,17 @@ public class CatalogueServiceImpl implements CatalogueService {
             case "newest" -> "e.created_at";
             default -> "e.starts_at";
         };
-        Object[] params = buildParams(queryAsOf, to, category, city, priceMin, priceMax, q);
+        Object[] params = buildParams(from, queryAsOf, to, category, city, priceMin, priceMax, q);
         String keysetCondition = "";
         Object[] allParams = params;
         if (decoded != null && decoded.last() != null && decoded.last().size() == 2) {
             Object lastValue = decodeSortValue(sortKey, decoded.last().get(0));
+            if (lastValue instanceof Instant instant) {
+                lastValue = java.sql.Timestamp.from(instant);
+            }
             UUID lastId = UUID.fromString(String.valueOf(decoded.last().get(1)));
-            keysetCondition = "AND (" + tupleValue + ", e.id) > (?, ?) ";
+            String cmp = "newest".equals(sortKey) ? "<" : ">";
+            keysetCondition = "AND (" + tupleValue + ", e.id) " + cmp + " (?, ?) ";
             allParams = appendParams(params, lastValue, lastId);
         }
 
@@ -290,10 +294,10 @@ public class CatalogueServiceImpl implements CatalogueService {
         return value;
     }
 
-    private Object[] buildParams(Instant queryAsOf, Instant to, String category, String city, Long priceMin,
-            Long priceMax, String q) {
+    private Object[] buildParams(Instant from, Instant queryAsOf, Instant to, String category, String city,
+            Long priceMin, Long priceMax, String q) {
         java.util.List<Object> params = new java.util.ArrayList<>();
-        params.add(java.sql.Timestamp.from(queryAsOf));
+        params.add(java.sql.Timestamp.from(from != null ? from : queryAsOf));
         if (to != null) {
             params.add(java.sql.Timestamp.from(to));
         }

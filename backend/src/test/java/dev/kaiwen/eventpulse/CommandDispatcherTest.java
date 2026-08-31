@@ -237,6 +237,22 @@ class CommandDispatcherTest {
     }
 
     @Test
+    void unknownQueryExhaustedForCaptureGoesToManualReview() {
+        UUID booking = UUID.randomUUID();
+        when(jdbc.query(contains("state = 'UNKNOWN_QUERY'"), any(RowMapper.class), any(Object[].class)))
+                .thenReturn(List.of(new CommandDispatcher.CommandRow(UUID.randomUUID(), "CAPTURE", "booking",
+                        booking, "pi-exhausted", null, "UNKNOWN_QUERY", 8, 8)));
+        stubAttempts(8);
+        when(gateway.queryStatus("pi-exhausted")).thenReturn(new GatewayResult(Outcome.UNKNOWN, "query"));
+
+        dispatcher.resolveUnknownTick();
+
+        verify(jdbc).update(contains("MANUAL_REVIEW"), any(Object[].class));
+        verify(jdbc, never()).update(contains("SET state = 'UNKNOWN_QUERY'"), any(Object[].class));
+        verify(gateway, never()).capture(anyString(), any(Long.class));
+    }
+
+    @Test
     void processingExceptionRetriesWithBackoffInsteadOfLosingCommand() {
         UUID booking = UUID.randomUUID();
         claimReturns(List.of(row("CAPTURE", booking, "pi-6", null, "READY", 0)));

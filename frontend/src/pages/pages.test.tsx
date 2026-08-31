@@ -106,6 +106,24 @@ describe('customer pages', () => {
     expect(await screen.findByText('网络错误')).toBeInTheDocument()
   })
 
+  it('reuses the booking idempotency key across retries', async () => {
+    apiMock.fn.mockImplementation((method: string, path: string) => {
+      if (path === '/api/v1/events/event-1') return Promise.resolve(event)
+      if (method === 'POST' && path === '/api/v1/bookings') return Promise.reject(new Error('timeout'))
+      return Promise.resolve({})
+    })
+    renderPage(<EventDetail />, '/events/event-1')
+    fireEvent.click(await screen.findByRole('button', { name: '选择' }))
+    fireEvent.click(screen.getByRole('button', { name: '创建预订' }))
+    expect(await screen.findByText('网络错误')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '创建预订' }))
+    await waitFor(() => {
+      const posts = apiMock.fn.mock.calls.filter((call: unknown[]) => call[0] === 'POST' && call[1] === '/api/v1/bookings')
+      expect(posts).toHaveLength(2)
+      expect(posts[0][3]).toEqual(posts[1][3])
+    })
+  })
+
   it('pays a pending booking with an idempotency key and displays failures', async () => {
     renderPage(<Checkout />, '/checkout/booking-1')
     expect(await screen.findByText('发起支付')).toBeInTheDocument()

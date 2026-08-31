@@ -70,6 +70,61 @@ class CatalogueApiIT extends IntegrationTestBase {
     }
 
     @Test
+    void fromFilterIncludesAlreadyStartedEvents() {
+        OrganiserRef fixture = createEventWithTier(50, 5);
+        String marker = "from-filter-" + fixture.eventId();
+        jdbc.update("UPDATE events SET title = ? WHERE id = ?", marker, fixture.eventId());
+        UserRef viewer = createUser("USER");
+
+        List<Map<String, Object>> defaultItems = (List<Map<String, Object>>) body(
+                get("/api/v1/events?q=" + marker, viewer.token())).get("items");
+        assertThat(defaultItems.stream().map(item -> item.get("id")))
+                .as("default search is upcoming-from-now and must not include an event that already started")
+                .doesNotContain(fixture.eventId().toString());
+
+        List<Map<String, Object>> fromPast = (List<Map<String, Object>>) body(
+                get("/api/v1/events?q=" + marker + "&from=2020-01-01T00:00:00Z", viewer.token())).get("items");
+        assertThat(fromPast.stream().map(item -> item.get("id")))
+                .as("from must be bound as the starts_at lower bound")
+                .contains(fixture.eventId().toString());
+    }
+
+    @Test
+    void newestKeysetAdvancesWithoutRepeating() {
+        String marker = "newest-" + UUID.randomUUID();
+        OrganiserRef first = createEventWithTier(10, 5);
+        OrganiserRef second = createEventWithTier(10, 5);
+        OrganiserRef third = createEventWithTier(10, 5);
+        jdbc.update("UPDATE events SET title = ?, created_at = now() - interval '3 minutes', "
+                + "starts_at = now() + interval '2 days', ends_at = now() + interval '3 days' WHERE id = ?",
+                marker + "-a", first.eventId());
+        jdbc.update("UPDATE events SET title = ?, created_at = now() - interval '2 minutes', "
+                + "starts_at = now() + interval '2 days', ends_at = now() + interval '3 days' WHERE id = ?",
+                marker + "-b", second.eventId());
+        jdbc.update("UPDATE events SET title = ?, created_at = now() - interval '1 minutes', "
+                + "starts_at = now() + interval '2 days', ends_at = now() + interval '3 days' WHERE id = ?",
+                marker + "-c", third.eventId());
+        UserRef viewer = createUser("USER");
+
+        ResponseEntity<Map> page1 = get("/api/v1/events?q=" + marker + "&sort=newest&limit=1", viewer.token());
+        assertThat(page1.getStatusCode().value()).isEqualTo(200);
+        List<Map<String, Object>> items1 = (List<Map<String, Object>>) body(page1).get("items");
+        assertThat(items1).hasSize(1);
+        assertThat(items1.getFirst().get("id")).isEqualTo(third.eventId().toString());
+        String nextCursor = (String) body(page1).get("nextCursor");
+        assertThat(nextCursor).isNotBlank();
+
+        ResponseEntity<Map> page2 = get("/api/v1/events?q=" + marker + "&sort=newest&limit=1&cursor=" + nextCursor,
+                viewer.token());
+        assertThat(page2.getStatusCode().value()).isEqualTo(200);
+        List<Map<String, Object>> items2 = (List<Map<String, Object>>) body(page2).get("items");
+        assertThat(items2).hasSize(1);
+        assertThat(items2.getFirst().get("id")).as("DESC keyset must advance, not replay page 1")
+                .isEqualTo(second.eventId().toString());
+        assertThat(items2.getFirst().get("id")).isNotEqualTo(items1.getFirst().get("id"));
+    }
+
+    @Test
     void nearbyAndDetailWithEtag() {
         OrganiserRef fixture = createEventWithTier(50, 5);
         UserRef viewer = createUser("USER");
@@ -160,6 +215,9 @@ class CatalogueApiIT extends IntegrationTestBase {
         assertThat(update.getStatusCode().value()).isEqualTo(204);
         assertThat(post("/api/v1/organiser/events/" + eventId + "/publish", organiser.token(), null, null)
                 .getStatusCode().value()).isEqualTo(204);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM outbox WHERE aggregate_id = ? AND event_type = 'event.published'",
+                Integer.class, eventId)).isEqualTo(1);
         // publishing twice -> 409
         assertThat(post("/api/v1/organiser/events/" + eventId + "/publish", organiser.token(), null, null)
                 .getStatusCode().value()).isEqualTo(409);
@@ -172,6 +230,9 @@ class CatalogueApiIT extends IntegrationTestBase {
         assertThat(exchange("PATCH", "/api/v1/organiser/tiers/" + tierId + "/inventory", organiser.token(),
                 Map.of("capacity", 18), Map.of("If-Match", String.valueOf(version))).getStatusCode().value())
                 .isEqualTo(204);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM outbox WHERE aggregate_id = ? AND event_type = 'tier.inventory_changed'",
+                Integer.class, tierId)).isEqualTo(1);
         // stale version -> 409
         assertThat(exchange("PATCH", "/api/v1/organiser/tiers/" + tierId + "/inventory", organiser.token(),
                 Map.of("capacity", 19), Map.of("If-Match", String.valueOf(version))).getStatusCode().value())
@@ -199,6 +260,9 @@ class CatalogueApiIT extends IntegrationTestBase {
                 organiser.token(), Map.of("reason", "it"));
         assertThat(cancelled.getStatusCode().value()).isEqualTo(200);
         assertThat(body(cancelled).get("cancelled")).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM outbox WHERE aggregate_id = ? AND event_type = 'event.cancelled'",
+                Integer.class, eventId)).isEqualTo(1);
         String bookingStatus = jdbc.queryForObject("SELECT status FROM bookings WHERE event_id = ?",
                 String.class, eventId);
         assertThat(bookingStatus).isIn("CANCELLED_BEFORE_PAYMENT", "CANCELLED");

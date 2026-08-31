@@ -149,14 +149,15 @@ public class AuthServiceImpl implements AuthService {
             Tok token = found.getFirst();
             boolean reuse = token.usedAt() != null || !"ACTIVE".equals(token.familyStatus());
             if (reuse || token.expiresAt().isBefore(clock.now())) {
-                // Reuse of an already-rotated token kills the whole family and
-                // all sessions. The revocations must SURVIVE the error: they run
-                // in their own committed transaction because the ApiException
-                // thrown below rolls the surrounding transaction back (before
-                // this fix the reuse response 401'd but revoked nothing).
+                // Reuse of an already-rotated token kills every family and
+                // every access token for the user. Rotation stays inside the
+                // original family, so the thief's successor token dies with it.
+                // The revocations must SURVIVE the error: they run in their own
+                // committed transaction because the ApiException thrown below
+                // rolls the surrounding transaction back.
                 revocations.executeWithoutResult(revocationStatus -> {
-                    jdbc.update("UPDATE refresh_families SET status = 'REUSED' WHERE id = ?",
-                            token.familyId());
+                    jdbc.update("UPDATE refresh_families SET status = 'REUSED' WHERE user_id = ?",
+                            token.userId());
                     jdbc.update("UPDATE access_tokens SET expires_at = now() WHERE user_id = ?",
                             token.userId());
                     jdbc.update("UPDATE users SET token_version = token_version + 1 WHERE id = ?",
@@ -166,8 +167,7 @@ public class AuthServiceImpl implements AuthService {
                 throw new ApiException(ErrorCode.TOKEN_REUSE_DETECTED,
                         "refresh token reuse detected; sessions revoked");
             }
-            jdbc.update("UPDATE refresh_tokens SET used_at = now() WHERE id = ?", token.id());
-            issueRefresh(token.userId(), response);
+            issueRefresh(token.userId(), token.familyId(), token.id(), response);
             return issueAccess(token.userId());
         });
     }
@@ -270,15 +270,32 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private void issueRefresh(UUID userId, HttpServletResponse response) {
+        issueRefresh(userId, null, null, response);
+    }
+
+    /**
+     * Login/register pass a null family and mint a new one. Rotation passes
+     * the existing family and the token being replaced so the successor stays
+     * on the same chain and {@code replaced_by} is populated.
+     */
+    private void issueRefresh(UUID userId, UUID familyId, UUID previousTokenId, HttpServletResponse response) {
         String raw = CanonicalJson.newOpaqueToken();
         Duration ttl = properties.security().refreshTokenTtl();
-        jdbc.update("""
-                WITH family AS (
-                  INSERT INTO refresh_families (user_id) VALUES (?) RETURNING id
-                )
+        UUID resolvedFamilyId = familyId;
+        if (resolvedFamilyId == null) {
+            resolvedFamilyId = jdbc.queryForObject(
+                    "INSERT INTO refresh_families (user_id) VALUES (?) RETURNING id", UUID.class, userId);
+        }
+        UUID newTokenId = jdbc.queryForObject("""
                 INSERT INTO refresh_tokens (family_id, token_hash, expires_at)
-                SELECT family.id, ?, ? FROM family
-                """, userId, CanonicalJson.sha256Hex(raw), java.sql.Timestamp.from(Instant.now().plus(ttl)));
+                VALUES (?, ?, ?)
+                RETURNING id
+                """, UUID.class, resolvedFamilyId, CanonicalJson.sha256Hex(raw),
+                java.sql.Timestamp.from(Instant.now().plus(ttl)));
+        if (previousTokenId != null) {
+            jdbc.update("UPDATE refresh_tokens SET used_at = now(), replaced_by = ? WHERE id = ?",
+                    newTokenId, previousTokenId);
+        }
         Cookie cookie = new Cookie("ep_refresh", raw);
         cookie.setHttpOnly(true);
         // Secure must be on behind TLS: the prod profile defaults it to true

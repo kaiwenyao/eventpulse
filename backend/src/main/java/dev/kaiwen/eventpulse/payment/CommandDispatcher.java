@@ -239,8 +239,19 @@ public class CommandDispatcher {
         GatewayResult status = gateway.queryStatus(keyToQuery);
         boolean exhausted = attemptsOf(command.id()) >= command.maxAttempts();
         switch (command.kind()) {
-            case "CAPTURE" -> resolveCapture(command, status, intentAmount(command.aggregateId(),
-                    command.providerKey()));
+            case "CAPTURE" -> {
+                if (status.outcome() == Outcome.UNKNOWN) {
+                    if (exhausted) {
+                        toManualReview(command, "capture stuck UNKNOWN");
+                    }
+                    else {
+                        enterUnknownQuery(command);
+                    }
+                    return;
+                }
+                resolveCapture(command, status, intentAmount(command.aggregateId(),
+                        command.providerKey()));
+            }
             case "VOID" -> {
                 if (status.outcome() == Outcome.UNKNOWN) {
                     GatewayResult own = gateway.queryStatus(command.providerKey());

@@ -96,25 +96,22 @@ public class OrganiserCatalogueServiceImpl implements OrganiserCatalogueService 
     public void publishEvent(AuthUser user, UUID eventId) {
         requireOrganiser(user);
         UUID organiserId = ownedOrganiser(user);
-        int rows = tx.execute(status -> {
+        tx.executeWithoutResult(status -> {
             int updated = jdbc.update("""
                     UPDATE events SET status = 'PUBLISHED', updated_at = now()
                     WHERE id = ? AND organiser_id = ? AND status = 'DRAFT'
                     """, eventId, organiserId);
-            if (updated == 1) {
-                jdbc.update("""
-                        UPDATE ticket_tiers SET status = 'ACTIVE'
-                        WHERE event_id = ? AND status = 'DRAFT'
-                          AND sale_end_at > now()
-                        """, eventId);
+            if (updated != 1) {
+                throw new ApiException(ErrorCode.CONFLICT, "event is not in draft state or not owned");
             }
-            return updated;
+            jdbc.update("""
+                    UPDATE ticket_tiers SET status = 'ACTIVE'
+                    WHERE event_id = ? AND status = 'DRAFT'
+                      AND sale_end_at > now()
+                    """, eventId);
+            outbox.append("event", eventId, OutboxWriter.TOPIC_CATALOGUE, "event.published", Map.of(
+                    "eventId", eventId.toString(), "organiserId", organiserId.toString()));
         });
-        if (rows != 1) {
-            throw new ApiException(ErrorCode.CONFLICT, "event is not in draft state or not owned");
-        }
-        outbox.append("event", eventId, OutboxWriter.TOPIC_CATALOGUE, "event.published", Map.of(
-                "eventId", eventId.toString(), "organiserId", organiserId.toString()));
     }
 
     @Override
@@ -153,16 +150,18 @@ public class OrganiserCatalogueServiceImpl implements OrganiserCatalogueService 
     public UUID cancelEvent(AuthUser user, UUID eventId, String reason) {
         requireOrganiser(user);
         UUID organiserId = ownedOrganiser(user);
-        int stopped = tx.execute(status -> jdbc.update(
-                "UPDATE events SET status = 'CANCELLED', updated_at = now() "
-                        + "WHERE id = ? AND organiser_id = ? AND status <> 'CANCELLED'",
-                eventId, organiserId));
-        if (stopped != 1) {
-            throw new ApiException(ErrorCode.CONFLICT, "event not found, not owned, or already cancelled");
-        }
-        outbox.append("event", eventId, OutboxWriter.TOPIC_CATALOGUE, "event.cancelled", Map.of(
-                "eventId", eventId.toString(), "organiserId", organiserId.toString(), "reason", reason == null
-                        ? "" : reason));
+        tx.executeWithoutResult(status -> {
+            int stopped = jdbc.update(
+                    "UPDATE events SET status = 'CANCELLED', updated_at = now() "
+                            + "WHERE id = ? AND organiser_id = ? AND status <> 'CANCELLED'",
+                    eventId, organiserId);
+            if (stopped != 1) {
+                throw new ApiException(ErrorCode.CONFLICT, "event not found, not owned, or already cancelled");
+            }
+            outbox.append("event", eventId, OutboxWriter.TOPIC_CATALOGUE, "event.cancelled", Map.of(
+                    "eventId", eventId.toString(), "organiserId", organiserId.toString(), "reason",
+                    reason == null ? "" : reason));
+        });
         // Booking cancellations themselves are executed per-booking by the
         // cancellation batch runner; see BookingCancellationBatch.
         return eventId;
@@ -172,7 +171,7 @@ public class OrganiserCatalogueServiceImpl implements OrganiserCatalogueService 
     public void adjustCapacity(AuthUser user, UUID tierId, int newCapacity, Long expectedVersion,
             String traceId) {
         requireOrganiser(user);
-        int rows = tx.execute(status -> {
+        tx.executeWithoutResult(status -> {
             record Tier(UUID id, UUID eventId, UUID organiserId) {
             }
             List<Tier> tier = jdbc.query("""
@@ -194,17 +193,14 @@ public class OrganiserCatalogueServiceImpl implements OrganiserCatalogueService 
                       AND ? >= reserved + sold + withheld
                       AND ? - (reserved + sold + withheld) >= 0
                     """, newCapacity, newCapacity, tierId, expectedVersion, newCapacity, newCapacity);
-            if (updated == 1) {
-                jdbc.update("UPDATE ticket_tiers SET version = version + 1 WHERE id = ?", tierId);
+            if (updated != 1) {
+                throw new ApiException(ErrorCode.CONFLICT,
+                        "capacity change rejected: version conflict or capacity below reserved + sold + withheld");
             }
-            return updated;
+            jdbc.update("UPDATE ticket_tiers SET version = version + 1 WHERE id = ?", tierId);
+            outbox.append("event", tierId, OutboxWriter.TOPIC_CATALOGUE, "tier.inventory_changed",
+                    Map.of("tierId", tierId.toString(), "capacity", newCapacity));
         });
-        if (rows != 1) {
-            throw new ApiException(ErrorCode.CONFLICT,
-                    "capacity change rejected: version conflict or capacity below reserved + sold + withheld");
-        }
-        outbox.append("event", tierId, OutboxWriter.TOPIC_CATALOGUE, "tier.inventory_changed",
-                Map.of("tierId", tierId.toString(), "capacity", newCapacity));
     }
 
     @Override

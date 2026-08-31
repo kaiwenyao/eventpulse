@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, formatMoney, formatTime, newIdempotencyKey, ApiError } from '../api'
@@ -44,6 +44,7 @@ export default function EventDetail() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
+  const bookKeyRef = useRef<{ key: string; tierId: string; quantity: number } | null>(null)
 
   const detail = useQuery({
     queryKey: ['event', id],
@@ -67,12 +68,17 @@ export default function EventDetail() {
 
   async function book() {
     if (!selectedTier) return
+    let issued = bookKeyRef.current
+    if (!issued || issued.tierId !== selectedTier || issued.quantity !== quantity) {
+      issued = { key: newIdempotencyKey(), tierId: selectedTier, quantity }
+      bookKeyRef.current = issued
+    }
     setBusy(true)
     setError('')
     try {
       const booking = await api<{ id: string; expiresAt: string }>('POST', '/api/v1/bookings',
         { eventId: id, tierId: selectedTier, quantity, ageConfirmed: true },
-        { idempotencyKey: newIdempotencyKey() })
+        { idempotencyKey: issued.key })
       navigate(`/checkout/${booking.id}`)
     } catch (err) {
       setError(err instanceof ApiError ? `${err.code}: ${err.message}` : '网络错误')

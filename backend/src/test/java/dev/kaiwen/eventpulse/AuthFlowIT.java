@@ -120,9 +120,20 @@ class AuthFlowIT extends IntegrationTestBase {
         assertThat(get("/api/v1/auth/me", (String) body(refreshed).get("accessToken"))
                 .getStatusCode().value()).isEqualTo(200);
 
-        // Rotated cookie works (new family), old cookie is now used_at-stamped.
+        // Rotated cookie works (same family), old cookie is now used_at-stamped.
         ResponseEntity<Map> secondRefresh = exchangeWithCookie("/api/v1/auth/refresh", rotatedCookie);
         assertThat(secondRefresh.getStatusCode().value()).isEqualTo(200);
+
+        UUID userId = jdbc.queryForObject("SELECT id FROM users WHERE email = ?", UUID.class, email);
+        Integer familyCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM refresh_families WHERE user_id = ?", Integer.class, userId);
+        assertThat(familyCount).as("rotation must stay on the original family").isEqualTo(1);
+        Integer chained = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM refresh_tokens a JOIN refresh_tokens b ON a.replaced_by = b.id
+                WHERE a.family_id = b.family_id AND a.used_at IS NOT NULL
+                  AND a.family_id IN (SELECT id FROM refresh_families WHERE user_id = ?)
+                """, Integer.class, userId);
+        assertThat(chained).as("rotated tokens must set replaced_by on the same family").isGreaterThanOrEqualTo(1);
     }
 
     @Test
@@ -157,6 +168,12 @@ class AuthFlowIT extends IntegrationTestBase {
         assertThat(tokenVersion).isEqualTo(1);
         // The access token minted by the rotation is revoked too.
         assertThat(get("/api/v1/auth/me", rotatedAccess).getStatusCode().value()).isEqualTo(401);
+        // The successor cookie (what a thief would hold after using A first) is
+        // dead with the family — reuse is not a no-op on the rotated chain.
+        String rotatedCookie = setCookieValue(rotated.getHeaders(), "ep_refresh");
+        ResponseEntity<Map> thiefRefresh = exchangeWithCookie("/api/v1/auth/refresh", rotatedCookie);
+        assertThat(thiefRefresh.getStatusCode().value()).isEqualTo(401);
+        assertThat(body(thiefRefresh).get("code")).isIn("TOKEN_REUSE_DETECTED", "UNAUTHENTICATED");
     }
 
     private ResponseEntity<Map> exchangeWithCookie(String path, String cookie) {
