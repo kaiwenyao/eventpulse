@@ -6,10 +6,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.booking.BookingTransitions;
+import dev.kaiwen.eventpulse.service.BookingTransitions;
+import dev.kaiwen.eventpulse.service.impl.BookingTransitionsImpl;
 import dev.kaiwen.eventpulse.common.DbClock;
 import dev.kaiwen.eventpulse.outbox.OutboxWriter;
-import dev.kaiwen.eventpulse.ticketing.TicketIssuer;
+import dev.kaiwen.eventpulse.service.TicketIssuer;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,7 +48,7 @@ class BookingTransitionsTest {
         when(clock.now()).thenReturn(Instant.now());
         TicketIssuer issuer = mock(TicketIssuer.class);
         ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
-        transitions = new BookingTransitions(jdbc, outbox, clock, issuer, events);
+        transitions = new BookingTransitionsImpl(jdbc, outbox, clock, issuer, events);
     }
 
     private BookingTransitions.BookingRow row(UUID bookingId, String status, String refundState) {

@@ -5,12 +5,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.auth.AuthUser;
-import dev.kaiwen.eventpulse.booking.BookingDtos;
-import dev.kaiwen.eventpulse.booking.BookingSseController;
-import dev.kaiwen.eventpulse.booking.BookingService;
+import dev.kaiwen.eventpulse.security.AuthUser;
+import dev.kaiwen.eventpulse.dto.BookingDtos;
+import dev.kaiwen.eventpulse.controller.BookingSseController;
+import dev.kaiwen.eventpulse.service.BookingService;
+import dev.kaiwen.eventpulse.service.BookingTransitions;
 import dev.kaiwen.eventpulse.common.AppProperties;
-import dev.kaiwen.eventpulse.common.error.ApiException;
+import dev.kaiwen.eventpulse.exception.ApiException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -63,7 +64,7 @@ class BookingSseControllerTest {
     void foreignOriginIsRejected() {
         when(request.getHeader("Origin")).thenReturn("http://evil.example");
         assertThatThrownBy(() -> controller.events(bookingId, user(), request))
-                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.errorCode()).isEqualTo(dev.kaiwen.eventpulse.common.error.ErrorCode.FORBIDDEN));
+                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.errorCode()).isEqualTo(dev.kaiwen.eventpulse.exception.ErrorCode.FORBIDDEN));
     }
 
     @Test
@@ -76,16 +77,16 @@ class BookingSseControllerTest {
     void ownershipFailurePropagatesAsHidden404() {
         when(bookingService.getBooking(any(UUID.class), any(UUID.class))).thenThrow(ApiException.notFound());
         assertThatThrownBy(() -> controller.events(bookingId, user(), request))
-                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.errorCode()).isEqualTo(dev.kaiwen.eventpulse.common.error.ErrorCode.NOT_FOUND));
+                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.errorCode()).isEqualTo(dev.kaiwen.eventpulse.exception.ErrorCode.NOT_FOUND));
     }
 
     @Test
     void statusChangeEventAndHeartbeatDoNotThrow() {
         controller.events(bookingId, user(), request);
-        controller.onStatusChanged(new BookingSseController.BookingStatusChanged(bookingId, "CONFIRMED",
+        controller.onStatusChanged(new BookingTransitions.BookingStatusChanged(bookingId, "CONFIRMED",
                 "NONE"));
         // unknown booking id: no emitters -> no-op
-        controller.onStatusChanged(new BookingSseController.BookingStatusChanged(UUID.randomUUID(),
+        controller.onStatusChanged(new BookingTransitions.BookingStatusChanged(UUID.randomUUID(),
                 "EXPIRED", "NONE"));
         controller.heartbeat();
     }

@@ -5,11 +5,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.catalogue.CursorCodec;
-import dev.kaiwen.eventpulse.catalogue.SearchCursor;
+import dev.kaiwen.eventpulse.common.CursorCodec;
+import dev.kaiwen.eventpulse.dto.SearchCursor;
 import dev.kaiwen.eventpulse.common.AppProperties;
-import dev.kaiwen.eventpulse.common.error.ApiException;
-import dev.kaiwen.eventpulse.common.error.ErrorCode;
+import dev.kaiwen.eventpulse.exception.ApiException;
+import dev.kaiwen.eventpulse.exception.ErrorCode;
 
 import org.junit.jupiter.api.Test;
 

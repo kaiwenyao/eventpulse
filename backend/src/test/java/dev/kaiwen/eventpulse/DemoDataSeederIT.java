@@ -3,7 +3,7 @@ package dev.kaiwen.eventpulse;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.recs.EmbeddingService;
+import dev.kaiwen.eventpulse.service.EmbeddingService;
 import dev.kaiwen.eventpulse.seed.DemoDataSeeder;
 
 import org.junit.jupiter.api.Test;

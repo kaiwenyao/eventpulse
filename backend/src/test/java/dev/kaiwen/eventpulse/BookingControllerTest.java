@@ -4,40 +4,35 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.auth.AuthUser;
-import dev.kaiwen.eventpulse.booking.BookingController;
-import dev.kaiwen.eventpulse.booking.BookingDtos;
-import dev.kaiwen.eventpulse.booking.BookingService;
-import dev.kaiwen.eventpulse.ticketing.TicketService;
+import dev.kaiwen.eventpulse.controller.BookingController;
+import dev.kaiwen.eventpulse.dto.BookingDtos;
+import dev.kaiwen.eventpulse.security.AuthUser;
+import dev.kaiwen.eventpulse.service.BookingService;
+import dev.kaiwen.eventpulse.service.TicketService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * BookingController read paths (list/detail/reveal) that no integration test
- * reaches directly; verified through mocked dependencies.
+ * reaches directly; verified through mocked service interfaces.
  */
 class BookingControllerTest {
 
     private BookingService bookingService;
     private TicketService ticketService;
-    private JdbcTemplate jdbc;
     private BookingController controller;
 
     @BeforeEach
     void setUp() {
         bookingService = mock(BookingService.class);
         ticketService = mock(TicketService.class);
-        jdbc = mock(JdbcTemplate.class);
-        controller = new BookingController(bookingService, null, null, ticketService, jdbc);
+        controller = new BookingController(bookingService, ticketService);
     }
 
     private AuthUser user() {
@@ -55,10 +50,9 @@ class BookingControllerTest {
         AuthUser user = user();
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
-        when(jdbc.queryForList("SELECT id FROM bookings WHERE user_id = ? ORDER BY created_at DESC", UUID.class,
-                user.id())).thenReturn(List.of(b, a));
         BookingDtos.BookingView viewA = view(a);
         BookingDtos.BookingView viewB = view(b);
+        when(bookingService.listBookingIds(user.id())).thenReturn(List.of(b, a));
         when(bookingService.getBooking(user.id(), a)).thenReturn(viewA);
         when(bookingService.getBooking(user.id(), b)).thenReturn(viewB);
 
@@ -72,7 +66,7 @@ class BookingControllerTest {
     @Test
     void listReturnsEmptyWhenUserHasNoBookings() {
         AuthUser user = user();
-        when(jdbc.queryForList(any(String.class), eq(UUID.class), eq(user.id()))).thenReturn(List.of());
+        when(bookingService.listBookingIds(user.id())).thenReturn(List.of());
         assertThat(controller.list(user)).isEmpty();
     }
 

@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.booking.BookingTransitions;
+import dev.kaiwen.eventpulse.service.BookingTransitions;
 import dev.kaiwen.eventpulse.common.AppProperties;
 import dev.kaiwen.eventpulse.common.DbClock;
 import dev.kaiwen.eventpulse.common.CanonicalJson;
@@ -14,7 +14,7 @@ import dev.kaiwen.eventpulse.payment.CommandDispatcher;
 import dev.kaiwen.eventpulse.payment.SimulatedPaymentGateway;
 import dev.kaiwen.eventpulse.payment.SimulatedPaymentGateway.GatewayResult;
 import dev.kaiwen.eventpulse.payment.SimulatedPaymentGateway.Outcome;
-import dev.kaiwen.eventpulse.ticketing.TicketIssuer;
+import dev.kaiwen.eventpulse.service.TicketIssuer;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

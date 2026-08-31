@@ -3,7 +3,7 @@ package dev.kaiwen.eventpulse;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.booking.BookingTransitions;
+import dev.kaiwen.eventpulse.service.BookingTransitions;
 import dev.kaiwen.eventpulse.payment.CommandDispatcher;
 import dev.kaiwen.eventpulse.IntegrationTestBase.OrganiserRef;
 import dev.kaiwen.eventpulse.IntegrationTestBase.UserRef;

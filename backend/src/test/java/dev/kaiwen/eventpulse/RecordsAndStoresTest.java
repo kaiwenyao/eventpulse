@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.booking.BookingDtos;
+import dev.kaiwen.eventpulse.dto.BookingDtos;
 import dev.kaiwen.eventpulse.outbox.Envelope;
 import dev.kaiwen.eventpulse.outbox.OutboxRelay.RelayFailedException;
 

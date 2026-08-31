@@ -7,8 +7,8 @@ import java.util.UUID;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
 import dev.kaiwen.eventpulse.common.web.RateLimiter;
-import dev.kaiwen.eventpulse.common.error.ApiException;
-import dev.kaiwen.eventpulse.common.error.ErrorCode;
+import dev.kaiwen.eventpulse.exception.ApiException;
+import dev.kaiwen.eventpulse.exception.ErrorCode;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

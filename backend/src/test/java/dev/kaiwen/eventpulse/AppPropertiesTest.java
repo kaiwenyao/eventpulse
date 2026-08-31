@@ -4,8 +4,8 @@ import java.time.Duration;
 import java.util.List;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
-import dev.kaiwen.eventpulse.common.config.ProdSecurityAssertions;
-import dev.kaiwen.eventpulse.common.error.ApiException;
+import dev.kaiwen.eventpulse.config.ProdSecurityAssertions;
+import dev.kaiwen.eventpulse.exception.ApiException;
 
 import org.junit.jupiter.api.Test;
 

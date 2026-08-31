@@ -4,8 +4,8 @@ import java.time.Instant;
 import java.util.List;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
-import dev.kaiwen.eventpulse.common.error.ApiException;
-import dev.kaiwen.eventpulse.common.error.ErrorCode;
+import dev.kaiwen.eventpulse.exception.ApiException;
+import dev.kaiwen.eventpulse.exception.ErrorCode;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
