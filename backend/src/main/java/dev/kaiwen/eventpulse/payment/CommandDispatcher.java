@@ -12,6 +12,7 @@ import dev.kaiwen.eventpulse.payment.SimulatedPaymentGateway.Outcome;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -33,9 +34,20 @@ public class CommandDispatcher {
     private static final Logger log = LoggerFactory.getLogger(CommandDispatcher.class);
 
     public record CommandRow(UUID id, String kind, String aggregateType, UUID aggregateId, String providerKey,
-                             String targetProviderKey, String state, int attempts, int maxAttempts) {
+                             String targetProviderKey, String state, int attempts, int maxAttempts, String leaseMode) {
+        /** Compatibility constructor for callers that only need the durable command fields. */
+        public CommandRow(UUID id, String kind, String aggregateType, UUID aggregateId, String providerKey,
+                          String targetProviderKey, String state, int attempts, int maxAttempts) {
+            this(id, kind, aggregateType, aggregateId, providerKey, targetProviderKey, state, attempts,
+                    maxAttempts, null);
+        }
     }
 
+    private static final String EXECUTE_LEASE = "EXECUTE";
+    private static final String QUERY_LEASE = "QUERY";
+
+    // Background batch work runs on the dedicated batch pool (plan §3.1), so
+    // dispatcher bookkeeping can never starve the transactional write pool.
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
     private final SimulatedPaymentGateway gateway;
@@ -43,8 +55,9 @@ public class CommandDispatcher {
     private final AppProperties properties;
     private final String instanceId;
 
-    public CommandDispatcher(JdbcTemplate jdbc, TransactionTemplate tx, SimulatedPaymentGateway gateway,
-            BookingTransitions transitions, AppProperties properties,
+    public CommandDispatcher(@Qualifier("batchJdbcTemplate") JdbcTemplate jdbc,
+            @Qualifier("batchTransactionTemplate") TransactionTemplate tx,
+            SimulatedPaymentGateway gateway, BookingTransitions transitions, AppProperties properties,
             @Value("${eventpulse.instance-id:}") String configuredInstanceId) {
         this.jdbc = jdbc;
         this.tx = tx;
@@ -70,34 +83,59 @@ public class CommandDispatcher {
         }
     }
 
+    /** Claims only new/retried external actions. UNKNOWN_QUERY is deliberately
+     * absent: an unknown result may never be sent to the original operation. */
     private List<CommandRow> claim() {
+        return claim("""
+                WHERE (state = 'READY' AND next_attempt_at <= now())
+                   OR (state = 'RUNNING' AND lease_mode = 'EXECUTE' AND lease_until < now())
+                """, EXECUTE_LEASE);
+    }
+
+    /** Claims status queries under the same lease protocol as action calls.
+     * The short transaction closes the old FOR UPDATE/SKIP LOCKED window: the
+     * row is leased before queryStatus runs outside the transaction. */
+    private List<CommandRow> claimUnknown() {
+        return claim("""
+                WHERE (state = 'UNKNOWN_QUERY' AND next_attempt_at <= now())
+                   OR (state = 'RUNNING' AND lease_mode = 'QUERY' AND lease_until < now())
+                """, QUERY_LEASE);
+    }
+
+    private List<CommandRow> claim(String predicate, String leaseMode) {
         return tx.execute(status -> {
             List<CommandRow> rows = jdbc.query("""
                     SELECT id, kind, aggregate_type, aggregate_id, provider_key, target_provider_key, state,
-                           attempts, max_attempts
+                           attempts, max_attempts, lease_mode
                     FROM commands
-                    WHERE (state IN ('READY', 'UNKNOWN_QUERY') AND next_attempt_at <= now())
-                       OR (state = 'RUNNING' AND lease_until < now())
+                    """ + predicate + """
                     ORDER BY next_attempt_at
                     LIMIT ?
                     FOR UPDATE SKIP LOCKED
                     """, (rs, i) -> new CommandRow(rs.getObject("id", UUID.class), rs.getString("kind"),
                     rs.getString("aggregate_type"), rs.getObject("aggregate_id", UUID.class),
                     rs.getString("provider_key"), rs.getString("target_provider_key"), rs.getString("state"),
-                    rs.getInt("attempts"), rs.getInt("max_attempts")),
+                    rs.getInt("attempts"), rs.getInt("max_attempts"), rs.getString("lease_mode")),
                     properties.commands().batchSize());
             for (CommandRow row : rows) {
                 jdbc.update("""
-                        UPDATE commands SET state = 'RUNNING', lease_owner = ?, lease_until = now()
-                              + make_interval(secs => ?), attempts = attempts + 1, updated_at = now()
+                        UPDATE commands SET state = 'RUNNING', lease_mode = ?, lease_owner = ?,
+                               lease_acquired_at = now(), lease_until = now() + make_interval(secs => ?),
+                               attempts = attempts + 1, updated_at = now()
                         WHERE id = ?
-                        """, instanceId, properties.commands().lease().toSeconds(), row.id());
+                        """, leaseMode, instanceId, properties.commands().lease().toSeconds(), row.id());
             }
             return rows;
         });
     }
 
     private void process(CommandRow command) {
+        // State is authoritative. An UNKNOWN command is never dispatched as
+        // its original action; a reclaimed QUERY lease is also routed here.
+        if ("UNKNOWN_QUERY".equals(command.state()) || QUERY_LEASE.equals(command.leaseMode())) {
+            resolveUnknown(command);
+            return;
+        }
         switch (command.kind()) {
             case "CAPTURE" -> {
                 long amount = intentAmount(command.aggregateId(), command.providerKey());
@@ -183,10 +221,11 @@ public class CommandDispatcher {
     /** UNKNOWN never guesses: it polls the gateway status until resolved. */
     private void enterUnknownQuery(CommandRow command) {
         jdbc.update("""
-                UPDATE commands SET state = 'UNKNOWN_QUERY', lease_owner = NULL, lease_until = NULL,
+                UPDATE commands SET state = 'UNKNOWN_QUERY', lease_mode = 'QUERY', lease_owner = NULL,
+                       lease_acquired_at = NULL, lease_until = NULL,
                        next_attempt_at = now() + make_interval(secs => ?), updated_at = now()
-                WHERE id = ?
-                """, properties.commands().unknownResolveInterval().toSeconds(), command.id());
+                WHERE id = ? AND lease_owner = ?
+                """, properties.commands().unknownResolveInterval().toSeconds(), command.id(), instanceId);
         recordAttempt(command.id(), attemptsOf(command.id()), "UNKNOWN", Map.of());
     }
 
@@ -245,27 +284,29 @@ public class CommandDispatcher {
         log.info("[dispatcher] command {} {} COMPLETED {}", command.id(), command.kind(), result);
         jdbc.update("""
                 UPDATE commands SET state = 'COMPLETED', result = ?::jsonb, lease_owner = NULL,
-                       lease_until = NULL, last_error = NULL, completed_at = now(), updated_at = now()
-                WHERE id = ?
-                """, dev.kaiwen.eventpulse.outbox.OutboxJson.write(result), command.id());
+                       lease_acquired_at = NULL, lease_until = NULL, last_error = NULL,
+                       completed_at = now(), updated_at = now()
+                WHERE id = ? AND lease_owner = ?
+                """, dev.kaiwen.eventpulse.outbox.OutboxJson.write(result), command.id(), instanceId);
         recordAttempt(command.id(), attemptsOf(command.id()), "SUCCESS", result);
     }
 
     private void retryWithBackoff(CommandRow command, String error) {
         long backoffSeconds = (long) Math.pow(2, Math.min(attemptsOf(command.id()), 6));
         jdbc.update("""
-                UPDATE commands SET state = 'READY', lease_owner = NULL, lease_until = NULL,
+                UPDATE commands SET state = 'READY', lease_owner = NULL, lease_acquired_at = NULL,
+                       lease_until = NULL, lease_mode = 'EXECUTE',
                        next_attempt_at = now() + make_interval(secs => ?), last_error = ?, updated_at = now()
-                WHERE id = ?
-                """, backoffSeconds, error, command.id());
+                WHERE id = ? AND lease_owner = ?
+                """, backoffSeconds, error, command.id(), instanceId);
         recordAttempt(command.id(), attemptsOf(command.id()), "FAILURE", Map.of("error", error));
     }
 
     private void toManualReview(CommandRow command, String reason) {
         jdbc.update("""
-                UPDATE commands SET state = 'MANUAL_REVIEW', lease_owner = NULL, lease_until = NULL,
-                       last_error = ?, updated_at = now() WHERE id = ?
-                """, reason, command.id());
+                UPDATE commands SET state = 'MANUAL_REVIEW', lease_owner = NULL, lease_acquired_at = NULL,
+                       lease_until = NULL, last_error = ?, updated_at = now() WHERE id = ? AND lease_owner = ?
+                """, reason, command.id(), instanceId);
         recordAttempt(command.id(), attemptsOf(command.id()), "FAILURE", Map.of("manualReview", reason));
     }
 
@@ -314,15 +355,7 @@ public class CommandDispatcher {
     /** Used by the UNKNOWN resolution tick, scheduled separately at lower frequency. */
     @Scheduled(fixedDelayString = "${eventpulse.gateway.unknown-resolve-interval:PT5S}")
     public void resolveUnknownTick() {
-        List<CommandRow> batch = tx.execute(status -> jdbc.query("""
-                SELECT id, kind, aggregate_type, aggregate_id, provider_key, target_provider_key, state,
-                       attempts, max_attempts
-                FROM commands WHERE state = 'UNKNOWN_QUERY' AND next_attempt_at <= now()
-                ORDER BY next_attempt_at LIMIT ? FOR UPDATE SKIP LOCKED
-                """, (rs, i) -> new CommandRow(rs.getObject("id", UUID.class), rs.getString("kind"),
-                rs.getString("aggregate_type"), rs.getObject("aggregate_id", UUID.class),
-                rs.getString("provider_key"), rs.getString("target_provider_key"), rs.getString("state"),
-                rs.getInt("attempts"), rs.getInt("max_attempts")), properties.commands().batchSize()));
+        List<CommandRow> batch = claimUnknown();
         for (CommandRow command : batch) {
             try {
                 resolveUnknown(command);
@@ -336,8 +369,9 @@ public class CommandDispatcher {
     /** Manual retry from the admin queue: reuses the original providerKey. */
     public void manualRetry(UUID commandId, String adminActor, String reason) {
         tx.executeWithoutResult(status -> jdbc.update("""
-                UPDATE commands SET state = 'READY', next_attempt_at = now(), last_error = NULL,
-                       lease_owner = NULL, lease_until = NULL, updated_at = now()
+                UPDATE commands SET state = 'READY', lease_mode = 'EXECUTE', next_attempt_at = now(),
+                       last_error = NULL, lease_owner = NULL, lease_acquired_at = NULL,
+                       lease_until = NULL, updated_at = now()
                 WHERE id = ? AND state = 'MANUAL_REVIEW'
                 """, commandId));
     }

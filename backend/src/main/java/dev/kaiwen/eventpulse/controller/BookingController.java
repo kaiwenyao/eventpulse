@@ -80,7 +80,8 @@ public class BookingController {
         return bookingService.cancelBooking(user.id(), id, idempotencyKey, request);
     }
 
-    @Operation(summary = "One-time reveal of ticket raw tokens (owner only, never persisted server-side)")
+    @Operation(summary = "Reveal ticket raw tokens to the owner (repeatable authorized read of "
+            + "the encrypted staging store; only peppered hashes persist server-side)")
     @PostMapping("/bookings/{id}/tickets/reveal")
     public Map<String, Object> reveal(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id) {
         List<String> tokens = ticketService.revealTokens(user.id(), id);

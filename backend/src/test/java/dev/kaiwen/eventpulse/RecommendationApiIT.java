@@ -170,8 +170,11 @@ class RecommendationApiIT extends IntegrationTestBase {
         OrganiserRef fixture = createEventWithTier(30, 10);
         UserRef user = createUser("USER");
         int rateLimited = 0;
-        // fire well past the configured 30/60 limit with unique request ids
-        for (int i = 0; i < 45; i++) {
+        // Fire past the configured 30/60 limit with unique request ids. The
+        // loop keeps going past 45 deliberately: under heavy suite load the
+        // burst can straddle the 60s window boundary, which resets the
+        // counter, so a fixed 45 requests could observe zero rejections flakily.
+        for (int i = 0; i < 150 && rateLimited == 0; i++) {
             ResponseEntity<Map> resp = post("/api/v1/interactions", user.token(), Map.of(
                     "requestId", "it-rl-" + UUID.randomUUID(),
                     "events", List.of(Map.of("eventId", fixture.eventId().toString(), "type", "VIEW"))));

@@ -108,8 +108,12 @@ public class BookingServiceImpl implements BookingService {
             throw new ApiException(ErrorCode.SALE_WINDOW_CLOSED, "ticket sale window is closed");
         }
 
-        // Age eligibility: a requirement must be covered by a verified fact;
-        // an unknown requirement can only pass with an explicit confirmation.
+        // Age eligibility: a requirement must be covered by a verified fact.
+        // "Unknown" per plan §2.1/§10.2 refers to the USER's eligibility fact,
+        // not to events without a restriction: an event with age_requirement
+        // NULL carries no age gate, so booking it is allowed without any
+        // client-side confirmation (PROBE-A regression: the old else-branch
+        // demanded ageConfirmed exactly on unrestricted events).
         Integer requiredAge = event.ageRequirement();
         if (requiredAge != null) {
             // query() returns an empty list when no eligibility row exists, so a
@@ -125,10 +129,8 @@ public class BookingServiceImpl implements BookingService {
                         "age requirement not satisfied by a verified fact");
             }
         }
-        else if (!Boolean.TRUE.equals(request.ageConfirmed())) {
-            throw new ApiException(ErrorCode.AGE_REQUIREMENT_NOT_CONFIRMED,
-                    "age requirement unknown; explicit confirmation required");
-        }
+        // Events without an age_requirement are bookable without confirmation;
+        // the client-sent ageConfirmed flag is accepted but not required.
 
         long total = tier.unitPriceMinor() * request.quantity();
         Map<String, Object> policySnapshot = defaultPolicySnapshot(event.policy());
@@ -272,11 +274,15 @@ public class BookingServiceImpl implements BookingService {
     // ---------------------------------------------------------------- pay/cancel
 
     /**
-     * Non-transactional orchestration with the exact original step order:
-     * idempotency claim (own state), owner check, protocol-B payment intent
-     * (its own transaction), then idempotent completion.
+     * Pay orchestration inside one transaction so the idempotency claim rolls
+     * back with any business failure: a rejected pay (e.g. 409
+     * BOOKING_NOT_PAYABLE) leaves no IN_PROGRESS tombstone blocking the same
+     * key for 24h, and the client can simply retry the same key after the
+     * blocking condition is fixed. The claim is still the first DB statement,
+     * so concurrent same-key requests replay or receive 202 while in flight.
      */
     @Override
+    @Transactional
     public PaymentIntentView payBooking(UUID userId, UUID bookingId, String rawIdempotencyKey) {
         IdempotencyService.Fingerprint fingerprint = idempotency.claim(userId, "bookings:pay",
                 rawIdempotencyKey == null ? "" : rawIdempotencyKey, Map.of("bookingId", bookingId.toString()));
@@ -287,11 +293,12 @@ public class BookingServiceImpl implements BookingService {
     }
 
     /**
-     * Non-transactional orchestration with the exact original step order:
-     * idempotency claim, owner check, protocol-B cancellation, then a fresh
+     * Cancel orchestration inside one transaction: claim (rollback with
+     * business failure), owner check, protocol-B cancellation, then a fresh
      * read-only booking view (via the proxied interface) and completion.
      */
     @Override
+    @Transactional
     public BookingView cancelBooking(UUID userId, UUID bookingId, String rawIdempotencyKey, CancelRequest request) {
         IdempotencyService.Fingerprint fingerprint = idempotency.claim(userId, "bookings:cancel",
                 rawIdempotencyKey == null ? "" : rawIdempotencyKey, Map.of("bookingId", bookingId.toString()));

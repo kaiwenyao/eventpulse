@@ -25,7 +25,7 @@
 | `/api/v1/bookings` / `/{id}` | GET | 登录 | 逐对象所有权；合并履约 + 财务状态 |
 | `/api/v1/bookings/{id}/pay` | POST | 登录 | scoped 幂等；单活动 intent；只创建 CAPTURE command |
 | `/api/v1/bookings/{id}/cancel` | POST | 登录 | 快照政策；协议 B；退款额度预占；可追踪状态 |
-| `/api/v1/bookings/{id}/tickets/reveal` | POST | owner | 一次性展示原始 token（不进 URL/日志/Kafka） |
+| `/api/v1/bookings/{id}/tickets/reveal` | POST | owner | 授权响应内展示原始 token，可重复读取；AES-GCM 暂存 + TTL，仅服务器保留 pepper 哈希；不进 URL/日志/Kafka |
 | `/api/v1/bookings/{id}/events` | GET (SSE) | owner | 最小 SSE：Origin allowlist + 所有权 404 策略 + 心跳；断线后经 REST 同步事实 |
 | `/api/v1/organiser/tickets/redeem` | POST | ORGANISER | owner 授权；原子单次使用（ACTIVE→USED）；重复扫码返回原结果；USED/REVOKED 不可枚举错误；限流 |
 | `/api/v1/organiser/events` | POST | ORGANISER | 草稿 + 票档 + 库存同事务创建 |

@@ -38,7 +38,7 @@ class BookingSseControllerTest {
         bookingService = mock(BookingService.class);
         AppProperties properties = new AppProperties(
                 new AppProperties.Security("s", "p", Duration.ofMinutes(1), Duration.ofDays(1),
-                        Duration.ofMinutes(10), List.of("http://localhost:3000")),
+                        Duration.ofMinutes(10), List.of("http://localhost:3000"), Boolean.FALSE),
                 null, null, null, null, null, null);
         controller = new BookingSseController(bookingService, properties);
         request = mock(HttpServletRequest.class);

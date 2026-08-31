@@ -10,7 +10,8 @@ public record AppProperties(Security security, Booking booking, Commands command
                             Gateway gateway, RateLimit rateLimit, Seed seed) {
 
     public record Security(String secretKey, String tokenPepper, Duration accessTokenTtl,
-                           Duration refreshTokenTtl, Duration adminReauthTtl, List<String> corsAllowedOrigins) {
+                           Duration refreshTokenTtl, Duration adminReauthTtl, List<String> corsAllowedOrigins,
+                           Boolean refreshCookieSecure) {
 
         public boolean secretsAreDefaults() {
             return secretKey == null || secretKey.startsWith("dev-only")

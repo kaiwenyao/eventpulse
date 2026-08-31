@@ -49,8 +49,9 @@ make smoke   # 注册→搜索→创建预订（幂等重放/冲突）→支付�
 ### 后端测试（Testcontainers，需要 Docker）
 
 ```bash
-make test    # 单元 + 集成：并发无超卖、限购、幂等、支付单飞、迟到 capture 补偿、
+mvn verify   # 单元 + 集成：并发无超卖、限购、幂等、支付单飞、迟到 capture 补偿、
              # 退款预占、票券双扫、Outbox 无间隙/回滚无洞、消费者 gap、DLT
+make test    # 同一 `mvn` 命令并自动清理 Testcontainers
 ```
 
 支付网关场景（演示用，服务端配置）：`.env` 中 `GATEWAY_SCENARIO_RULES`
@@ -66,6 +67,7 @@ prod profile 检测到非空场景规则或默认密钥会拒绝启动。
 | 数据 | PostgreSQL 18.6 / PostGIS 3.6.2 / pgvector 0.8.6（源码编译进镜像） |
 | 消息 / 缓存 | Kafka 4.3.1（KRaft 单节点，demo 用）/ Redis 8.2.9 |
 | 测试 | JUnit 5、Testcontainers（PostGIS + Kafka）；ml 评估用 uv + pytest |
+| 构建 | Maven 3.9+（`mvn`）、npm/uv lockfile、CycloneDX SBOM + provenance attest |
 | CI | GitHub Actions（`.github/workflows/ci.yml`）：backend 全量测试 / frontend 构建 / ml 评估 |
 
 ## 仓库结构
@@ -80,6 +82,12 @@ scripts/    smoke-test.sh（全链路冒烟）、k6/booking.js（负载脚本）
 docs/       architecture.md（架构/ER/状态机/时序图）、adr/、api-catalog.md、
             event-catalog.md、security-matrix.md、runbooks.md、demo-script.md
 ```
+
+## 可观测性
+
+`/actuator/prometheus` 除 JVM/连接池指标外还暴露 outbox oldest pending、consumer
+lag、command lease age、MANUAL_REVIEW、票券核销拒绝率和库存等式校验等业务指标。
+Grafana dashboard 与 Prometheus 告警规则见 `deploy/observability/`，可直接导入演示。
 
 ## 生产化边界（诚实声明）
 

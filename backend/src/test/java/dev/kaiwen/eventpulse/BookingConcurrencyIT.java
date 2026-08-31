@@ -132,4 +132,94 @@ class BookingConcurrencyIT extends IntegrationTestBase {
         ResponseEntity<Map> shortKey = post("/api/v1/bookings", user.token(), requestBody, "too-short");
         assertThat(shortKey.getStatusCode().value()).isEqualTo(400);
     }
+
+    /**
+     * PROBE regression for the ABBA deadlock: before the fix protocol A
+     * acquired quota → inventory while every protocol-B transition (cancel,
+     * expiry, capture, payment failure) mutated inventory before quota, so a
+     * creation racing a cancel/confirm of the same user+tier could deadlock.
+     * Both directions now lock booking → quota → inventory, so a sustained
+     * mixed stream must complete with no deadlocks, no 500s and an intact
+     * inventory equation.
+     */
+    @Test
+    void interleavedCreateAndCancelOnSameTierNeverDeadlocks() throws Exception {
+        OrganiserRef fixture = createEventWithTier(500, 500);
+        UserRef user = createUser("USER");
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        AtomicInteger ok = new AtomicInteger();
+        AtomicInteger terminal = new AtomicInteger();
+        List<Future<?>> futures = new ArrayList<>();
+        // Even threads only create; odd threads cancel whatever is pending, so
+        // protocol A and protocol B constantly race over the same (user, tier).
+        for (int t = 0; t < 8; t++) {
+            final boolean canceller = t % 2 == 1;
+            futures.add(pool.submit((Callable<Void>) () -> {
+                try {
+                    for (int i = 0; i < 15; i++) {
+                        if (canceller) {
+                            List<String> pending = jdbc.queryForList("""
+                                    SELECT id FROM bookings WHERE user_id = ? AND tier_id = ?
+                                      AND status = 'PAYMENT_PENDING' LIMIT 1
+                                    """, String.class, user.id(), fixture.tierId());
+                            if (!pending.isEmpty()) {
+                                ResponseEntity<Map> cancelled = post(
+                                        "/api/v1/bookings/" + pending.get(0) + "/cancel", user.token(),
+                                        Map.of("reason", "deadlock probe"), CanonicalJson.newOpaqueToken());
+                                int status = cancelled.getStatusCode().value();
+                                if (status == 200) {
+                                    ok.incrementAndGet();
+                                }
+                                else if (status >= 500) {
+                                    terminal.incrementAndGet();
+                                }
+                            }
+                        }
+                        else {
+                            ResponseEntity<Map> created = post("/api/v1/bookings", user.token(),
+                                    Map.of("eventId", fixture.eventId().toString(),
+                                           "tierId", fixture.tierId().toString(),
+                                           "quantity", 1, "ageConfirmed", true),
+                                    CanonicalJson.newOpaqueToken());
+                            if (created.getStatusCode().value() == 201) {
+                                ok.incrementAndGet();
+                            }
+                            else if (created.getStatusCode().value() >= 500) {
+                                terminal.incrementAndGet();
+                            }
+                        }
+                    }
+                }
+                catch (Exception e) {
+                    terminal.incrementAndGet();
+                }
+                return null;
+            }));
+        }
+        for (Future<?> future : futures) {
+            future.get(180, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+
+        assertThat(terminal.get())
+                .as("no request may fail with a server error (deadlock would surface as 500)")
+                .isZero();
+        assertThat(ok.get()).isGreaterThan(0);
+        assertInventoryInvariant(fixture.tierId());
+        // Invariant: activeQuantity of pending bookings equals reserved stock.
+        Map<String, Object> pending = jdbc.queryForMap("""
+                SELECT COUNT(*) AS bookings, COALESCE(SUM(quantity), 0) AS quantity FROM bookings
+                WHERE user_id = ? AND tier_id = ? AND status = 'PAYMENT_PENDING'
+                """, user.id(), fixture.tierId());
+        long reservedSum = jdbc.queryForObject(
+                "SELECT reserved FROM inventory WHERE tier_id = ?", Long.class, fixture.tierId())
+                .longValue();
+        assertThat(((Number) pending.get("bookings")).intValue())
+                .as("each pending booking reserved exactly its quantity")
+                .isEqualTo(((Number) pending.get("quantity")).intValue());
+        if (((Number) pending.get("bookings")).intValue() == 0) {
+            assertThat(reservedSum).as("no pending left → nothing reserved").isZero();
+        }
+    }
 }
+

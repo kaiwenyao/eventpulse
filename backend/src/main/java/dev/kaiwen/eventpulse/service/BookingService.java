@@ -9,9 +9,9 @@ import dev.kaiwen.eventpulse.dto.BookingDtos.CreateBookingRequest;
 import dev.kaiwen.eventpulse.dto.BookingDtos.PaymentIntentView;
 
 /**
- * Booking and payment-intent business surface. Every state transition
- * re-locks rows in the fixed protocol-B order (booking, quota, inventory,
- * reservation, tickets, payment balance) inside the implementation.
+ * Booking and payment-intent business surface. Every state transition re-locks
+ * rows in the fixed protocol-B order (booking, quota, inventory, reservation,
+ * tickets, payment balance) inside the implementation.
  */
 public interface BookingService {
 

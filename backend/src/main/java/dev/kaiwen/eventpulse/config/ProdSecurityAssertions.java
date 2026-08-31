@@ -29,5 +29,12 @@ public class ProdSecurityAssertions {
         if (!properties.gateway().parsedRules().isEmpty()) {
             throw new IllegalStateException("prod profile must not define gateway scenario rules");
         }
+        // §12: the refresh cookie must be HttpOnly/Secure/SameSite. HttpOnly
+        // and SameSite=Lax are unconditional in code; Secure is the
+        // deployment-controlled part, so prod refuses to ship without it.
+        if (!Boolean.TRUE.equals(properties.security().refreshCookieSecure())) {
+            throw new IllegalStateException(
+                    "prod profile requires refresh-cookie-secure=true (HTTPS-only cookies)");
+        }
     }
 }

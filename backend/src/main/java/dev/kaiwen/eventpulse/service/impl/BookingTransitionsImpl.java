@@ -27,9 +27,12 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Protocol-B state transitions. Every entry point locks rows in the fixed
  * order booking → quota → inventory → reservation → tickets → payment rows,
- * then re-validates status. Exactly one racing transition wins; losers return
- * without side effects. No external gateway call ever happens inside these
- * transactions - the dispatcher owns that boundary.
+ * then re-validates status (plan §5.3: acquiring the quota lock before the
+ * inventory lock is mandatory — the mirror order would race protocol A's
+ * quota → inventory acquisition into an ABBA deadlock). Exactly one racing
+ * transition wins; losers return without side effects. No external gateway
+ * call ever happens inside these transactions - the dispatcher owns that
+ * boundary.
  */
 @Service
 public class BookingTransitionsImpl implements BookingTransitions {
@@ -156,16 +159,20 @@ public class BookingTransitionsImpl implements BookingTransitions {
 
     private void cancelBeforePayment(BookingRow booking) {
         int q = booking.quantity();
-        // Release stock and quota (guarded conditional updates keep the
+        // Protocol-B order: booking → quota → inventory locks before touching
+        // either row, so concurrent creation of the same user+tier cannot
+        // deadlock against this transition.
+        lockQuotaThenInventory(booking.userId(), booking.tierId());
+        // Release quota and stock (guarded conditional updates keep the
         // same-row inventory invariant intact even if races reset rows).
-        jdbc.update("""
-                UPDATE inventory SET reserved = reserved - ?, available = available + ?, version = version + 1
-                WHERE tier_id = ? AND reserved >= ?
-                """, q, q, booking.tierId(), q);
         jdbc.update("""
                 UPDATE user_tier_quota SET active_quantity = active_quantity - ?, version = version + 1
                 WHERE user_id = ? AND tier_id = ? AND active_quantity >= ?
                 """, q, booking.userId(), booking.tierId(), q);
+        jdbc.update("""
+                UPDATE inventory SET reserved = reserved - ?, available = available + ?, version = version + 1
+                WHERE tier_id = ? AND reserved >= ?
+                """, q, q, booking.tierId(), q);
         jdbc.update("UPDATE reservations SET status = 'RELEASED', updated_at = now() WHERE booking_id = ?",
                 booking.id());
         jdbc.update("""
@@ -222,6 +229,8 @@ public class BookingTransitionsImpl implements BookingTransitions {
         }
         int q = booking.quantity();
         boolean resaleAllowed = Boolean.TRUE.equals(policy.get("resaleAllowed"));
+        // Protocol-B lock order continues here: quota row before inventory rows.
+        lockQuotaThenInventory(booking.userId(), booking.tierId());
         // Revoke entitlement first, then money moves.
         jdbc.update("UPDATE tickets SET status = 'REVOKED' WHERE booking_id = ? AND status = 'ACTIVE'",
                 booking.id());
@@ -233,6 +242,10 @@ public class BookingTransitionsImpl implements BookingTransitions {
         jdbc.update("""
                 UPDATE reservations SET status = ?, updated_at = now() WHERE booking_id = ?
                 """, resaleAllowed ? "RELEASED" : "WITHHELD", booking.id());
+        jdbc.update("""
+                UPDATE user_tier_quota SET confirmed_quantity = confirmed_quantity - ?, version = version + 1
+                WHERE user_id = ? AND tier_id = ? AND confirmed_quantity >= ?
+                """, q, booking.userId(), booking.tierId(), q);
         if (resaleAllowed) {
             jdbc.update("""
                     UPDATE inventory SET sold = sold - ?, available = available + ?, version = version + 1
@@ -245,10 +258,6 @@ public class BookingTransitionsImpl implements BookingTransitions {
                     WHERE tier_id = ? AND sold >= ?
                     """, q, q, booking.tierId(), q);
         }
-        jdbc.update("""
-                UPDATE user_tier_quota SET confirmed_quantity = confirmed_quantity - ?, version = version + 1
-                WHERE user_id = ? AND tier_id = ? AND confirmed_quantity >= ?
-                """, q, booking.userId(), booking.tierId(), q);
 
         // Reserve the refund amount atomically on the single balance row BEFORE
         // creating the external refund command.
@@ -313,14 +322,16 @@ public class BookingTransitionsImpl implements BookingTransitions {
             return false;
         }
         int q = booking.quantity();
-        jdbc.update("""
-                UPDATE inventory SET reserved = reserved - ?, available = available + ?, version = version + 1
-                WHERE tier_id = ? AND reserved >= ?
-                """, q, q, booking.tierId(), q);
+        // Protocol-B order: quota → inventory locks before the releases.
+        lockQuotaThenInventory(booking.userId(), booking.tierId());
         jdbc.update("""
                 UPDATE user_tier_quota SET active_quantity = active_quantity - ?, version = version + 1
                 WHERE user_id = ? AND tier_id = ? AND active_quantity >= ?
                 """, q, booking.userId(), booking.tierId(), q);
+        jdbc.update("""
+                UPDATE inventory SET reserved = reserved - ?, available = available + ?, version = version + 1
+                WHERE tier_id = ? AND reserved >= ?
+                """, q, q, booking.tierId(), q);
         jdbc.update("UPDATE reservations SET status = 'RELEASED', updated_at = now() WHERE booking_id = ?",
                 booking.id());
         IntentRow active = activeIntent(booking.id());
@@ -361,6 +372,10 @@ public class BookingTransitionsImpl implements BookingTransitions {
         if (booking == null) {
             return "booking_missing";
         }
+        // Continue the protocol-B prefix immediately: quota → inventory before
+        // any reservation/ticket/payment row is touched, in the same direction
+        // as protocol A, so no reverse-acquisition cycle is possible.
+        lockQuotaThenInventory(booking.userId(), booking.tierId());
         record IntentRowT(UUID id, String providerKey, Boolean active, Long requested) {
         }
         List<IntentRowT> intents = jdbc.query("""
@@ -379,22 +394,22 @@ public class BookingTransitionsImpl implements BookingTransitions {
         if ("PAYMENT_PENDING".equals(booking.status())
                 && Boolean.TRUE.equals(intent.active())
                 && booking.activeIntentId() != null && booking.activeIntentId().equals(intent.id())) {
+            int q = booking.quantity();
             jdbc.update("""
                     INSERT INTO payment_balance (booking_id, currency, captured_amount_minor) VALUES (?, ?, ?)
                     ON CONFLICT (booking_id) DO UPDATE SET
                       captured_amount_minor = payment_balance.captured_amount_minor + ?,
                       version = payment_balance.version + 1, updated_at = now()
                     """, booking.id(), currency, amountMinor, amountMinor);
-            int q = booking.quantity();
-            jdbc.update("""
-                    UPDATE inventory SET reserved = reserved - ?, sold = sold + ?, version = version + 1
-                    WHERE tier_id = ? AND reserved >= ?
-                    """, q, q, booking.tierId(), q);
             jdbc.update("""
                     UPDATE user_tier_quota SET active_quantity = active_quantity - ?,
                            confirmed_quantity = confirmed_quantity + ?, version = version + 1
                     WHERE user_id = ? AND tier_id = ? AND active_quantity >= ?
                     """, q, q, booking.userId(), booking.tierId(), q);
+            jdbc.update("""
+                    UPDATE inventory SET reserved = reserved - ?, sold = sold + ?, version = version + 1
+                    WHERE tier_id = ? AND reserved >= ?
+                    """, q, q, booking.tierId(), q);
             jdbc.update("UPDATE reservations SET status = 'CONSUMED', updated_at = now() WHERE booking_id = ?",
                     booking.id());
             jdbc.update("""
@@ -466,14 +481,16 @@ public class BookingTransitionsImpl implements BookingTransitions {
                 """, bookingId, captureProviderKey);
         if ("PAYMENT_PENDING".equals(booking.status())) {
             int q = booking.quantity();
-            jdbc.update("""
-                    UPDATE inventory SET reserved = reserved - ?, available = available + ?, version = version + 1
-                    WHERE tier_id = ? AND reserved >= ?
-                    """, q, q, booking.tierId(), q);
+            // Protocol-B order: quota → inventory locks before the releases.
+            lockQuotaThenInventory(booking.userId(), booking.tierId());
             jdbc.update("""
                     UPDATE user_tier_quota SET active_quantity = active_quantity - ?, version = version + 1
                     WHERE user_id = ? AND tier_id = ? AND active_quantity >= ?
                     """, q, booking.userId(), booking.tierId(), q);
+            jdbc.update("""
+                    UPDATE inventory SET reserved = reserved - ?, available = available + ?, version = version + 1
+                    WHERE tier_id = ? AND reserved >= ?
+                    """, q, q, booking.tierId(), q);
             jdbc.update("UPDATE reservations SET status = 'RELEASED', updated_at = now() WHERE booking_id = ?",
                     booking.id());
             jdbc.update("""
@@ -633,6 +650,23 @@ public class BookingTransitionsImpl implements BookingTransitions {
     }
 
     // ----------------------------------------------------------------- helpers
+
+    /**
+     * Protocol-B lock order: after the booking row, lock the (user, tier)
+     * quota row, then the tier inventory row, so every mutation of these two
+     * rows follows the same direction as protocol A (quota → inventory). Row
+     * conflicts later cannot reorder the acquisition, so no ABBA cycle with
+     * concurrent creations of the same user+tier is possible.
+     */
+    private void lockQuotaThenInventory(UUID userId, UUID tierId) {
+        // A booking always has a quota row (protocol A upserts it before the
+        // booking is inserted); query() tolerates a missing row, the guarded
+        // updates below no-op on it.
+        jdbc.query("SELECT id FROM user_tier_quota WHERE user_id = ? AND tier_id = ? FOR UPDATE",
+                (rs, i) -> rs.getObject("id", UUID.class), userId, tierId);
+        jdbc.query("SELECT tier_id FROM inventory WHERE tier_id = ? FOR UPDATE", (rs, i) ->
+                rs.getObject("tier_id", UUID.class), tierId);
+    }
 
     private IntentRow activeIntent(UUID bookingId) {
         return jdbc.query("""

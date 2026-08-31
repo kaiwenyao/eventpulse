@@ -31,7 +31,7 @@ class SimulatedPaymentGatewayTest {
         jdbc = mock(JdbcTemplate.class);
         AppProperties properties = new AppProperties(
                 new AppProperties.Security("s", "p", Duration.ofMinutes(1), Duration.ofDays(1),
-                        Duration.ofMinutes(10), List.of()),
+                        Duration.ofMinutes(10), List.of(), Boolean.FALSE),
                 null, null, null,
                 new AppProperties.Gateway("pi-force-fail:FAILURE:0;pi-late:LATE_SUCCESS:2", Duration.ZERO),
                 null, null);

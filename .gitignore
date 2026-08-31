@@ -1,6 +1,9 @@
 # Backend
 backend/target/
 *.class
+/mvnw
+/mvnw.cmd
+/.mvn/
 
 # Frontend
 frontend/node_modules/
@@ -13,3 +16,16 @@ frontend/dist/
 .idea/
 .vscode/
 .DS_Store
+
+# Playwright e2e
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+
+# ML artifacts
+ml/.venv/
+ml/.pytest_cache/
+__pycache__/
+*.pyc
+frontend/coverage/
+frontend/tsconfig.tsbuildinfo

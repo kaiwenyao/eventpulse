@@ -43,6 +43,7 @@ export default function EventDetail() {
   const [quantity, setQuantity] = useState(1)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
 
   const detail = useQuery({
     queryKey: ['event', id],
@@ -52,6 +53,17 @@ export default function EventDetail() {
   const ageNote = detail.data?.ageRequirement == null
     ? '年龄资格未知：结算时需确认'
     : `需已验证年龄 ≥ ${detail.data.ageRequirement} 岁`
+
+  async function saveEvent() {
+    if (!id || saved) return
+    setError('')
+    try {
+      await api('PUT', `/api/v1/me/saved-events/${id}`)
+      setSaved(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : '网络错误')
+    }
+  }
 
   async function book() {
     if (!selectedTier) return
@@ -85,6 +97,11 @@ export default function EventDetail() {
         <p className="muted">
           {d.venueName} {d.city ? `· ${d.city}` : ''} · 主办方 {d.organiserName}
         </p>
+        {user && (
+          <button className="secondary" onClick={saveEvent} disabled={saved}>
+            {saved ? '已收藏' : '收藏活动'}
+          </button>
+        )}
         <p>
           <span className={d.ageRequirement == null ? 'badge warn' : 'badge'}>{ageNote}</span>{' '}
           <span className="badge">取消政策 v{d.policyVersion}</span>
@@ -157,6 +174,7 @@ export default function EventDetail() {
           {error && <p className="error-text">{error}</p>}
         </div>
       )}
+      {user && !selectedTier && error && <p className="error-text">{error}</p>}
     </>
   )
 }

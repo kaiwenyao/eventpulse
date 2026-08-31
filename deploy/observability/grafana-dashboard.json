@@ -1,0 +1,16 @@
+{
+  "title": "EventPulse business health",
+  "schemaVersion": 39,
+  "tags": ["eventpulse", "business"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "templating": { "list": [] },
+  "panels": [
+    { "id": 1, "type": "timeseries", "title": "Oldest pending outbox (seconds)", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }, "targets": [{ "expr": "eventpulse_outbox_oldest_pending_seconds", "legendFormat": "oldest pending" }] },
+    { "id": 2, "type": "timeseries", "title": "Consumer lag", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }, "targets": [{ "expr": "eventpulse_consumer_lag", "legendFormat": "events behind" }] },
+    { "id": 3, "type": "stat", "title": "Manual review commands", "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 }, "targets": [{ "expr": "eventpulse_commands_manual_review" }] },
+    { "id": 4, "type": "stat", "title": "Oldest command lease (seconds)", "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 }, "targets": [{ "expr": "eventpulse_command_lease_age_seconds" }] },
+    { "id": 5, "type": "timeseries", "title": "Ticket redemption rejection rate", "gridPos": { "h": 6, "w": 12, "x": 12, "y": 8 }, "targets": [{ "expr": "rate(eventpulse_ticket_redeem_rejections_total[5m]) / clamp_min(rate(eventpulse_ticket_redeem_attempts_total[5m]), 1)", "legendFormat": "rejection ratio" }] },
+    { "id": 6, "type": "stat", "title": "Inventory equation violations", "gridPos": { "h": 6, "w": 6, "x": 0, "y": 14 }, "targets": [{ "expr": "eventpulse_inventory_equation_violations" }] }
+  ]
+}

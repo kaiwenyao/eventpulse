@@ -67,5 +67,11 @@
 ## 健康检查与指标
 
 - `GET /actuator/health`（liveness/readiness probe）；`/actuator/prometheus` 抓取指标。
-- 关键指标：API p95/p99、hikari pool、deadlock 数、outbox oldest pending、
-  consumer lag、command lease age、MANUAL_REVIEW 数量、票券拒绝率、库存等式校验查询。
+- 关键指标：API p95/p99、hikari pool、deadlock 数，以及业务指标
+  `eventpulse_outbox_oldest_pending_seconds`、`eventpulse_consumer_lag`、
+  `eventpulse_command_lease_age_seconds`、`eventpulse_commands_manual_review`、
+  `eventpulse_ticket_redeem_rejections_total / eventpulse_ticket_redeem_attempts_total`、
+  `eventpulse_inventory_equation_violations`。这些由 `BusinessMetrics` 从 batch pool
+  刷新并经 `/actuator/prometheus` 暴露；可直接导入
+  `deploy/observability/grafana-dashboard.json`，Prometheus 规则位于
+  `deploy/observability/prometheus-rules.yml`。

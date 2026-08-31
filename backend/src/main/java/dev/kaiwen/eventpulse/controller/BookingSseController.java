@@ -17,9 +17,10 @@ import dev.kaiwen.eventpulse.exception.ErrorCode;
 import dev.kaiwen.eventpulse.service.BookingService;
 import dev.kaiwen.eventpulse.service.BookingTransitions;
 
-import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,6 +32,13 @@ import jakarta.servlet.http.HttpServletRequest;
  * Minimal SSE stream for one booking's fulfilment status. Security gates per
  * the plan: Origin allowlist check, authenticated owner only (404 policy),
  * no tokens in the URL, periodic heartbeat; reconnects re-sync via REST.
+ *
+ * <p>Delivery discipline (plan §3.1/§17.3): status events are delivered on the
+ * dedicated {@code ssePushExecutor} and only AFTER the transaction that
+ * produced them committed ({@link TransactionalEventListener}(AFTER_COMMIT)),
+ * so a slow browser socket can never extend the time a booking/quota/inventory
+ * row lock is held, and a rollback can never leak a state the client believed
+ * existed. SSE remains a hint: REST re-sync is the fact source (§5.4).
  */
 @RestController
 public class BookingSseController {
@@ -74,7 +82,16 @@ public class BookingSseController {
         return emitter;
     }
 
-    @EventListener
+    /**
+     * AFTER_COMMIT delivery: the event is only pushed after the state-change
+     * transaction committed (a rollback no longer broadcasts a state that
+     * never existed), and {@code @Async} moves the socket writes off the
+     * caller, so no row lock is ever held across browser I/O.
+     * {@code fallbackExecution = true} keeps direct (non-transactional)
+     * publications working.
+     */
+    @org.springframework.scheduling.annotation.Async("ssePushExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onStatusChanged(BookingTransitions.BookingStatusChanged event) {
         List<SseEmitter> list = emitters.get(event.bookingId());
         if (list == null) {

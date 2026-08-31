@@ -22,10 +22,13 @@ public class ExpiryScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(ExpiryScheduler.class);
 
+    // Background batch work runs on the dedicated batch pool (plan §3.1);
+    // only the protocol-B expiry transition itself takes the transactional pool.
     private final JdbcTemplate jdbc;
     private final BookingTransitions transitions;
 
-    public ExpiryScheduler(JdbcTemplate jdbc, BookingTransitions transitions) {
+    public ExpiryScheduler(@org.springframework.beans.factory.annotation.Qualifier("batchJdbcTemplate")
+            JdbcTemplate jdbc, BookingTransitions transitions) {
         this.jdbc = jdbc;
         this.transitions = transitions;
     }

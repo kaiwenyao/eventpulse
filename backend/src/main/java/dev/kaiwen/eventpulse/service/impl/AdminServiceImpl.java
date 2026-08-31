@@ -107,8 +107,9 @@ public class AdminServiceImpl implements AdminService {
             RetryCommandRequest request) {
         requireFreshReauth(user, reauthToken);
         int updated = jdbc.update("""
-                UPDATE commands SET state = 'READY', next_attempt_at = now(), last_error = NULL,
-                       lease_owner = NULL, lease_until = NULL, updated_at = now()
+                UPDATE commands SET state = 'READY', lease_mode = 'EXECUTE', next_attempt_at = now(),
+                       last_error = NULL, lease_owner = NULL, lease_acquired_at = NULL,
+                       lease_until = NULL, updated_at = now()
                 WHERE id = ? AND state = 'MANUAL_REVIEW'
                 """, id);
         audit(user, "admin.command.retry", "command", id.toString(), null,

@@ -34,15 +34,22 @@ public class CatalogueServiceImpl implements CatalogueService {
     private static final double MAX_RADIUS_KM = 50.0;
 
     private final JdbcTemplate jdbc;
+    /** Search/nearby/detail reads go to the read-only search pool (§3.1): a
+     *  heavy vector/geo query can never hold a transactional-pool connection. */
+    private final JdbcTemplate searchJdbc;
     private final TransactionTemplate tx;
     private final OutboxWriter outbox;
     private final CursorCodec cursorCodec;
     private final ObjectMapper mapper = OutboxJson.mapper();
     private final DbClock clock;
 
-    public CatalogueServiceImpl(JdbcTemplate jdbc, TransactionTemplate tx, OutboxWriter outbox,
-            CursorCodec cursorCodec, DbClock clock) {
+    public CatalogueServiceImpl(@org.springframework.beans.factory.annotation.Qualifier(
+            "txJdbcTemplate") JdbcTemplate jdbc,
+            @org.springframework.beans.factory.annotation.Qualifier(
+                    "searchJdbcTemplate") JdbcTemplate searchJdbc,
+            TransactionTemplate tx, OutboxWriter outbox, CursorCodec cursorCodec, DbClock clock) {
         this.jdbc = jdbc;
+        this.searchJdbc = searchJdbc;
         this.tx = tx;
         this.outbox = outbox;
         this.cursorCodec = cursorCodec;
@@ -147,7 +154,7 @@ public class CatalogueServiceImpl implements CatalogueService {
                 ORDER BY """ + orderClause + """
                 LIMIT ?
                 """;
-        List<EventListItem> items = jdbc.query(sql, LIST_MAPPER,
+        List<EventListItem> items = searchJdbc.query(sql, LIST_MAPPER,
                 appendParams(allParams, pageSize + 1));
 
         String nextCursor = null;
@@ -162,7 +169,7 @@ public class CatalogueServiceImpl implements CatalogueService {
             };
             if ("newest".equals(sortKey)) {
                 // created_at is not projected; fetch it for the tuple.
-                lastSortValue = jdbc.queryForObject("SELECT created_at FROM events WHERE id = ?",
+                lastSortValue = searchJdbc.queryForObject("SELECT created_at FROM events WHERE id = ?",
                         java.time.OffsetDateTime.class, last.id()).toInstant();
             }
             SearchCursor next = new SearchCursor(SearchCursor.CURRENT_VERSION, filterHash, sortKey,
@@ -196,7 +203,8 @@ public class CatalogueServiceImpl implements CatalogueService {
                 ORDER BY e.starts_at ASC, e.id ASC
                 LIMIT ?
                 """;
-        List<EventListItem> items = jdbc.query(sql, LIST_MAPPER, lng, lat, capped * 1000, pageSize + 1);
+        List<EventListItem> items = searchJdbc.query(sql, LIST_MAPPER, lng, lat, capped * 1000,
+                pageSize + 1);
         List<EventListItem> page = items.size() > pageSize ? items.subList(0, pageSize) : items;
         // Nearby is distance-ordered; no keyset cursor is exposed for it in the MVP.
         return new SearchResult(page, null, clock.now());
@@ -204,7 +212,9 @@ public class CatalogueServiceImpl implements CatalogueService {
 
     @Override
     public EventDetail detail(UUID eventId) {
-        EventDetail detail = jdbc.query("""
+        // Event detail is a catalogue (vector/geo-bound) read: the read-only
+        // search pool keeps it off the transactional pool (§3.1).
+        EventDetail detail = searchJdbc.query("""
                 SELECT e.id, e.title, e.description, e.category, e.status, e.starts_at, e.ends_at,
                        e.age_requirement, e.policy_version, e.policy::text AS policy,
                        v.name AS venue_name, v.city, ST_Y(v.location::geometry) AS lat,
@@ -227,7 +237,7 @@ public class CatalogueServiceImpl implements CatalogueService {
             // Drafts and cancelled events are hidden from non-owners.
             throw ApiException.notFound();
         }
-        List<TierView> tiers = jdbc.query("""
+        List<TierView> tiers = searchJdbc.query("""
                 SELECT t.id, t.name, t.unit_price_minor, t.currency, t.sale_start_at, t.sale_end_at,
                        t.per_user_limit, t.status, i.capacity, i.available, i.sold
                 FROM ticket_tiers t LEFT JOIN inventory i ON i.tier_id = t.id

@@ -1,0 +1,41 @@
+groups:
+  - name: eventpulse-business
+    interval: 30s
+    rules:
+      - alert: EventPulseOutboxStalled
+        expr: eventpulse_outbox_oldest_pending_seconds > 60
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "EventPulse outbox is stalled"
+          description: "The oldest pending outbox event has been waiting for more than one minute."
+      - alert: EventPulseManualReviewCommands
+        expr: eventpulse_commands_manual_review > 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "EventPulse has commands requiring manual review"
+      - alert: EventPulseCommandLeaseStuck
+        expr: eventpulse_command_lease_age_seconds > 120
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "A command lease appears stuck"
+      - alert: EventPulseConsumerLag
+        expr: eventpulse_consumer_lag > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "EventPulse notification consumer is behind"
+      - alert: EventPulseTicketRejectionRateHigh
+        expr: rate(eventpulse_ticket_redeem_rejections_total[5m]) / clamp_min(rate(eventpulse_ticket_redeem_attempts_total[5m]), 1) > 0.10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Ticket redemption rejection rate is high"
+      - alert: EventPulseInventoryInvariantViolation
+        expr: eventpulse_inventory_equation_violations > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Inventory equation violation detected"

@@ -22,7 +22,7 @@ class CursorCodecTest {
     private AppProperties properties(String secret) {
         return new AppProperties(
                 new AppProperties.Security(secret, "pepper", java.time.Duration.ofMinutes(15),
-                        java.time.Duration.ofDays(30), java.time.Duration.ofMinutes(10), List.of()),
+                        java.time.Duration.ofDays(30), java.time.Duration.ofMinutes(10), List.of(), Boolean.FALSE),
                 null, null, null, null, null, null);
     }
 

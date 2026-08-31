@@ -20,7 +20,7 @@ ps:
 # Tests reuse the compose postgres image (PG18 + PostGIS + pgvector, multi-arch).
 test:
 	docker build -t eventpulse/postgres:18-3.6-pgvector deploy/postgres
-	cd backend && mvn test; make -C .. testcontainers-cleanup
+	mvn verify; $(MAKE) testcontainers-cleanup
 
 # Ryuk is disabled for determinism; clean leftover Testcontainers containers manually.
 testcontainers-cleanup:
@@ -34,5 +34,5 @@ psql:
 	docker compose exec postgres psql -U eventpulse -d eventpulse
 
 clean:
-	cd backend && mvn clean
+	mvn clean
 	rm -rf frontend/dist

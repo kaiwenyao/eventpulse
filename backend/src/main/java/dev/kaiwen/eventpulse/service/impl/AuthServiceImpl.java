@@ -35,15 +35,24 @@ public class AuthServiceImpl implements AuthService {
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
+    /**
+     * Revocations (reuse detection) must survive the error response, but the
+     * enclosing refresh transaction rolls back on the thrown ApiException, so
+     * they run in their own committed transaction (REQUIRES_NEW) first.
+     */
+    private final TransactionTemplate revocations;
     private final PasswordEncoder passwordEncoder;
     private final AppProperties properties;
     private final RateLimiter rateLimiter;
     private final DbClock clock;
 
     public AuthServiceImpl(JdbcTemplate jdbc, TransactionTemplate tx, PasswordEncoder passwordEncoder,
-            AppProperties properties, RateLimiter rateLimiter, DbClock clock) {
+            org.springframework.transaction.PlatformTransactionManager transactionManager, AppProperties properties,
+            RateLimiter rateLimiter, DbClock clock) {
         this.jdbc = jdbc;
         this.tx = tx;
+        this.revocations = new TransactionTemplate(transactionManager);
+        this.revocations.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
         this.passwordEncoder = passwordEncoder;
         this.properties = properties;
         this.rateLimiter = rateLimiter;
@@ -130,24 +139,41 @@ public class AuthServiceImpl implements AuthService {
                     WHERE t.token_hash = ?
                     """, (rs, i) -> new Tok(rs.getObject("id", UUID.class), rs.getObject("family_id", UUID.class),
                     rs.getObject("user_id", UUID.class), rs.getObject("expires_at", OffsetDateTime.class).toInstant(),
-                    rs.getObject("used_at", OffsetDateTime.class).toInstant(), rs.getString("family_status")), tokenHash);
+                    // used_at is NULL for every never-rotated (legal) token; a direct
+                    // toInstant() on it throws an NPE and turns rotation into a 500.
+                    offsetToInstant(rs.getObject("used_at", OffsetDateTime.class)), rs.getString("family_status")),
+                    tokenHash);
             if (found.isEmpty()) {
                 throw new ApiException(ErrorCode.UNAUTHENTICATED, "refresh token invalid");
             }
             Tok token = found.getFirst();
             boolean reuse = token.usedAt() != null || !"ACTIVE".equals(token.familyStatus());
             if (reuse || token.expiresAt().isBefore(clock.now())) {
-                // Reuse of an already-rotated token kills the whole family and all sessions.
-                jdbc.update("UPDATE refresh_families SET status = 'REUSED' WHERE id = ?", token.familyId());
-                jdbc.update("UPDATE access_tokens SET expires_at = now() WHERE user_id = ?", token.userId());
-                jdbc.update("UPDATE users SET token_version = token_version + 1 WHERE id = ?", token.userId());
+                // Reuse of an already-rotated token kills the whole family and
+                // all sessions. The revocations must SURVIVE the error: they run
+                // in their own committed transaction because the ApiException
+                // thrown below rolls the surrounding transaction back (before
+                // this fix the reuse response 401'd but revoked nothing).
+                revocations.executeWithoutResult(revocationStatus -> {
+                    jdbc.update("UPDATE refresh_families SET status = 'REUSED' WHERE id = ?",
+                            token.familyId());
+                    jdbc.update("UPDATE access_tokens SET expires_at = now() WHERE user_id = ?",
+                            token.userId());
+                    jdbc.update("UPDATE users SET token_version = token_version + 1 WHERE id = ?",
+                            token.userId());
+                });
                 clearCookie(response);
-                throw new ApiException(ErrorCode.TOKEN_REUSE_DETECTED, "refresh token reuse detected; sessions revoked");
+                throw new ApiException(ErrorCode.TOKEN_REUSE_DETECTED,
+                        "refresh token reuse detected; sessions revoked");
             }
             jdbc.update("UPDATE refresh_tokens SET used_at = now() WHERE id = ?", token.id());
             issueRefresh(token.userId(), response);
             return issueAccess(token.userId());
         });
+    }
+
+    private static Instant offsetToInstant(OffsetDateTime value) {
+        return value == null ? null : value.toInstant();
     }
 
     @Override
@@ -255,7 +281,11 @@ public class AuthServiceImpl implements AuthService {
                 """, userId, CanonicalJson.sha256Hex(raw), java.sql.Timestamp.from(Instant.now().plus(ttl)));
         Cookie cookie = new Cookie("ep_refresh", raw);
         cookie.setHttpOnly(true);
-        cookie.setSecure(false); // set true behind TLS
+        // Secure must be on behind TLS: the prod profile defaults it to true
+        // and refuses to start without it (ProdSecurityAssertions). Demo/dev
+        // runs on plain-http localhost keep it off via configuration.
+        cookie.setSecure(properties.security().refreshCookieSecure() != null
+                && properties.security().refreshCookieSecure());
         cookie.setAttribute("SameSite", "Lax");
         cookie.setPath("/api/v1/auth");
         cookie.setMaxAge((int) ttl.toSeconds());

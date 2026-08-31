@@ -38,7 +38,7 @@ class RateLimiterTest {
     private RateLimiter limiter(String loginSpec) {
         AppProperties properties = new AppProperties(
                 new AppProperties.Security("s", "p", Duration.ofMinutes(1), Duration.ofDays(1),
-                        Duration.ofMinutes(10), List.of()),
+                        Duration.ofMinutes(10), List.of(), Boolean.FALSE),
                 null, null, null, null,
                 new AppProperties.RateLimit(loginSpec, "1/60", "1/60", "1/60", "1/60"), null);
         return new RateLimiter(redis, properties);

@@ -50,6 +50,21 @@ class TicketRedeemIT extends IntegrationTestBase {
     }
 
     @Test
+    void revealIsRepeatableAndKeepsEveryTicketRevealableUntilTtl() {
+        Confirmed confirmed = confirmedBooking();
+        assertThat(confirmed.tokens()).hasSize(2);
+        // Non-destructive read: re-opening the order page (or a refresh) must
+        // still surface every staged token, otherwise a patron could never
+        // show the second ticket's QR (H1 regression guard).
+        List<String> second = ticketService.revealTokens(confirmed.user().id(),
+                UUID.fromString(confirmed.bookingId()));
+        assertThat(second).containsExactlyElementsOf(confirmed.tokens());
+        // Tokens keep their issue (sequence) order so clients can map
+        // tokens[t.sequence - 1].
+        assertThat(second).containsExactly(confirmed.tokens().get(0), confirmed.tokens().get(1));
+    }
+
+    @Test
     void redeemIsAtomicAndRepeatScanReturnsBusinessError() {
         Confirmed confirmed = confirmedBooking();
         UserRef organiserUser = createUser("ORGANISER");

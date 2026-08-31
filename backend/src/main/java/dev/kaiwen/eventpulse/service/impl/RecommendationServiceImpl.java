@@ -18,6 +18,7 @@ import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.service.EmbeddingService;
 import dev.kaiwen.eventpulse.service.RecommendationService;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,30 +30,47 @@ import org.springframework.transaction.annotation.Transactional;
  * Display re-filters cancelled/ended/hidden events so stale stock is never
  * presented as fact. V1 adds text-embedding similarity when pgvector is
  * available (see EmbeddingService); it never gates transactions.
+ *
+ * <p>Resource bulkhead (plan §10.3): scoring/candidate/display queries run on
+ * the read-only search pool with a short statement timeout, guarded by a
+ * concurrency bulkhead; when the bulkhead is saturated or a query fails or
+ * times out, serving degrades to the cached popular list instead of
+ * competing with transactional traffic.
  */
 @Service
 public class RecommendationServiceImpl implements RecommendationService {
 
+    private static final String MODEL_FALLBACK = "V0_FALLBACK";
+
     private final JdbcTemplate jdbc;
+    private final JdbcTemplate searchJdbc;
     private final CursorCodec cursorCodec;
     private final EmbeddingService embeddingService;
     private final DbClock clock;
     private final OutboxWriter outbox;
     private final RateLimiter rateLimiter;
+    private final java.util.concurrent.Semaphore bulkhead;
+    private final long bulkheadWaitMs;
+    private final PopularEventsCache popularEventsCache;
 
-    public RecommendationServiceImpl(JdbcTemplate jdbc, CursorCodec cursorCodec, EmbeddingService embeddingService,
-            DbClock clock, OutboxWriter outbox, RateLimiter rateLimiter) {
+    public RecommendationServiceImpl(@Qualifier("txJdbcTemplate") JdbcTemplate jdbc,
+            @Qualifier("searchJdbcTemplate") JdbcTemplate searchJdbc, CursorCodec cursorCodec,
+            EmbeddingService embeddingService, DbClock clock, OutboxWriter outbox, RateLimiter rateLimiter,
+            @org.springframework.beans.factory.annotation.Value(
+                    "${eventpulse.recommendation.bulkhead-permits:8}") int bulkheadPermits,
+            @org.springframework.beans.factory.annotation.Value(
+                    "${eventpulse.recommendation.bulkhead-wait-ms:100}") long bulkheadWaitMs,
+            PopularEventsCache popularEventsCache) {
         this.jdbc = jdbc;
+        this.searchJdbc = searchJdbc;
         this.cursorCodec = cursorCodec;
         this.embeddingService = embeddingService;
-        this.cursorCodecForRecs();
         this.clock = clock;
         this.outbox = outbox;
         this.rateLimiter = rateLimiter;
-    }
-
-    private void cursorCodecForRecs() {
-        // CursorCodec is shared with search; rec cursors use the same signing.
+        this.bulkhead = new java.util.concurrent.Semaphore(Math.max(1, bulkheadPermits));
+        this.bulkheadWaitMs = bulkheadWaitMs;
+        this.popularEventsCache = popularEventsCache;
     }
 
     @Override
@@ -84,8 +102,32 @@ public class RecommendationServiceImpl implements RecommendationService {
             return pageFrom(requestId, modelVersion, queryAsOf, candidates, offset, pageSize, java.util.Map.of());
         }
 
-        // Fresh request: build, freeze and serve the first page.
-        List<Cand> scored = score(userId, section, modelVersion);
+        // Fresh request: build, freeze and serve the first page. Scoring runs
+        // under the concurrency bulkhead on the search pool; saturation or a
+        // failed/timed-out query degrades to the cached popular list (§10.3)
+        // instead of piling up against transactional work.
+        boolean acquired;
+        try {
+            acquired = bulkhead.tryAcquire(bulkheadWaitMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, "recommendation temporarily unavailable");
+        }
+        if (!acquired) {
+            return popularFallback(userId, section, queryAsOf, pageSize);
+        }
+        List<Cand> scored;
+        try {
+            scored = score(userId, section, modelVersion);
+        }
+        catch (org.springframework.dao.DataAccessException e) {
+            // Statement timeout / pool exhaustion / transient failure → degrade.
+            return popularFallback(userId, section, queryAsOf, pageSize);
+        }
+        finally {
+            bulkhead.release();
+        }
         candidates = scored.stream().limit(60).map(Cand::id).toList();
         requestId = UUID.randomUUID();
         Map<UUID, List<String>> rankedReasons = new HashMap<>();
@@ -133,7 +175,9 @@ public class RecommendationServiceImpl implements RecommendationService {
      * pages only the display-time popularity reason is available.
      */
     private RecommendationItem present(UUID eventId, List<String> rankedReasons) {
-        return jdbc.query("""
+        // Display-time re-filter belongs to the recommendation read path: it
+        // runs on the read-only search pool, never on the transactional pool.
+        return searchJdbc.query("""
                 SELECT e.id, e.title, e.category, e.starts_at, v.city,
                        (SELECT COUNT(*) FROM interactions i WHERE i.event_id = e.id
                           AND i.type IN ('VIEW', 'IMPRESSION')) AS popularity
@@ -143,6 +187,56 @@ public class RecommendationServiceImpl implements RecommendationService {
                 rs.getString("category"), rs.getObject("starts_at", OffsetDateTime.class).toInstant(), rs.getString("city"),
                 rs.getDouble("popularity"), reasonsFor(rs.getDouble("popularity"), rankedReasons)), eventId)
                 .stream().findFirst().orElse(null);
+    }
+
+    /**
+     * Degrade path (§10.3): serve the cached popular list without any further
+     * DB read. Candidates are the cached display rows; the frozen-request row
+     * is still written on the transactional pool so cursor paging keeps its
+     * contract (if even that write fails, no cursor is emitted).
+     */
+    private RecommendationPage popularFallback(UUID userId, String section, Instant queryAsOf, int pageSize) {
+        List<PopularEventsCache.CachedEvent> popular = popularEventsCache.popular();
+        List<RecommendationItem> items = new ArrayList<>();
+        for (PopularEventsCache.CachedEvent cached : popular) {
+            if (items.size() >= Math.min(pageSize, popular.size())) {
+                break;
+            }
+            items.add(new RecommendationItem(cached.id(), cached.title(), cached.category(), cached.startsAt(),
+                    cached.city(), (double) cached.popularity(), List.of(PopularEventsCache.FALLBACK_REASON)));
+        }
+        UUID requestId = UUID.randomUUID();
+        String nextCursor = null;
+        try {
+            jdbc.update("""
+                    INSERT INTO recommendation_requests (id, user_id, section, model_version, feature_version,
+                                                         query_as_of, candidate_ids, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?)
+                    """, requestId, userId, section, MODEL_FALLBACK, FEATURE_VERSION,
+                    java.sql.Timestamp.from(queryAsOf), jsonOfCachedIds(popular),
+                    java.sql.Timestamp.from(queryAsOf.plusSeconds(900)));
+            if (popular.size() > pageSize) {
+                SearchCursor next = new SearchCursor(SearchCursor.CURRENT_VERSION, "rec", "rec",
+                        List.of(requestId.toString(), pageSize), queryAsOf, cursorCodec.newExpiry());
+                nextCursor = cursorCodec.encode(next);
+            }
+        }
+        catch (org.springframework.dao.DataAccessException e) {
+            // Degrade means degrade: serve without cursor rather than fail.
+        }
+        return new RecommendationPage(requestId.toString(), MODEL_FALLBACK, FEATURE_VERSION, queryAsOf, items,
+                nextCursor);
+    }
+
+    private String jsonOfCachedIds(List<PopularEventsCache.CachedEvent> popular) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < popular.size(); i++) {
+            if (i > 0) {
+                sb.append(",");
+            }
+            sb.append('"').append(popular.get(i).id()).append('"');
+        }
+        return sb.append("]").toString();
     }
 
     private List<String> reasonsFor(double popularity, List<String> rankedReasons) {
@@ -203,7 +297,7 @@ public class RecommendationServiceImpl implements RecommendationService {
             params.add(userId);
         }
         sql.append(" ORDER BY e.starts_at ASC LIMIT 200");
-        List<Raw> raw = jdbc.query(sql.toString(), (rs, i) -> new Raw(rs.getObject("id", UUID.class),
+        List<Raw> raw = searchJdbc.query(sql.toString(), (rs, i) -> new Raw(rs.getObject("id", UUID.class),
                 rs.getString("title"), rs.getString("category"), rs.getObject("starts_at", OffsetDateTime.class).toInstant(),
                 rs.getString("city"), rs.getLong("views7d"), rs.getLong("saves"),
                 rs.getDouble("embedding_similarity")), params.toArray());
@@ -260,7 +354,8 @@ public class RecommendationServiceImpl implements RecommendationService {
         if (userId == null) {
             return out;
         }
-        List<String[]> rows = jdbc.query("""
+        // Preference lookup is part of the ranking read path: search pool.
+        List<String[]> rows = searchJdbc.query("""
                 SELECT categories FROM user_preferences WHERE user_id = ?
                 """, (rs, i) -> new String[] { rs.getArray("categories") == null ? "{}"
                         : rs.getArray("categories").toString() }, userId);

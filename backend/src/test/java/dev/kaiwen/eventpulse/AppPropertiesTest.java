@@ -17,8 +17,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AppPropertiesTest {
 
     private AppProperties.Security security(String secret, String pepper) {
+        return security(secret, pepper, Boolean.FALSE);
+    }
+
+    private AppProperties.Security security(String secret, String pepper, Boolean secureCookie) {
         return new AppProperties.Security(secret, pepper, Duration.ofMinutes(1), Duration.ofDays(1),
-                Duration.ofMinutes(10), List.of());
+                Duration.ofMinutes(10), List.of(), secureCookie);
     }
 
     @Test
@@ -76,7 +80,26 @@ class AppPropertiesTest {
                 .isInstanceOf(IllegalStateException.class);
 
         assertThatCode(() -> new ProdSecurityAssertions(
-                new AppProperties(security("real", "real"), null, null, null,
+                new AppProperties(security("real", "real", Boolean.TRUE), null, null, null,
+                        new AppProperties.Gateway("", Duration.ZERO), null, null)).assertHardening())
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void prodAssertionsRequireSecureRefreshCookie() {
+        // Real secrets + no scenario rules but Secure cookie off -> refused.
+        assertThatThrownBy(() -> new ProdSecurityAssertions(
+                new AppProperties(security("real", "real", Boolean.FALSE), null, null, null,
+                        new AppProperties.Gateway("", Duration.ZERO), null, null)).assertHardening())
+                .isInstanceOfSatisfying(IllegalStateException.class, e ->
+                        assertThat(e).hasMessageContaining("refresh-cookie-secure"));
+        assertThatThrownBy(() -> new ProdSecurityAssertions(
+                new AppProperties(security("real", "real", null), null, null, null,
+                        new AppProperties.Gateway("", Duration.ZERO), null, null)).assertHardening())
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThatCode(() -> new ProdSecurityAssertions(
+                new AppProperties(security("real", "real", Boolean.TRUE), null, null, null,
                         new AppProperties.Gateway("", Duration.ZERO), null, null)).assertHardening())
                 .doesNotThrowAnyException();
     }

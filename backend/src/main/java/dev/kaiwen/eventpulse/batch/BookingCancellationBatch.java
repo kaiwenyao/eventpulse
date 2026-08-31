@@ -21,10 +21,13 @@ public class BookingCancellationBatch {
 
     private static final Logger log = LoggerFactory.getLogger(BookingCancellationBatch.class);
 
+    // Background batch work runs on the dedicated batch pool (plan §3.1) so a
+    // large event's page scans never borrow transactional-write connections.
     private final JdbcTemplate jdbc;
     private final BookingTransitions transitions;
 
-    public BookingCancellationBatch(JdbcTemplate jdbc, BookingTransitions transitions) {
+    public BookingCancellationBatch(@org.springframework.beans.factory.annotation.Qualifier(
+            "batchJdbcTemplate") JdbcTemplate jdbc, BookingTransitions transitions) {
         this.jdbc = jdbc;
         this.transitions = transitions;
     }

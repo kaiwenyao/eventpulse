@@ -44,9 +44,12 @@ export default function Checkout() {
   const { bookingId } = useParams()
   const [error, setError] = useState('')
   const [paying, setPaying] = useState(false)
-  // The booking retry reuses the SAME idempotency key for the same request;
-  // changing quantity must create a new key (fresh page load = fresh key).
-  const payKeyRef = useRef(newIdempotencyKey())
+  // A fresh high-entropy key per attempt: a business failure (e.g. 409
+  // BOOKING_NOT_PAYABLE) rolls the idempotency claim back server-side, and a
+  // fresh key keeps the next click a clean request instead of replaying tomb-
+  // stones. Idempotency of the payment itself is enforced server-side by the
+  // single active payment intent per booking.
+  const payKeyRef = useRef('')
 
   const booking = useQuery({
     queryKey: ['booking', bookingId],
@@ -57,6 +60,7 @@ export default function Checkout() {
   async function pay() {
     setPaying(true)
     setError('')
+    payKeyRef.current = newIdempotencyKey()
     try {
       await api('POST', `/api/v1/bookings/${bookingId}/pay`, {}, { idempotencyKey: payKeyRef.current })
       await booking.refetch()

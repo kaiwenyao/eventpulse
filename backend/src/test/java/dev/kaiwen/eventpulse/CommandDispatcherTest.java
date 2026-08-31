@@ -54,7 +54,7 @@ class CommandDispatcherTest {
         txManager = mock(PlatformTransactionManager.class);
         AppProperties properties = new AppProperties(
                 new AppProperties.Security("s", "p", Duration.ofMinutes(1), Duration.ofDays(1),
-                        Duration.ofMinutes(10), List.of()),
+                        Duration.ofMinutes(10), List.of(), Boolean.FALSE),
                 null,
                 new AppProperties.Commands(Duration.ofMillis(10), 10, Duration.ofSeconds(30), 8,
                         Duration.ofSeconds(1)),
@@ -184,6 +184,22 @@ class CommandDispatcherTest {
         dispatcher.tick();
 
         verify(transitions).refundSucceeded(refundId, 10000L, "rf-2");
+    }
+
+    @Test
+    void tickNeverReplaysTheActionForAnUnknownCommand() {
+        UUID booking = UUID.randomUUID();
+        claimReturns(List.of(row("CAPTURE", booking, "pi-unknown", null, "UNKNOWN_QUERY", 1)));
+        stubAttempts(1);
+        stubAmount(20000);
+        when(gateway.queryStatus("pi-unknown")).thenReturn(new GatewayResult(Outcome.SUCCESS, "query"));
+        when(transitions.completeCapture(eq(booking), eq("pi-unknown"), eq(20000L), eq("CNY"), anyString()))
+                .thenReturn("confirmed");
+
+        dispatcher.tick();
+
+        verify(gateway).queryStatus("pi-unknown");
+        verify(gateway, never()).capture(anyString(), any(Long.class));
     }
 
     @Test
