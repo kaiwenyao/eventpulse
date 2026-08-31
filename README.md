@@ -23,7 +23,7 @@ Apache Kafka 4.3.1（KRaft）· Redis 8.2.9 · Docker Compose 一键启动。
 | 最小 SSE（Origin 校验 + 所有权 + 心跳，REST 兜底） | `controller/BookingSseController` | 手工 curl 验证 |
 | 推荐离线评估（时间切分 / NDCG@10 / Recall@10 / coverage / diversity / bootstrap CI，synthetic 标注） | `ml/` | `uv run pytest`（3 项，可复现） |
 
-## 快速开始（Docker Compose，唯一必达路径）
+## 快速开始（Docker Compose）
 
 ```bash
 cp .env.example .env       # 按需修改密钥
@@ -40,23 +40,132 @@ demo profile 会自动播种：4 个已发布活动、3 个演示账号：
 | 主办方 | `organiser@eventpulse.dev` | `Organiser!234567890` |
 | 管理员 | `admin@eventpulse.dev` | `Admin!234567890` |
 
-### 一键冒烟测试
-
-```bash
-make smoke   # 注册→搜索→创建预订（幂等重放/冲突）→支付→出票→核销→双扫拒绝→支付前取消
-```
-
-### 后端测试（Testcontainers，需要 Docker）
-
-```bash
-mvn verify   # 单元 + 集成：并发无超卖、限购、幂等、支付单飞、迟到 capture 补偿、
-             # 退款预占、票券双扫、Outbox 无间隙/回滚无洞、消费者 gap、DLT
-make test    # 同一 `mvn` 命令并自动清理 Testcontainers
-```
-
 支付网关场景（演示用，服务端配置）：`.env` 中 `GATEWAY_SCENARIO_RULES`
 形如 `pi-late:LATE_SUCCESS:3;pi-fail:FAILURE:0`（按 provider key 前缀匹配）。
 prod profile 检测到非空场景规则或默认密钥会拒绝启动。
+
+## 本地测试
+
+CI（`.github/workflows/ci.yml`）跑的就是下面这几层。本机按同一顺序复现即可。
+
+### 前置依赖
+
+| 用途 | 工具 | 说明 |
+| --- | --- | --- |
+| 必选 | Docker Desktop / Engine + Compose | 后端集成测试（Testcontainers）和 Compose 栈都要 Docker |
+| 后端测试 / 本机跑 API | JDK 21 + Maven 3.9+ | 仓库根 `pom.xml` 是 reactor，`mvn` 在根目录执行 |
+| 前端测试 / Vite | Node 24 | `frontend/package-lock.json` 锁定 |
+| ML 评估 | [uv](https://docs.astral.sh/uv/)（Python 3.13） | `ml/uv.lock` 锁定；`--frozen` 禁止改 lock |
+| 可选 | curl、python3 | `make smoke` 用；k6 仅负载脚本需要 |
+
+### 1. 一键栈 + API 冒烟（不装 JDK/Node）
+
+对正在运行的 Compose 栈做全链路 HTTP 断言：注册 → 搜索 → 创建预订（幂等重放/冲突）→ 支付 → 出票 → 核销 → 双扫拒绝 → 支付前取消。
+
+```bash
+make up                    # 第一次会构建 postgres/backend/frontend 镜像，约数分钟
+make ps                    # postgres/kafka/redis/backend/frontend 均应 healthy
+make smoke                 # 默认打 http://localhost:8080
+# BASE_URL=http://localhost:3000/api  bash scripts/smoke-test.sh   # 经 nginx 反代
+make logs                  # 跟 backend 日志；Ctrl-C 退出
+```
+
+`make down` 停栈；`make down-v` 连 Postgres 数据卷一起删（下次 `up` 会重新 seed）。
+
+### 2. 只起基础设施，本机跑后端 + Vite（日常开发）
+
+Kafka 对外广告 `127.0.0.1:9092`（避免 macOS 上 `localhost` 走 IPv6；容器内 compose 服务仍走 `kafka:9092`），Postgres `5432`、Redis `6379` 也映射到宿主，默认 `application.yml` 无需改。
+
+```bash
+make infra                 # 只启动 postgres / kafka / redis
+# 终端 1 — demo profile 会跑 Flyway 并播种演示账号
+mvn -pl backend spring-boot:run -Dspring-boot.run.profiles=demo
+# 终端 2 — Vite 把 /api 代理到 :8080
+cd frontend && npm ci && npm run dev
+open http://localhost:5173
+```
+
+改完 Java/TS 后重启对应进程即可，不必重建镜像。测完 `make down`。
+
+不要同时 `make up` 和本机 `spring-boot:run`：两边都会占 8080。
+
+### 3. 后端单元 + 集成测试（Testcontainers）
+
+集成测试启动真实 PostgreSQL 18 + PostGIS + pgvector（镜像 tag `eventpulse/postgres:18-3.6-pgvector`，与 Compose 相同 Dockerfile）。Ryuk 已关闭，测完由 Makefile 清理残留容器。需要 Docker，**不**需要先 `make up`。
+
+```bash
+make test                  # 构建 postgres 测试镜像 → mvn verify → 清理 Testcontainers
+# 等价拆开：
+docker build -t eventpulse/postgres:18-3.6-pgvector deploy/postgres
+mvn verify                 # 仓库根；含并发无超卖、限购、幂等、支付单飞、迟到 capture、
+                           # 退款预占、票券双扫、Outbox 无间隙/回滚无洞、消费者 gap、DLT
+```
+
+只跑某一个 IT 类：`mvn -pl backend -Dtest=BookingConcurrencyIT test`。
+
+### 4. 前端 lint / 单测 / Playwright
+
+Playwright 打的是 Vite dev server，**不需要后端**（API 用 route mock）。首次 e2e 会下载 Chromium。
+
+```bash
+make test-frontend         # lint + Vitest coverage（80% 门禁）+ Playwright
+# 或拆开：
+cd frontend
+npm ci
+npm run lint
+npm run test               # Vitest，jsdom
+npm run coverage           # 与 CI 相同的覆盖率门禁
+npx playwright install --with-deps chromium
+npm run e2e                # SPA 启动 / 登录表单 / 核心路由
+```
+
+### 5. ML 离线评估
+
+合成数据上的时间切分 / NDCG@10 / Recall@10 / coverage / diversity / bootstrap CI，与线上效果无关。
+
+```bash
+make test-ml               # uv sync --frozen && pytest
+# 或：
+cd ml && uv sync --frozen && uv run pytest -q
+cd ml && uv run python -m ml_eval.evaluate    # 打印完整评估报告
+```
+
+### 6. 全量（对齐 CI 的测试部分）
+
+```bash
+make test-all              # backend + frontend + ml，与 CI 三 job 对应
+```
+
+不含 gitleaks / dependency-review / SBOM attest（那些只在 GitHub Actions 跑）。
+
+### 7. 可选：k6 负载
+
+需要一个已发布活动的 `EVENT_ID` / `TIER_ID`（可用冒烟脚本刚创建的，或 demo seed 的活动）。
+
+```bash
+make up                    # 或 make infra + 本机 backend
+k6 run -e BASE_URL=http://localhost:8080 -e EVENT_ID=<uuid> -e TIER_ID=<uuid> scripts/k6/booking.js
+# 无本地 k6：
+docker run --rm -i --network host grafana/k6 run \
+  -e BASE_URL=http://localhost:8080 -e EVENT_ID=<uuid> -e TIER_ID=<uuid> \
+  - < scripts/k6/booking.js
+```
+
+库存正确性以 `BookingConcurrencyIT` 为准；k6 只看成功率与 p95，超卖表现为成功数 > 容量。
+
+### Make 目标速查
+
+| 目标 | 做什么 |
+| --- | --- |
+| `make up` | 构建并启动完整 demo 栈 |
+| `make infra` | 只启动 postgres/kafka/redis |
+| `make test` | 后端 `mvn verify`（含 Testcontainers） |
+| `make test-frontend` | ESLint + Vitest coverage + Playwright |
+| `make test-ml` | `uv run pytest` |
+| `make test-all` | 上面三层一起 |
+| `make smoke` | 对已启动栈做 API 冒烟 |
+| `make down` / `make down-v` | 停栈 / 停栈并删数据卷 |
+| `make psql` | 进入 Compose 里的 psql |
 
 ## 技术基线（详见 docs/adr/ADR-005）
 
@@ -66,9 +175,9 @@ prod profile 检测到非空场景规则或默认密钥会拒绝启动。
 | 前端 | React 19.2.7 + TypeScript 5.9 + Vite 8.1 |
 | 数据 | PostgreSQL 18.6 / PostGIS 3.6.2 / pgvector 0.8.6（源码编译进镜像） |
 | 消息 / 缓存 | Kafka 4.3.1（KRaft 单节点，demo 用）/ Redis 8.2.9 |
-| 测试 | JUnit 5、Testcontainers（PostGIS + Kafka）；ml 评估用 uv + pytest |
+| 测试 | JUnit 5、Testcontainers（PostGIS + Kafka）；Vitest + Playwright；ml 评估用 uv + pytest |
 | 构建 | Maven 3.9+（`mvn`）、npm/uv lockfile、CycloneDX SBOM + provenance attest |
-| CI | GitHub Actions（`.github/workflows/ci.yml`）：backend 全量测试 / frontend 构建 / ml 评估 |
+| CI | GitHub Actions（`.github/workflows/ci.yml`）：backend `mvn verify` / frontend lint+coverage+e2e+build / ml pytest |
 
 ## 仓库结构
 

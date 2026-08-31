@@ -1,0 +1,4 @@
+# Backend image is built with context = backend/.
+target
+src/test
+**/.DS_Store

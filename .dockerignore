@@ -1,0 +1,26 @@
+# Frontend image is built with context = repo root.
+.git
+.github
+**/.DS_Store
+
+backend/target
+backend/src/test
+
+frontend/node_modules
+frontend/dist
+frontend/coverage
+frontend/test-results
+frontend/playwright-report
+frontend/blob-report
+frontend/tsconfig.tsbuildinfo
+
+ml/.venv
+ml/.pytest_cache
+**/__pycache__
+**/*.pyc
+
+.env
+*.md
+docs
+scripts
+deploy/observability

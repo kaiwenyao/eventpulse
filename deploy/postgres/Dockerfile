@@ -2,6 +2,10 @@
 # postgis/postgis upstream images ship no linux/arm64 manifest, so we compose
 # our own from the official postgres image: PostGIS via PGDG apt (multi-arch),
 # pgvector compiled from a pinned source tag.
+#
+# Same image is used by docker-compose (demo stack) and by Testcontainers
+# (`eventpulse/postgres:18-3.6-pgvector`). Build before `mvn verify`:
+#   docker build -t eventpulse/postgres:18-3.6-pgvector deploy/postgres
 FROM postgres:18.6
 
 ARG PGVECTOR_VERSION=0.8.6

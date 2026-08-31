@@ -1,8 +1,12 @@
-.PHONY: up down logs ps test smoke seed clean db-sql
+.PHONY: up down down-v logs ps infra test test-frontend test-ml test-all smoke seed clean db-sql testcontainers-cleanup psql
 
 # Build and start the full demo stack (postgres+kafka+redis+backend+frontend).
 up:
 	docker compose up -d --build
+
+# Infra only: Postgres / Kafka / Redis, for host-side backend + Vite.
+infra:
+	docker compose up -d postgres kafka redis
 
 down:
 	docker compose down
@@ -20,11 +24,23 @@ ps:
 # Tests reuse the compose postgres image (PG18 + PostGIS + pgvector, multi-arch).
 test:
 	docker build -t eventpulse/postgres:18-3.6-pgvector deploy/postgres
-	mvn verify; $(MAKE) testcontainers-cleanup
+	mvn verify; status=$$?; $(MAKE) testcontainers-cleanup; exit $$status
 
-# Ryuk is disabled for determinism; clean leftover Testcontainers containers manually.
+# Frontend lint + Vitest (80% coverage gate) + Playwright Chromium smoke.
+test-frontend:
+	cd frontend && npm ci && npm run lint && npm run coverage && npx playwright install --with-deps chromium && npm run e2e
+
+# Offline recommendation evaluation (synthetic data, uv lockfile).
+test-ml:
+	cd ml && uv sync --frozen && uv run pytest -q
+
+test-all: test test-frontend test-ml
+
+# Ryuk is disabled for determinism; clean leftover Testcontainers containers.
+# Portable across GNU/BSD xargs (macOS has no xargs -r).
 testcontainers-cleanup:
-	-docker ps -aq --filter label=org.testcontainers=true | xargs -r docker rm -f
+	@ids=$$(docker ps -aq --filter label=org.testcontainers=true); \
+	if [ -n "$$ids" ]; then docker rm -f $$ids; fi
 
 # End-to-end API smoke test against a running stack.
 smoke:
