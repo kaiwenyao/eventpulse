@@ -1,6 +1,6 @@
-# EventPulse 详细项目规划与实施蓝图
+# EventPulse 开发计划（简化版）
 
-React 19 · Spring Boot 4 · Apache Kafka 4 · PostgreSQL + PostGIS · pgvector · Redis
+Spring Boot 4 · Kafka · PostgreSQL · 初学者友好的 CRUD 练习项目。对齐 firmament：Controller → Service → Repository。已删除 RateLimiter、DbClock、Outbox、钱包、推荐、Redis。
 
 同步原子库存预留；首次限购行安全初始化；操作级锁协议；单活动支付意图；用户钱包扣款/退款；退款金额预占；无间隙聚合序号；可恢复 DLT；原子票券核销；可评估推荐。
 

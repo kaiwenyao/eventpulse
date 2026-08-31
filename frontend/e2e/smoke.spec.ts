@@ -15,6 +15,7 @@ test.describe('SPA smoke', () => {
     // discovery page always renders its search box independent of backend.
     await expect(page).toHaveTitle(/EventPulse/)
     await expect(page.getByPlaceholder('搜索活动…')).toBeVisible()
+    await expect(page.getByText('发现活动')).toBeVisible()
   })
 
   test('routes to /login and renders the auth form', async ({ page }) => {

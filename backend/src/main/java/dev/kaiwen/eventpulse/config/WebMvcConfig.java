@@ -1,0 +1,34 @@
+package dev.kaiwen.eventpulse.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import dev.kaiwen.eventpulse.common.AppProperties;
+import dev.kaiwen.eventpulse.interceptor.JwtInterceptor;
+
+@Configuration
+public class WebMvcConfig implements WebMvcConfigurer {
+
+    private final JwtInterceptor jwtInterceptor;
+    private final AppProperties properties;
+
+    public WebMvcConfig(JwtInterceptor jwtInterceptor, AppProperties properties) {
+        this.jwtInterceptor = jwtInterceptor;
+        this.properties = properties;
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(jwtInterceptor).addPathPatterns("/api/**");
+    }
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/**")
+                .allowedOrigins(properties.corsOriginArray())
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*");
+    }
+}

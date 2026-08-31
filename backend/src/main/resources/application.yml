@@ -1,166 +1,48 @@
 spring:
   application:
     name: eventpulse
-  task:
-    scheduling:
-      # One scheduler thread made the bulkhead work moot: a 30s Kafka send
-      # timeout in the relay froze the expiry scanner and the payment
-      # dispatcher on the same thread. Background workers must not serialize
-      # behind each other (plan §3.1/§17.3).
-      pool:
-        size: ${SCHEDULER_POOL_SIZE:4}
-      shutdown:
-        await-termination: true
-        timeout: 10s
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/eventpulse}
     username: ${DB_USER:eventpulse}
     password: ${DB_PASSWORD:eventpulse}
-    hikari:
-      maximum-pool-size: ${TX_POOL_SIZE:20}
-      pool-name: tx-pool
-      connection-timeout: 5000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
   flyway:
     enabled: true
     locations: classpath:db/migration
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      timeout: 1s
-      connect-timeout: 1s
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
-      acks: all
-      properties:
-        enable.idempotence: true
-        max.in.flight.requests.per.connection: 5
-        delivery.timeout.ms: 60000
-      transaction-id-prefix: ${KAFKA_TX_PREFIX:}   # empty by default: idempotent producer, non-transactional relay
     consumer:
-      group-id: ${KAFKA_GROUP_ID:eventpulse-consumer}
+      group-id: eventpulse
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
-      properties:
-        isolation.level: read_committed
-    listener:
-      ack-mode: MANUAL_IMMEDIATE
+
 server:
   port: 8080
-  shutdown: graceful
-  forward-headers-strategy: framework
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info
   endpoint:
     health:
       probes:
         enabled: true
-  metrics:
-    tags:
-      application: ${spring.application.name}
-
-logging:
-  pattern:
-    console: "%d{ISO8601} %-5level [%thread] [%X{traceId:-}] [%X{module:-}] %logger{36} - %msg%n"
-  level:
-    dev.kaiwen.eventpulse: INFO
 
 eventpulse:
-  security:
-    secret-key: ${SECRET_KEY:dev-only-secret-key-change-me-0123456789abcdef}
-    token-pepper: ${TOKEN_PEPPER:dev-only-pepper-change-me-0123456789abcdef}
-    access-token-ttl: PT15M
-    refresh-token-ttl: P30D
-    admin-reauth-ttl: PT10M
-    cors-allowed-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:5173}
-    # Refresh cookie Secure flag: demo/dev runs over plain-http localhost, so
-    # it defaults off; the prod profile enforces it on (with a startup
-    # assertion), since §12 requires HttpOnly/Secure/SameSite.
-    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:false}
-  booking:
-    ttl: PT15M
-    max-per-booking: 10
-    expiry-scan-interval: PT1S
-  commands:
-    dispatcher-interval: PT0.5S
-    batch-size: 20
-    lease: PT30S
-    max-attempts: 8
-  relay:
-    interval: PT0.5S
-    batch-size: 200
-  wallet:
-    # Credited onto user_wallets at register / demo seed. Not a top-up API.
-    signup-grant-minor: 1000000
-  tickets:
-    # Reveal staging TTL for unrevealed raw tokens. Tokens are stored AES-GCM
-    # encrypted (key derived from token-pepper + secret-key) and are popped on
-    # the first authorized reveal, so at-rest material is never plaintext and
-    # never re-readable (plan §7.3).
-    reveal-ttl: ${REVEAL_TTL:P7D}
-  # Resource bulkheads (plan §3.1/§10.3): transactional writes, search/vector
-  # reads and background batch tasks run on separate pools. Each search/batch
-  # pool can run under its own PostgreSQL role (DB_SEARCH_USER / DB_BATCH_USER);
-  # they default to the main role so dev/test work unchanged. The search pool
-  # is read-only with a short statement timeout; recommendation queries are
-  # additionally bulkheaded and degrade to the cached popular list.
-  pools:
-    search:
-      max-size: ${SEARCH_POOL_SIZE:8}
-      connection-timeout-ms: 3000
-      statement-timeout-ms: ${SEARCH_STATEMENT_TIMEOUT_MS:2000}
-    batch:
-      max-size: ${BATCH_POOL_SIZE:8}
-      connection-timeout-ms: 10000
-      statement-timeout-ms: ${BATCH_STATEMENT_TIMEOUT_MS:30000}
-  metrics:
-    refresh-interval: ${METRICS_REFRESH_INTERVAL:PT15S}
-    initial-delay: ${METRICS_INITIAL_DELAY:PT5S}
-  recommendation:
-    # Concurrency bulkhead for recommendation scoring queries and the cached
-    # popular-list fallback used when the bulkhead is saturated or the search
-    # pool times out (§10.3).
-    bulkhead-permits: ${REC_BULKHEAD_PERMITS:8}
-    bulkhead-wait-ms: ${REC_BULKHEAD_WAIT_MS:100}
-    cache-refresh-ms: ${REC_CACHE_REFRESH_MS:60000}
-  rate-limit:
-    login: 10/60
-    register: 5/60
-    redeem: 60/60
-    interactions: 30/60
-    reauth: 5/60
+  secret-key: ${SECRET_KEY:dev-only-secret-key-change-me-0123456789ab}
+  token-ttl-ms: 604800000
+  cors-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:5173}
 
 ---
 spring:
   config:
     activate:
       on-profile: demo
-  kafka:
-    listener:
-      auto-startup: true
-
-eventpulse:
-  seed:
-    enabled: true
-
----
-spring:
-  config:
-    activate:
-      on-profile: prod
-
-eventpulse:
-  security:
-    secret-key: ${SECRET_KEY:}
-    token-pepper: ${TOKEN_PEPPER:}
-    # HTTPS-only cookies behind TLS; ProdSecurityAssertions refuses startup
-    # when this is turned off in the prod profile.
-    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:true}

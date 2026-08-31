@@ -1,51 +1,63 @@
 package dev.kaiwen.eventpulse.service;
 
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+import dev.kaiwen.eventpulse.dto.AuthDtos.LoginRequest;
+import dev.kaiwen.eventpulse.dto.AuthDtos.LoginVo;
+import dev.kaiwen.eventpulse.dto.AuthDtos.RegisterRequest;
+import dev.kaiwen.eventpulse.dto.AuthDtos.UserVo;
+import dev.kaiwen.eventpulse.entity.User;
+import dev.kaiwen.eventpulse.exception.BusinessException;
+import dev.kaiwen.eventpulse.repository.UserRepository;
 
-/**
- * Authentication and user-profile business surface.
- */
-public interface AuthService {
+@Service
+public class AuthService {
 
-    public record TokenResponse(String accessToken, long expiresInSeconds, UserInfo user) {
+    private final UserRepository users;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
+
+    public AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService) {
+        this.users = users;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
-    public record UserInfo(UUID id, String email, String role, String displayName,
-                           Long availableAmountMinor, String currency) {
+    @Transactional
+    public LoginVo register(RegisterRequest request) {
+        if (users.existsByEmail(request.email())) {
+            throw new BusinessException("邮箱已被注册");
+        }
+        User user = new User();
+        user.setEmail(request.email());
+        user.setPassword(passwordEncoder.encode(request.password()));
+        user.setName(request.name());
+        user.setRole("USER");
+        users.save(user);
+        return toLoginVo(user);
     }
 
-    public record RegisterRequest(String email, String password, String displayName, PreferencesInput preferences) {
+    public LoginVo login(LoginRequest request) {
+        User user = users.findByEmail(request.email())
+                .orElseThrow(() -> new BusinessException("邮箱或密码错误"));
+        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+            throw new BusinessException("邮箱或密码错误");
+        }
+        return toLoginVo(user);
     }
 
-    public record PreferencesInput(List<String> categories, String coarseLocation, Integer radiusKm,
-                                   Long budgetMinor) {
+    public UserVo me(Long userId) {
+        User user = users.findById(userId).orElseThrow(() -> new BusinessException("用户不存在"));
+        return toUserVo(user);
     }
 
-    public record LoginRequest(String email, String password) {
+    private LoginVo toLoginVo(User user) {
+        return new LoginVo(jwtService.createToken(user.getId(), user.getRole()), toUserVo(user));
     }
 
-    public record RefreshRequest(String refreshToken) {
+    private static UserVo toUserVo(User user) {
+        return new UserVo(user.getId(), user.getEmail(), user.getName(), user.getRole());
     }
-
-    TokenResponse register(RegisterRequest request, HttpServletRequest httpRequest, HttpServletResponse response);
-
-    TokenResponse login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse response);
-
-    TokenResponse refresh(RefreshRequest request, HttpServletRequest httpRequest, HttpServletResponse response);
-
-    void logout(RefreshRequest request, HttpServletRequest httpRequest, HttpServletResponse response);
-
-    /** Fresh re-authentication check for admin actions. */
-    boolean verifyPassword(UUID userId, String password);
-
-    UserInfo me(UUID userId);
-
-    Map<String, Object> preferences(UUID userId);
-
-    void updatePreferences(UUID userId, PreferencesInput input);
 }

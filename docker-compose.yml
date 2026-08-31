@@ -3,9 +3,7 @@
 
 services:
   postgres:
-    build:
-      context: ./deploy/postgres
-    image: eventpulse/postgres:18-3.6-pgvector
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: eventpulse
       POSTGRES_USER: eventpulse
@@ -48,17 +46,6 @@ services:
       timeout: 10s
       retries: 30
 
-  redis:
-    image: redis:8.2.9-alpine
-    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-
   backend:
     build:
       context: ./backend
@@ -69,18 +56,13 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: demo
       DB_URL: jdbc:postgresql://postgres:5432/eventpulse
       DB_USER: eventpulse
       DB_PASSWORD: ${DB_PASSWORD:-eventpulse}
       KAFKA_BOOTSTRAP: kafka:9092
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
       SECRET_KEY: ${SECRET_KEY:-change-me-please-32-bytes-minimum-secret!!}
-      TOKEN_PEPPER: ${TOKEN_PEPPER:-change-me-please-32-bytes-minimum-pepper!!}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
     ports:
       - "8080:8080"

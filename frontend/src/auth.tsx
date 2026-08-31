@@ -1,22 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { api, refreshToken, setAccessToken } from './api'
+import { api, getAccessToken, setAccessToken } from './api'
 
 export interface SessionUser {
-  id: string
+  id: number
   email: string
+  name: string
   role: string
-  displayName: string | null
-  availableAmountMinor?: number | null
-  currency?: string | null
 }
 
 interface AuthContextValue {
   user: SessionUser | null
   ready: boolean
   login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, displayName: string) => Promise<void>
-  logout: () => Promise<void>
-  refresh: () => Promise<boolean>
+  register: (email: string, password: string, name: string) => Promise<void>
+  logout: () => void
 }
 
 const AuthContext = createContext<AuthContextValue>(null!)
@@ -25,53 +22,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [ready, setReady] = useState(false)
 
-  // Session restore: the HttpOnly refresh cookie rotates into a fresh access token.
-  const refresh = useCallback(async () => {
-    try {
-      const data = await refreshToken()
-      setAccessToken(data.accessToken)
-      setUser(data.user)
-      return true
-    } catch {
-      setAccessToken(null)
-      setUser(null)
-      return false
-    }
-  }, [])
-
   useEffect(() => {
-    refresh().finally(() => setReady(true))
-  }, [refresh])
+    if (!getAccessToken()) {
+      setReady(true)
+      return
+    }
+    api<SessionUser>('GET', '/api/auth/me')
+      .then(setUser)
+      .catch(() => setAccessToken(null))
+      .finally(() => setReady(true))
+  }, [])
 
   const login = useCallback(async (email: string, password: string) => {
-    const data = await api<{ accessToken: string; user: SessionUser }>('POST', '/api/v1/auth/login', {
-      email,
-      password,
-    })
-    setAccessToken(data.accessToken)
+    const data = await api<{ token: string; user: SessionUser }>('POST', '/api/auth/login', { email, password })
+    setAccessToken(data.token)
     setUser(data.user)
   }, [])
 
-  const register = useCallback(async (email: string, password: string, displayName: string) => {
-    const data = await api<{ accessToken: string; user: SessionUser }>('POST', '/api/v1/auth/register', {
+  const register = useCallback(async (email: string, password: string, name: string) => {
+    const data = await api<{ token: string; user: SessionUser }>('POST', '/api/auth/register', {
       email,
       password,
-      displayName,
+      name,
     })
-    setAccessToken(data.accessToken)
+    setAccessToken(data.token)
     setUser(data.user)
   }, [])
 
-  const logout = useCallback(async () => {
-    await api('POST', '/api/v1/auth/logout', {}).catch(() => undefined)
+  const logout = useCallback(() => {
     setAccessToken(null)
     setUser(null)
   }, [])
 
-  const value = useMemo(
-    () => ({ user, ready, login, register, logout, refresh }),
-    [user, ready, login, register, logout, refresh],
-  )
+  const value = useMemo(() => ({ user, ready, login, register, logout }), [user, ready, login, register, logout])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

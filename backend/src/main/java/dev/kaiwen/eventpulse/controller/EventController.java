@@ -1,96 +1,65 @@
 package dev.kaiwen.eventpulse.controller;
 
-import java.time.Instant;
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 
-import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import dev.kaiwen.eventpulse.dto.CatalogueDtos.EventDetail;
-import dev.kaiwen.eventpulse.dto.CatalogueDtos.SearchResult;
-import dev.kaiwen.eventpulse.security.AuthUser;
-import dev.kaiwen.eventpulse.service.CatalogueService;
-import dev.kaiwen.eventpulse.service.SavedEventService;
+import dev.kaiwen.eventpulse.common.Result;
+import dev.kaiwen.eventpulse.dto.EventDtos.EventRequest;
+import dev.kaiwen.eventpulse.dto.EventDtos.EventVo;
+import dev.kaiwen.eventpulse.service.EventService;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping("/api/v1")
-@Tag(name = "catalogue")
+@RequestMapping("/api/events")
 public class EventController {
 
-    private final CatalogueService catalogue;
-    private final SavedEventService savedEvents;
+    private final EventService eventService;
 
-    public EventController(CatalogueService catalogue, SavedEventService savedEvents) {
-        this.catalogue = catalogue;
-        this.savedEvents = savedEvents;
+    public EventController(EventService eventService) {
+        this.eventService = eventService;
     }
 
-    @Operation(summary = "Keyset search; cursor is server-signed and carries queryAsOf")
-    @GetMapping("/events")
-    public SearchResult search(@RequestParam(required = false) String q,
-            @RequestParam(required = false) String category, @RequestParam(required = false) String city,
-            @RequestParam(required = false) Long priceMin, @RequestParam(required = false) Long priceMax,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
-            @RequestParam(defaultValue = "false") boolean availableOnly,
-            @RequestParam(required = false) String sort, @RequestParam(required = false) String cursor,
-            @RequestParam(required = false) Integer limit) {
-        return catalogue.search(q, category, city, priceMin, priceMax, from, to, availableOnly, sort, cursor,
-                limit);
+    @GetMapping
+    public Result<List<EventVo>> list(
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String q) {
+        return Result.success(eventService.list(city, category, q));
     }
 
-    @Operation(summary = "Radius search; radius capped at 50 km")
-    @GetMapping("/events/nearby")
-    public SearchResult nearby(@RequestParam double lat, @RequestParam double lng,
-            @RequestParam(defaultValue = "10") double radiusKm, @RequestParam(required = false) Integer limit) {
-        return catalogue.nearby(lat, lng, radiusKm, limit);
+    @GetMapping("/{id}")
+    public Result<EventVo> get(@PathVariable Long id) {
+        return Result.success(eventService.get(id));
     }
 
-    @Operation(summary = "Event detail with ETag; checkout re-validates all facts")
-    @GetMapping("/events/{id}")
-    public ResponseEntity<EventDetail> detail(@PathVariable UUID id,
-            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
-        String etag = catalogue.detailEtag(id);
-        if (etag.equals(ifNoneMatch)) {
-            return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(etag).build();
-        }
-        return ResponseEntity.ok().eTag(etag).body(catalogue.detail(id));
+    @GetMapping("/mine")
+    public Result<List<EventVo>> mine() {
+        return Result.success(eventService.mine());
     }
 
-    @Operation(summary = "Save (favourite) an event; idempotent")
-    @PutMapping("/me/saved-events/{eventId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void save(@AuthenticationPrincipal AuthUser user, @PathVariable UUID eventId) {
-        savedEvents.save(user.id(), eventId);
+    @PostMapping
+    public Result<EventVo> create(@Valid @RequestBody EventRequest request) {
+        return Result.success(eventService.create(request));
     }
 
-    @Operation(summary = "Unsave an event")
-    @DeleteMapping("/me/saved-events/{eventId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void unsave(@AuthenticationPrincipal AuthUser user, @PathVariable UUID eventId) {
-        savedEvents.unsave(user.id(), eventId);
+    @PutMapping("/{id}")
+    public Result<EventVo> update(@PathVariable Long id, @Valid @RequestBody EventRequest request) {
+        return Result.success(eventService.update(id, request));
     }
 
-    @GetMapping("/me/saved-events")
-    public Map<String, Object> saved(@AuthenticationPrincipal AuthUser user) {
-        return savedEvents.saved(user.id());
+    @DeleteMapping("/{id}")
+    public Result<Void> cancel(@PathVariable Long id) {
+        eventService.cancel(id);
+        return Result.success();
     }
 }

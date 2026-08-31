@@ -1,31 +1,11 @@
-# Integration-test defaults: real Postgres/PostGIS via Testcontainers (@ServiceConnection).
-# Schedulers are stretched so tests drive ticks deterministically; Redis is pinned
-# to an unreachable endpoint, so the rate limiter and the reveal store exercise
-# their in-process fallbacks deterministically, no matter whether some ambient
-# dev service happens to be listening on localhost:6379.
-eventpulse:
-  booking:
-    expiry-scan-interval: PT1H
-  commands:
-    dispatcher-interval: PT1H
-  relay:
-    interval: PT1H
-  seed:
-    enabled: false
-
-logging:
-  level:
-    dev.kaiwen.eventpulse: DEBUG
-
 spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
   kafka:
     listener:
       auto-startup: false
-  data:
-    redis:
-      # Port 1 is never bound in the test JVM: connection-refused is instant,
-      # so fallbacks engage immediately (no 1s connect timeouts per lookup).
-      host: localhost
-      port: 1
-      connect-timeout: 200ms
-      timeout: 200ms
+
+eventpulse:
+  secret-key: test-secret-key-change-me-0123456789ab
+  token-ttl-ms: 3600000

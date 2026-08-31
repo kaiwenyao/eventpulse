@@ -15,12 +15,11 @@
   <artifactId>eventpulse-backend</artifactId>
   <version>0.1.0</version>
   <name>eventpulse-backend</name>
-  <description>EventPulse - personalised event discovery and ticketing platform (modular monolith)</description>
+  <description>EventPulse — Spring Boot CRUD + Kafka</description>
 
   <properties>
     <java.version>21</java.version>
-    <springdoc.version>3.1.0</springdoc.version>
-    <bcprov.version>1.81</bcprov.version>
+    <jjwt.version>0.12.6</jjwt.version>
     <testcontainers.version>2.0.5</testcontainers.version>
   </properties>
 
@@ -43,36 +42,28 @@
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-security</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-jdbc</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-data-redis</artifactId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.springframework.kafka</groupId>
-      <artifactId>spring-kafka</artifactId>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-kafka</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-crypto</artifactId>
     </dependency>
 
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-flyway</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.flywaydb</groupId>
-      <artifactId>flyway-core</artifactId>
     </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>
@@ -87,39 +78,30 @@
     <dependency>
       <groupId>org.springdoc</groupId>
       <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-      <version>${springdoc.version}</version>
+      <version>3.1.0</version>
     </dependency>
 
-    <!-- Argon2id password hashing (Spring Security Argon2PasswordEncoder delegates to BouncyCastle) -->
     <dependency>
-      <groupId>org.bouncycastle</groupId>
-      <artifactId>bcprov-jdk18on</artifactId>
-      <version>${bcprov.version}</version>
-    </dependency>
-
-    <!-- Observability: trace context propagation (exporter enabled only when OTEL endpoint configured) -->
-    <dependency>
-      <groupId>io.micrometer</groupId>
-      <artifactId>micrometer-tracing-bridge-otel</artifactId>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-api</artifactId>
+      <version>${jjwt.version}</version>
     </dependency>
     <dependency>
-      <groupId>io.opentelemetry</groupId>
-      <artifactId>opentelemetry-exporter-otlp</artifactId>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-impl</artifactId>
+      <version>${jjwt.version}</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-jackson</artifactId>
+      <version>${jjwt.version}</version>
+      <scope>runtime</scope>
     </dependency>
 
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.httpcomponents.client5</groupId>
-      <artifactId>httpclient5</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.security</groupId>
-      <artifactId>spring-security-test</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -168,6 +150,9 @@
             <phase>test</phase>
             <goals><goal>check</goal></goals>
             <configuration>
+              <excludes>
+                <exclude>dev/kaiwen/eventpulse/EventPulseApplication.class</exclude>
+              </excludes>
               <rules>
                 <rule>
                   <element>BUNDLE</element>

@@ -28,10 +28,10 @@ req() {
 
 rand_suffix=$RANDOM$RANDOM
 say "== 1. register a user and an organiser =="
-register_body="{\"email\":\"smoke-$rand_suffix@test.dev\",\"password\":\"Smoke!234567890\",\"displayName\":\"Smoke User\",\"preferences\":{\"categories\":[\"music\"],\"coarseLocation\":\"shanghai\",\"radiusKm\":25}}"
-code=$(req POST /api/v1/auth/register "" "" "$register_body")
-user_token=$(jget "['accessToken']" < /tmp/ep_body.json)
-[ "$code" = "201" ] && [ -n "$user_token" ] && ok "register user ($code)" || bad "register user ($code)"
+register_body="{\"email\":\"smoke-$rand_suffix@test.dev\",\"password\":\"123456\",\"name\":\"Smoke User\"}"
+code=$(req POST /api/auth/register "" "" "$register_body")
+user_token=$(jget "['data']['token']" < /tmp/ep_body.json)
+[ "$code" = "200" ] && [ -n "$user_token" ] && ok "register user ($code)" || bad "register user ($code)"
 
 code=$(req POST /api/v1/auth/login "" "" \
   "{\"email\":\"organiser@eventpulse.dev\",\"password\":\"Organiser!234567890\"}")

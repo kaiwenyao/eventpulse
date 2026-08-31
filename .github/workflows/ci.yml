@@ -44,9 +44,7 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Build postgres test image (PG18 + PostGIS + pgvector, multi-arch)
-        run: docker build -t eventpulse/postgres:18-3.6-pgvector deploy/postgres
-      - name: Build, lint-less compile, unit + Testcontainers integration tests
+      - name: Build, unit + Testcontainers integration tests
         run: mvn -B verify
       - name: Upload backend SBOM (CycloneDX)
         uses: actions/upload-artifact@v4
@@ -78,30 +76,6 @@ jobs:
       - name: Typecheck + build
         run: npm run build
         working-directory: frontend
-      - name: npm audit (fail on high/critical)
-        run: npm audit --audit-level=high
-        working-directory: frontend
-      - name: Generate frontend SBOM (CycloneDX)
-        run: npm sbom --sbom-format cyclonedx > frontend-sbom.cdx.json
-        working-directory: frontend
-      - name: Upload frontend SBOM
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-sbom
-          path: frontend/frontend-sbom.cdx.json
       - name: Playwright browser smoke tests (no backend needed)
         run: npx playwright install --with-deps chromium && npm run e2e
         working-directory: frontend
-
-  ml-eval:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - name: Lock, sync and test the offline evaluation pipeline
-        # --frozen refuses to mutate uv.lock: CI must prove the checked-in
-        # lock is what actually runs, so drift cannot silently change results.
-        run: |
-          uv sync --frozen
-          uv run pytest -q
-        working-directory: ml

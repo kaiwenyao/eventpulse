@@ -6,7 +6,7 @@ up:
 
 # Infra only: Postgres / Kafka / Redis, for host-side backend + Vite.
 infra:
-	docker compose up -d postgres kafka redis
+	docker compose up -d postgres kafka
 
 down:
 	docker compose down
@@ -23,18 +23,12 @@ ps:
 # Backend unit + Testcontainers integration tests (requires Docker).
 # Tests reuse the compose postgres image (PG18 + PostGIS + pgvector, multi-arch).
 test:
-	docker build -t eventpulse/postgres:18-3.6-pgvector deploy/postgres
 	mvn verify; status=$$?; $(MAKE) testcontainers-cleanup; exit $$status
 
-# Frontend lint + Vitest (80% coverage gate) + Playwright Chromium smoke.
 test-frontend:
 	cd frontend && npm ci && npm run lint && npm run coverage && npx playwright install --with-deps chromium && npm run e2e
 
-# Offline recommendation evaluation (synthetic data, uv lockfile).
-test-ml:
-	cd ml && uv sync --frozen && uv run pytest -q
-
-test-all: test test-frontend test-ml
+test-all: test test-frontend
 
 # Ryuk is disabled for determinism; clean leftover Testcontainers containers.
 # Portable across GNU/BSD xargs (macOS has no xargs -r).

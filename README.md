@@ -1,6 +1,6 @@
 # EventPulse
 
-个性化活动发现与票务平台 —— 按《详细项目规划与实施蓝图》实现的可复现交易闭环 MVP。
+给初学者的活动预订练习项目：Spring Boot CRUD + Kafka 通知。风格对齐 firmament，已删除 RateLimiter、DbClock、Outbox、钱包和推荐。
 
 React 19 · Spring Boot 4.1.1（模块化单体）· PostgreSQL 18 + PostGIS 3.6 + pgvector ·
 Apache Kafka 4.3.1（KRaft）· Redis 8.2.9 · Docker Compose 一键启动。

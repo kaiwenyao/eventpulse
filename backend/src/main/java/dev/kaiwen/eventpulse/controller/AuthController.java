@@ -1,33 +1,23 @@
 package dev.kaiwen.eventpulse.controller;
 
-import java.util.Map;
-
-import org.springframework.http.HttpStatus;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import dev.kaiwen.eventpulse.security.AuthUser;
+import dev.kaiwen.eventpulse.common.BaseContext;
+import dev.kaiwen.eventpulse.common.Result;
+import dev.kaiwen.eventpulse.dto.AuthDtos.LoginRequest;
+import dev.kaiwen.eventpulse.dto.AuthDtos.LoginVo;
+import dev.kaiwen.eventpulse.dto.AuthDtos.RegisterRequest;
+import dev.kaiwen.eventpulse.dto.AuthDtos.UserVo;
 import dev.kaiwen.eventpulse.service.AuthService;
-import dev.kaiwen.eventpulse.service.AuthService.LoginRequest;
-import dev.kaiwen.eventpulse.service.AuthService.RefreshRequest;
-import dev.kaiwen.eventpulse.service.AuthService.RegisterRequest;
-import dev.kaiwen.eventpulse.service.AuthService.TokenResponse;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping("/api/v1/auth")
-@Tag(name = "auth")
+@RequestMapping("/api/auth")
 public class AuthController {
 
     private final AuthService authService;
@@ -36,51 +26,18 @@ public class AuthController {
         this.authService = authService;
     }
 
-    @Operation(summary = "Register a normal user; role/status/owner are server-assigned")
     @PostMapping("/register")
-    @ResponseStatus(HttpStatus.CREATED)
-    public TokenResponse register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest,
-            HttpServletResponse response) {
-        return authService.register(request, httpRequest, response);
+    public Result<LoginVo> register(@Valid @RequestBody RegisterRequest request) {
+        return Result.success(authService.register(request));
     }
 
     @PostMapping("/login")
-    public TokenResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest,
-            HttpServletResponse response) {
-        return authService.login(request, httpRequest, response);
-    }
-
-    @PostMapping("/refresh")
-    public TokenResponse refresh(@RequestBody(required = false) RefreshRequest request,
-            @CookieValue(value = "ep_refresh", required = false) String cookieToken,
-            HttpServletRequest httpRequest, HttpServletResponse response) {
-        if (request == null && cookieToken != null) {
-            request = new RefreshRequest(cookieToken);
-        }
-        return authService.refresh(request, httpRequest, response);
-    }
-
-    @PostMapping("/logout")
-    public Map<String, Object> logout(@RequestBody(required = false) RefreshRequest request,
-            HttpServletRequest httpRequest, HttpServletResponse response) {
-        authService.logout(request, httpRequest, response);
-        return Map.of("ok", true);
+    public Result<LoginVo> login(@Valid @RequestBody LoginRequest request) {
+        return Result.success(authService.login(request));
     }
 
     @GetMapping("/me")
-    public AuthService.UserInfo me(@AuthenticationPrincipal AuthUser user) {
-        return authService.me(user.id());
-    }
-
-    @GetMapping("/me/preferences")
-    public Map<String, Object> preferences(@AuthenticationPrincipal AuthUser user) {
-        return authService.preferences(user.id());
-    }
-
-    @PostMapping("/me/preferences")
-    public Map<String, Object> updatePreferences(@AuthenticationPrincipal AuthUser user,
-            @RequestBody AuthService.PreferencesInput input) {
-        authService.updatePreferences(user.id(), input);
-        return authService.preferences(user.id());
+    public Result<UserVo> me() {
+        return Result.success(authService.me(BaseContext.getUserId()));
     }
 }

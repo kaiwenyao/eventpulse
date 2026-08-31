@@ -2,64 +2,41 @@ package dev.kaiwen.eventpulse.common;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import java.time.Duration;
-import java.util.List;
-
 @ConfigurationProperties(prefix = "eventpulse")
-public record AppProperties(Security security, Booking booking, Commands commands, Relay relay,
-                            Wallet wallet, RateLimit rateLimit, Seed seed) {
+public class AppProperties {
 
-    public record Security(String secretKey, String tokenPepper, Duration accessTokenTtl,
-                           Duration refreshTokenTtl, Duration adminReauthTtl, List<String> corsAllowedOrigins,
-                           Boolean refreshCookieSecure) {
+    /**
+     * HMAC-SHA256 至少 32 字节。演示环境用默认值，生产请用环境变量覆盖。
+     */
+    private String secretKey = "dev-only-secret-key-change-me-0123456789ab";
+    private long tokenTtlMs = 7L * 24 * 3600 * 1000;
+    private String corsOrigins = "http://localhost:3000,http://localhost:5173";
 
-        public boolean secretsAreDefaults() {
-            return secretKey == null || secretKey.startsWith("dev-only")
-                    || tokenPepper == null || tokenPepper.startsWith("dev-only");
-        }
+    public String getSecretKey() {
+        return secretKey;
     }
 
-    public record Booking(Duration ttl, int maxPerBooking, Duration expiryScanInterval) {
+    public void setSecretKey(String secretKey) {
+        this.secretKey = secretKey;
     }
 
-    public record Commands(Duration dispatcherInterval, int batchSize, Duration lease, int maxAttempts,
-                           Duration unknownResolveInterval) {
+    public long getTokenTtlMs() {
+        return tokenTtlMs;
     }
 
-    public record Relay(Duration interval, int batchSize) {
+    public void setTokenTtlMs(long tokenTtlMs) {
+        this.tokenTtlMs = tokenTtlMs;
     }
 
-    /** Demo signup grant credited onto a new user_wallets row. Not a top-up API. */
-    public record Wallet(long signupGrantMinor) {
+    public String getCorsOrigins() {
+        return corsOrigins;
     }
 
-    public record RateLimit(String login, String register, String redeem, String interactions, String reauth) {
-
-        public long limit(String key) {
-            String spec = switch (key) {
-                case "login" -> login;
-                case "register" -> register;
-                case "redeem" -> redeem;
-                case "interactions" -> interactions;
-                case "reauth" -> reauth;
-                default -> "60/60";
-            };
-            return Long.parseLong(spec.split("/")[0]);
-        }
-
-        public long windowSeconds(String key) {
-            String spec = switch (key) {
-                case "login" -> login;
-                case "register" -> register;
-                case "redeem" -> redeem;
-                case "interactions" -> interactions;
-                case "reauth" -> reauth;
-                default -> "60/60";
-            };
-            return Long.parseLong(spec.split("/")[1]);
-        }
+    public void setCorsOrigins(String corsOrigins) {
+        this.corsOrigins = corsOrigins;
     }
 
-    public record Seed(boolean enabled) {
+    public String[] corsOriginArray() {
+        return corsOrigins.split("\\s*,\\s*");
     }
 }
