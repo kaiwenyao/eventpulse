@@ -1,4 +1,4 @@
-# EventPulse demo stack. Single-node Kafka (KRaft) / Redis / Postgres are demo
+# EventPulse demo stack. Single-node Kafka (KRaft) and Postgres are demo
 # conveniences, not fault-tolerant production deployments.
 
 services:

@@ -1,10 +1,10 @@
-.PHONY: up down down-v logs ps infra test test-frontend test-ml test-all smoke seed clean db-sql testcontainers-cleanup psql
+.PHONY: up down down-v logs ps infra test test-frontend test-all smoke clean testcontainers-cleanup psql
 
-# Build and start the full demo stack (postgres+kafka+redis+backend+frontend).
+# Build and start the full demo stack (postgres+kafka+backend+frontend).
 up:
 	docker compose up -d --build
 
-# Infra only: Postgres / Kafka / Redis, for host-side backend + Vite.
+# Infra only: Postgres / Kafka, for host-side backend + Vite.
 infra:
 	docker compose up -d postgres kafka
 
@@ -20,8 +20,7 @@ logs:
 ps:
 	docker compose ps
 
-# Backend unit + Testcontainers integration tests (requires Docker).
-# Tests reuse the compose postgres image (PG18 + PostGIS + pgvector, multi-arch).
+# Backend unit tests + JaCoCo 90% line coverage.
 test:
 	mvn verify; status=$$?; $(MAKE) testcontainers-cleanup; exit $$status
 
