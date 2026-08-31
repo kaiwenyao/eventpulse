@@ -6,8 +6,11 @@ import java.util.UUID;
 
 import dev.kaiwen.eventpulse.IntegrationTestBase.OrganiserRef;
 import dev.kaiwen.eventpulse.IntegrationTestBase.UserRef;
+import dev.kaiwen.eventpulse.recs.EmbeddingService;
+import dev.kaiwen.eventpulse.recs.RecommendationService;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,7 +37,10 @@ class RecommendationApiIT extends IntegrationTestBase {
         ResponseEntity<Map> page = get("/api/v1/recommendations?section=for-you&limit=2", user.token());
         assertThat(page.getStatusCode().value()).isEqualTo(200);
         assertThat(body(page).get("requestId")).isNotNull();
-        assertThat(body(page).get("modelVersion")).isEqualTo("v0-popularity");
+        // pgvector is present in the test image, so the service runs V1.
+        assertThat(body(page).get("modelVersion"))
+                .isEqualTo(embeddingService.isVectorAvailable()
+                        ? RecommendationService.MODEL_V1 : RecommendationService.MODEL_V0);
         assertThat(body(page).get("featureVersion")).isNotNull();
         String cursor = (String) body(page).get("nextCursor");
 
@@ -51,6 +57,39 @@ class RecommendationApiIT extends IntegrationTestBase {
         String forgedCursor = forgeCursorWithUnknownRequest();
         assertThat(get("/api/v1/recommendations?cursor=" + forgedCursor, user.token())
                 .getStatusCode().value()).isEqualTo(400);
+    }
+
+    /**
+     * V1 path: with pgvector available and a user preference vector, embedding
+     * similarity contributes to ranking and surfaces the EMBEDDING_MATCH reason.
+     */
+    @Test
+    void v1RankingUsesEmbeddingSimilarityWhenPreferenceMatches() {
+        OrganiserRef matching = createEventWithTier(30, 10);
+        // give the event an embedding via the same deterministic embedder the seeder uses
+        embeddingService.embedEvent(matching.eventId(), "独立摇滚现场 indie rock live", "music",
+                "一场独立摇滚与电子融合的现场演出");
+        UserRef user = createUser("USER");
+        jdbc.update("""
+                INSERT INTO user_preferences (user_id, categories, coarse_location, radius_km)
+                VALUES (?, '{music}', 'shanghai', 20) ON CONFLICT (user_id) DO NOTHING
+                """, user.id());
+
+        ResponseEntity<Map> page = get("/api/v1/recommendations?section=for-you&limit=10", user.token());
+        assertThat(page.getStatusCode().value()).isEqualTo(200);
+        org.junit.jupiter.api.Assumptions.assumeTrue(embeddingService.isVectorAvailable(),
+                "V1 embedding ranking requires pgvector");
+
+        assertThat(body(page).get("modelVersion")).isEqualTo(RecommendationService.MODEL_V1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) body(page).get("items");
+        assertThat(items).isNotEmpty();
+        Map<String, Object> matched = items.stream()
+                .filter(i -> matching.eventId().toString().equals(String.valueOf(i.get("eventId"))))
+                .findFirst().orElseThrow();
+        @SuppressWarnings("unchecked")
+        List<String> reasons = (List<String>) matched.get("reasonCodes");
+        assertThat(reasons).anyMatch(r -> r.equals("EMBEDDING_MATCH") || r.equals("MATCHES_PREFERENCE"));
     }
 
     /** A validly-signed cursor pointing at a never-created recommendation request. */
@@ -107,6 +146,30 @@ class RecommendationApiIT extends IntegrationTestBase {
         assertThat(noRequestId.getStatusCode().value()).isEqualTo(400);
     }
 
+    /**
+     * Gap: interactions are rate limited (configured 30/60). Hammering the
+     * endpoint past the limit returns 429 from the configured bucket.
+     */
+    @Test
+    void interactionsAreRateLimited() {
+        OrganiserRef fixture = createEventWithTier(30, 10);
+        UserRef user = createUser("USER");
+        int rateLimited = 0;
+        // fire well past the configured 30/60 limit with unique request ids
+        for (int i = 0; i < 45; i++) {
+            ResponseEntity<Map> resp = post("/api/v1/interactions", user.token(), Map.of(
+                    "requestId", "it-rl-" + UUID.randomUUID(),
+                    "events", List.of(Map.of("eventId", fixture.eventId().toString(), "type", "VIEW"))));
+            if (resp.getStatusCode().value() == 429) {
+                rateLimited++;
+            }
+        }
+        assertThat(rateLimited).isGreaterThan(0);
+    }
+
     @org.springframework.beans.factory.annotation.Autowired
     private org.springframework.context.ApplicationContext context;
+
+    @Autowired
+    private EmbeddingService embeddingService;
 }

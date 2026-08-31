@@ -208,6 +208,39 @@ class AdminApiIT extends IntegrationTestBase {
     }
 
     @Test
+    void exceptionOverviewMasksSensitiveFreeTextColumns() {
+        setupAdmin();
+        // a manual-review command with long provider_key + last_error values
+        UUID commandId = jdbc.queryForObject("""
+                INSERT INTO commands (kind, aggregate_type, aggregate_id, provider_key, state, last_error)
+                VALUES ('CAPTURE', 'booking', ?, 'pi-it-very-long-sensitive-key-1234567890',
+                        'MANUAL_REVIEW', 'gateway returned a long diagnostic message full of detail')
+                RETURNING id
+                """, UUID.class, UUID.randomUUID());
+        jdbc.update("""
+                UPDATE commands SET lease_owner = 'dispatcher-node-secret-identity'
+                WHERE id = ?
+                """, commandId);
+
+        ResponseEntity<Map> exceptions = exchange("GET", "/api/v1/admin/exceptions", admin.token(), null,
+                Map.of("X-Reauth-Token", reauthToken));
+        assertThat(exceptions.getStatusCode().value()).isEqualTo(200);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> manual = (java.util.List<Map<String, Object>>)
+                body(exceptions).get("manualReviewCommands");
+        assertThat(manual).isNotEmpty();
+        Map<String, Object> row = manual.stream()
+                .filter(m -> commandId.toString().equals(String.valueOf(m.get("id")))).findFirst().orElseThrow();
+        // sensitive free-text columns are truncated to a prefix + mask marker
+        assertThat((String) row.get("provider_key")).endsWith("…").hasSizeLessThanOrEqualTo(9);
+        assertThat((String) row.get("last_error")).endsWith("…").hasSizeLessThanOrEqualTo(9);
+        // identifiers and amounts are left intact
+        assertThat(String.valueOf(row.get("id"))).isEqualTo(commandId.toString());
+        assertThat(row.get("kind")).isEqualTo("CAPTURE");
+        assertThat(((Number) row.get("attempts")).intValue()).isZero();
+    }
+
+    @Test
     void dispatcherManualRetryPicksUpCommandsAgain() {
         setupAdmin();
         UUID commandId = jdbc.queryForObject("""

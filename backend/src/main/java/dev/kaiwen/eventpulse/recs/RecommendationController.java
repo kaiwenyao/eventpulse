@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import dev.kaiwen.eventpulse.auth.AuthUser;
 import dev.kaiwen.eventpulse.common.error.ApiException;
 import dev.kaiwen.eventpulse.common.error.ErrorCode;
+import dev.kaiwen.eventpulse.common.web.RateLimiter;
 import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,12 +39,14 @@ public class RecommendationController {
     private final RecommendationService recommendations;
     private final JdbcTemplate jdbc;
     private final OutboxWriter outbox;
+    private final RateLimiter rateLimiter;
 
     public RecommendationController(RecommendationService recommendations, JdbcTemplate jdbc,
-            OutboxWriter outbox) {
+            OutboxWriter outbox, RateLimiter rateLimiter) {
         this.recommendations = recommendations;
         this.jdbc = jdbc;
         this.outbox = outbox;
+        this.rateLimiter = rateLimiter;
     }
 
     @Operation(summary = "Recommendations with requestId, frozen candidate cursor and reason codes")
@@ -59,6 +62,9 @@ public class RecommendationController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public Map<String, Object> interactions(@AuthenticationPrincipal AuthUser user,
             @RequestBody InteractionBatch batch) {
+        rateLimiter.check("interactions",
+                user != null ? user.id().toString()
+                        : "session:" + (batch.sessionId() == null ? "anon" : batch.sessionId()));
         if (batch.requestId() == null || batch.requestId().isBlank() || batch.requestId().length() > 80) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "requestId required",
                     Map.of("requestId", "required, max 80 chars"));
