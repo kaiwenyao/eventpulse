@@ -227,7 +227,7 @@ cd ml && uv run python -m ml_eval.evaluate    # 打印完整评估报告
 make test-all              # backend + frontend + ml，与 CI 三 job 对应
 ```
 
-不含 gitleaks / dependency-review / SBOM attest（那些只在 GitHub Actions 跑）。
+不含 gitleaks / dependency-review（那些只在 GitHub Actions 跑）。
 
 ### 7. 可选：k6 负载
 
@@ -267,7 +267,7 @@ docker run --rm -i --network host grafana/k6 run \
 | 数据 | PostgreSQL 18.6 / PostGIS 3.6.2 / pgvector 0.8.6（源码编译进镜像） |
 | 消息 / 缓存 | Kafka 4.3.1（KRaft 单节点，demo 用）/ Redis 8.2.9 |
 | 测试 | JUnit 5、Testcontainers（PostGIS + Kafka）；Vitest + Playwright；ml 评估用 uv + pytest |
-| 构建 | Maven 3.9+（`mvn`）、npm/uv lockfile、CycloneDX SBOM + provenance attest |
+| 构建 | Maven 3.9+（`mvn`）、npm/uv lockfile、CycloneDX SBOM |
 | CI | GitHub Actions（`.github/workflows/ci.yml`）：backend `mvn verify` / frontend lint+coverage+e2e+build / ml pytest |
 
 ## 仓库结构
