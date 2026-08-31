@@ -34,7 +34,8 @@ class DemoDataSeederIT extends IntegrationTestBase {
         Integer organisers = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM organisers WHERE name = '脉搏现场工作室'", Integer.class);
         Integer events = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM events WHERE organiser_id = (SELECT id FROM organisers LIMIT 1)",
+                "SELECT COUNT(*) FROM events WHERE organiser_id = "
+                        + "(SELECT id FROM organisers WHERE name = '脉搏现场工作室' LIMIT 1)",
                 Integer.class);
         assertThat(adminUsers).isEqualTo(1);
         assertThat(organisers).isEqualTo(1);
@@ -48,19 +49,21 @@ class DemoDataSeederIT extends IntegrationTestBase {
         // second run is a no-op
         seeder.run();
         Integer eventsAfter = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM events WHERE organiser_id = (SELECT id FROM organisers LIMIT 1)",
+                "SELECT COUNT(*) FROM events WHERE organiser_id = "
+                        + "(SELECT id FROM organisers WHERE name = '脉搏现场工作室' LIMIT 1)",
                 Integer.class);
         assertThat(eventsAfter).isEqualTo(events);
 
-        // a database where users exist but events were never seeded still gets its events
-        UUID organiserUserId = jdbc.queryForObject(
-                "SELECT owner_user_id FROM organisers WHERE name = '脉搏现场工作室' LIMIT 1", UUID.class);
+        // a database where users exist but events were never seeded still gets its events.
+        // NB events.organiser_id references organisers(id), not the owner users(id).
+        UUID organiserId = jdbc.queryForObject(
+                "SELECT id FROM organisers WHERE name = '脉搏现场工作室' LIMIT 1", UUID.class);
         jdbc.update("DELETE FROM interactions WHERE event_id IN (SELECT id FROM events WHERE organiser_id = ?)",
-                organiserUserId);
-        jdbc.update("DELETE FROM events WHERE organiser_id = ?", organiserUserId);
+                organiserId);
+        jdbc.update("DELETE FROM events WHERE organiser_id = ?", organiserId);
         seeder.run();
         Integer eventsRestored = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM events WHERE organiser_id = ?", Integer.class, organiserUserId);
+                "SELECT COUNT(*) FROM events WHERE organiser_id = ?", Integer.class, organiserId);
         assertThat(eventsRestored).isGreaterThanOrEqualTo(4);
     }
 
@@ -68,7 +71,19 @@ class DemoDataSeederIT extends IntegrationTestBase {
     void embeddingServiceWritesVectorsWhenPgvectorPresent() {
         // the test image ships pgvector, so the column exists
         assertThat(embeddingService.isVectorAvailable()).isTrue();
-        UUID eventId = jdbc.queryForObject("SELECT id FROM events LIMIT 1", UUID.class);
+        UUID ownerUserId = UUID.randomUUID();
+        jdbc.update("INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, 'x', 'ORGANISER')",
+                ownerUserId, "embed-" + ownerUserId + "@test.dev");
+        UUID organiserId = jdbc.queryForObject(
+                "INSERT INTO organisers (owner_user_id, name, status) VALUES (?, 'Embed Organiser', 'ACTIVE') RETURNING id",
+                UUID.class, ownerUserId);
+        UUID eventId = jdbc.queryForObject("""
+                INSERT INTO events (organiser_id, title, category, status, starts_at, ends_at, policy)
+                VALUES (?, 'Embed Event', 'music', 'PUBLISHED',
+                        now() - interval '1 hour', now() + interval '6 hours',
+                        '{"cancellable": true, "cancellationDeadlineHoursBeforeStart": 0, "resaleAllowed": false, "version": 1}'::jsonb)
+                RETURNING id
+                """, UUID.class, organiserId);
         embeddingService.embedEvent(eventId, "摇滚 音乐 concert", "music", "描述 description");
         String vector = jdbc.queryForObject("SELECT embedding::text FROM events WHERE id = ?", String.class,
                 eventId);

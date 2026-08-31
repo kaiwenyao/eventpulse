@@ -104,10 +104,14 @@ public class BookingService {
         // an unknown requirement can only pass with an explicit confirmation.
         Integer requiredAge = event.ageRequirement();
         if (requiredAge != null) {
-            Integer verified = jdbc.queryForObject(
+            // query() returns an empty list when no eligibility row exists, so a
+            // user with no verified fact is treated as "unverified" rather than
+            // surfacing an EmptyResultDataAccessException as a 500.
+            List<Integer> facts = jdbc.queryForList(
                     "SELECT minimum_verified_age FROM user_eligibility WHERE user_id = ? "
-                            + "AND (expires_at IS NULL OR expires_at > now())",
+                            + "AND (expires_at IS NULL OR expires_at > now()) ORDER BY minimum_verified_age DESC",
                     Integer.class, userId);
+            Integer verified = facts.isEmpty() ? null : facts.get(0);
             if (verified == null || verified < requiredAge) {
                 throw new ApiException(ErrorCode.AGE_REQUIREMENT_NOT_CONFIRMED,
                         "age requirement not satisfied by a verified fact");
