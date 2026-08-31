@@ -108,6 +108,21 @@ class TicketRedeemIT extends IntegrationTestBase {
     }
 
     @Test
+    void redeemRequiresOrganiserRole() {
+        Confirmed confirmed = confirmedBooking();
+        // A plain USER — even the booking owner — lacks the ORGANISER role the
+        // plan requires on redemption (§7.3/§8), so the role gate must reject
+        // them before any ownership check runs.
+        ResponseEntity<Map> response = post("/api/v1/organiser/tickets/redeem", confirmed.user().token(),
+                Map.of("token", confirmed.tokens().get(0)), CanonicalJson.newOpaqueToken());
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
+        Integer used = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM tickets WHERE booking_id = ? AND status = 'USED'", Integer.class,
+                UUID.fromString(confirmed.bookingId()));
+        assertThat(used).isZero();
+    }
+
+    @Test
     void cancelledTicketIsNotRedeemable() {
         Confirmed confirmed = confirmedBooking();
         UserRef organiserUser = createUser("ORGANISER");
