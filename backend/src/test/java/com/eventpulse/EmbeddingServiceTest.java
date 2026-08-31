@@ -1,11 +1,8 @@
 package com.eventpulse;
 
-import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 
-import com.eventpulse.common.AppProperties;
-import com.eventpulse.common.error.ApiException;
-import com.eventpulse.common.error.ErrorCode;
 import com.eventpulse.recs.EmbeddingService;
 
 import org.junit.jupiter.api.Test;
@@ -17,6 +14,8 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** EmbeddingService: pgvector detection, deterministic hashing, write path. */
