@@ -5,6 +5,127 @@
 React 19 · Spring Boot 4.1.1（模块化单体）· PostgreSQL 18 + PostGIS 3.6 + pgvector ·
 Apache Kafka 4.3.1（KRaft）· Redis 8.2.9 · Docker Compose 一键启动。
 
+## 快速开始（Docker Compose）
+
+不装 JDK / Node / Maven 也能把整套 demo 栈拉起来：Postgres、Kafka、Redis、后端 API、前端（nginx 反代 `/api`）。本机只需要 **Docker Desktop（macOS / Windows）或 Docker Engine + Compose v2（Linux）**。
+
+### 1. 端口与磁盘
+
+首次 `make up` 会构建三个镜像（Postgres 要从源码编 pgvector，backend 跑 Maven，frontend 跑 `npm ci`），大约 **5–15 分钟**，视网络和 CPU 而定。之后再启动会复用镜像，几十秒即可。
+
+请确保下列端口空闲（被占用时对应容器起不来）：
+
+| 端口 | 服务 | 说明 |
+| --- | --- | --- |
+| 3000 | frontend | SPA；`/api` 和 `/actuator` 反代到 backend |
+| 8080 | backend | Spring Boot API |
+| 5432 | postgres | PostgreSQL 18 + PostGIS + pgvector |
+| 6379 | redis | 缓存 |
+| 9092 | kafka | 对外广告 `127.0.0.1:9092`（避免 macOS 上 `localhost` 走 IPv6） |
+
+### 2. 配置环境变量
+
+```bash
+cp .env.example .env
+```
+
+demo 可以直接用 `.env.example` 里的默认值，不必改。各变量含义：
+
+| 变量 | 默认 | 作用 |
+| --- | --- | --- |
+| `SECRET_KEY` | 已填开发默认 | JWT 签名；轮换会使已签发 token 失效 |
+| `TOKEN_PEPPER` | 已填开发默认 | 票券 token 哈希 pepper |
+| `DB_PASSWORD` | `eventpulse` | Postgres 密码 |
+| `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | 允许的前端 Origin |
+| `GATEWAY_SCENARIO_RULES` | 空 | 模拟支付网关场景（见下文）；空 = 一律成功 |
+
+prod profile 检测到默认密钥或非空 `GATEWAY_SCENARIO_RULES` 会拒绝启动。demo 栈走的是 `SPRING_PROFILES_ACTIVE=demo`，不受此限制。
+
+### 3. 启动
+
+仓库根目录：
+
+```bash
+make up          # 等价于 docker compose up -d --build
+make ps          # 五个服务都应是 healthy：postgres / kafka / redis / backend / frontend
+```
+
+backend 的健康检查有 60s `start_period`（Flyway 迁移 + demo seed），第一次起来可能要等一两分钟。若 `make ps` 里 backend 还是 `health: starting`，再等一会儿或 `make logs` 跟日志。
+
+确认 API 已就绪：
+
+```bash
+curl -s http://localhost:8080/actuator/health
+# 期望：{"status":"UP", ...}
+```
+
+然后打开前端：**http://localhost:3000**
+
+也可以直接打 backend：**http://localhost:8080**（无 UI，只有 API）。经 nginx 反代时，同一套 API 在 `http://localhost:3000/api/...`。
+
+### 4. 登录演示账号
+
+demo profile 启动时会幂等播种 3 个账号和 4 个已发布活动。账号：
+
+| 角色 | 邮箱 | 密码 | 登录后能看到 |
+| --- | --- | --- | --- |
+| 普通用户 | `user@eventpulse.dev` | `User!234567890` | 发现、下单、支付、我的订单、票券二维码 |
+| 主办方 | `organiser@eventpulse.dev` | `Organiser!234567890` | 以上 + 主办方后台、现场核销 |
+| 管理员 | `admin@eventpulse.dev` | `Admin!234567890` | 以上 + 管理异常视图 |
+
+种子活动（均可购票，限购 10 张/人）：
+
+| 活动 | 类别 | 城市 | 票档（容量） |
+| --- | --- | --- | --- |
+| 城市脉搏 · 独立摇滚之夜 | music | 上海 | 普通票 ¥180（300）/ VIP票 ¥380（50） |
+| AI 与城市生活 · 技术沙龙 | tech | 上海 | 早鸟票 ¥49（120）/ 现场票 ¥99（80） |
+| 滨江晨跑 5K | sports | 上海 | 免费票（200） |
+| 城市光影 · 数字艺术展 | art | 北京 | 平日票 ¥88（500）/ 双人票 ¥158（100） |
+
+建议走一遍的最短路径：用普通用户登录 → 发现页点进任一活动 → 选票档并创建预订 → 结算页支付 → 「我的订单」查看票券。主办方登录后可到「核销」页扫同一张票两次，第二次应被拒绝。更完整的 8 分钟演示见 [`docs/demo-script.md`](docs/demo-script.md)。
+
+### 5. 可选：API 冒烟
+
+栈 healthy 之后，不装 JDK 也能跑全链路 HTTP 断言（注册 → 搜索 → 预订幂等 → 支付出票 → 核销 → 双扫拒绝 → 支付前取消）。需要本机 `curl` 和 `python3`：
+
+```bash
+make smoke                 # 默认打 http://localhost:8080
+# 经 nginx 反代：
+# BASE_URL=http://localhost:3000/api  bash scripts/smoke-test.sh
+```
+
+全部 PASS 会打印 `SMOKE TEST: ALL GREEN`。
+
+### 6. 停栈与清数据
+
+```bash
+make logs                  # 跟随 backend 日志；Ctrl-C 退出，栈继续跑
+make down                  # 停容器，保留 Postgres 数据卷（账号和订单还在）
+make down-v                # 停容器并删除数据卷；下次 make up 会重新 seed
+```
+
+seed 是幂等的：已有演示用户就不会重插。如果首页没有那 4 个活动、或登录密码对不上，多半是旧卷残留，`make down-v && make up` 即可。
+
+### 常见问题
+
+**某个服务一直 unhealthy。** `docker compose ps` 看是谁，再 `docker compose logs <服务名>`。backend 最常见的是等 Postgres/Kafka 健康检查、或 8080 已被本机 `spring-boot:run` 占用——不要同时 `make up` 和本机跑后端。
+
+**端口已被占用。** 例如本机已经有 Postgres 占 5432：先停掉那个进程，或改 `docker-compose.yml` 的宿主机端口映射（改了的话 `.env` / 连接串也要一起改）。
+
+**Apple Silicon / ARM。** Postgres 镜像由仓库自己的 `deploy/postgres/Dockerfile` 构建（官方 `postgres:18.6` + apt PostGIS + 源码 pgvector），有 linux/arm64，不依赖没有 arm64 manifest 的 `postgis/postgis`。
+
+**改了 `.env` 不生效。** Compose 只在创建容器时读环境变量。改完后 `docker compose up -d --force-recreate backend`（或 `make down && make up`）。
+
+**演示支付失败 / 迟到成功。** 默认 `GATEWAY_SCENARIO_RULES` 为空，网关一律成功。要注入场景，在 `.env` 里写成 `前缀:场景:秒数`，按支付意图的 provider key 前缀匹配，例如：
+
+```
+GATEWAY_SCENARIO_RULES=pi-late:LATE_SUCCESS:3;pi-fail:FAILURE:0
+```
+
+场景取值：`SUCCESS` / `FAILURE` / `LATE_SUCCESS` / `UNKNOWN_THEN_SUCCESS` / `UNKNOWN_THEN_FAILURE` / `ALWAYS_UNKNOWN`。改完重建 backend。只在 demo profile 生效。
+
+日常改 Java/TS、跑单测，见下面「本地测试」。架构与状态机见 [`docs/architecture.md`](docs/architecture.md)。
+
 ## 这个项目重点验证什么
 
 按计划的优先级排序：**库存/限购/权限正确性 > 支付/退款可恢复性 > 票券安全 > 事件顺序 > 推荐可评估性 > 完整体验**。
@@ -22,27 +143,6 @@ Apache Kafka 4.3.1（KRaft）· Redis 8.2.9 · Docker Compose 一键启动。
 | 推荐 V0/V1（冻结候选 cursor、reason codes、pgvector 可选）+ 互动事件 | `service/RecommendationService` | 冒烟脚本 |
 | 最小 SSE（Origin 校验 + 所有权 + 心跳，REST 兜底） | `controller/BookingSseController` | 手工 curl 验证 |
 | 推荐离线评估（时间切分 / NDCG@10 / Recall@10 / coverage / diversity / bootstrap CI，synthetic 标注） | `ml/` | `uv run pytest`（3 项，可复现） |
-
-## 快速开始（Docker Compose）
-
-```bash
-cp .env.example .env       # 按需修改密钥
-make up                    # 构建并启动 postgres/kafka/redis/backend/frontend
-open http://localhost:3000 # 前端（/api 反代到 backend）
-curl http://localhost:8080/actuator/health   # 后端健康检查
-```
-
-demo profile 会自动播种：4 个已发布活动、3 个演示账号：
-
-| 角色 | 邮箱 | 密码 |
-| --- | --- | --- |
-| 普通用户 | `user@eventpulse.dev` | `User!234567890` |
-| 主办方 | `organiser@eventpulse.dev` | `Organiser!234567890` |
-| 管理员 | `admin@eventpulse.dev` | `Admin!234567890` |
-
-支付网关场景（演示用，服务端配置）：`.env` 中 `GATEWAY_SCENARIO_RULES`
-形如 `pi-late:LATE_SUCCESS:3;pi-fail:FAILURE:0`（按 provider key 前缀匹配）。
-prod profile 检测到非空场景规则或默认密钥会拒绝启动。
 
 ## 本地测试
 
