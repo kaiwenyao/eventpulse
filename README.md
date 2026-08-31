@@ -37,9 +37,8 @@ demo 可以直接用 `.env.example` 里的默认值，不必改。各变量含�
 | `TOKEN_PEPPER` | 已填开发默认 | 票券 token 哈希 pepper |
 | `DB_PASSWORD` | `eventpulse` | Postgres 密码 |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | 允许的前端 Origin |
-| `GATEWAY_SCENARIO_RULES` | 空 | 模拟支付网关场景（见下文）；空 = 一律成功 |
 
-prod profile 检测到默认密钥或非空 `GATEWAY_SCENARIO_RULES` 会拒绝启动。demo 栈走的是 `SPRING_PROFILES_ACTIVE=demo`，不受此限制。
+prod profile 检测到默认密钥会拒绝启动。demo 栈走的是 `SPRING_PROFILES_ACTIVE=demo`，不受此限制。
 
 ### 3. 启动
 
@@ -82,7 +81,7 @@ demo profile 启动时会幂等播种 3 个账号和 4 个已发布活动。账�
 | 滨江晨跑 5K | sports | 上海 | 免费票（200） |
 | 城市光影 · 数字艺术展 | art | 北京 | 平日票 ¥88（500）/ 双人票 ¥158（100） |
 
-建议走一遍的最短路径：用普通用户登录 → 发现页点进任一活动 → 选票档并创建预订 → 结算页支付 → 「我的订单」查看票券。主办方登录后可到「核销」页扫同一张票两次，第二次应被拒绝。更完整的 8 分钟演示见 [`docs/demo-script.md`](docs/demo-script.md)。
+建议走一遍的最短路径：用普通用户登录 → 发现页点进任一活动 → 选票档并创建预订 → 结算页用钱包余额支付（立即出票） → 「我的订单」查看票券。主办方登录后可到「核销」页扫同一张票两次，第二次应被拒绝。更完整的 8 分钟演示见 [`docs/demo-script.md`](docs/demo-script.md)。
 
 ### 5. 可选：API 冒烟
 
@@ -116,14 +115,6 @@ seed 是幂等的：已有演示用户就不会重插。如果首页没有那 4 
 
 **改了 `.env` 不生效。** Compose 只在创建容器时读环境变量。改完后 `docker compose up -d --force-recreate backend`（或 `make down && make up`）。
 
-**演示支付失败 / 迟到成功。** 默认 `GATEWAY_SCENARIO_RULES` 为空，网关一律成功。要注入场景，在 `.env` 里写成 `前缀:场景:秒数`，按支付意图的 provider key 前缀匹配，例如：
-
-```
-GATEWAY_SCENARIO_RULES=pi-late:LATE_SUCCESS:3;pi-fail:FAILURE:0
-```
-
-场景取值：`SUCCESS` / `FAILURE` / `LATE_SUCCESS` / `UNKNOWN_THEN_SUCCESS` / `UNKNOWN_THEN_FAILURE` / `ALWAYS_UNKNOWN`。改完重建 backend。只在 demo profile 生效。
-
 日常改 Java/TS、跑单测，见下面「本地测试」。架构与状态机见 [`docs/architecture.md`](docs/architecture.md)。
 
 ## 这个项目重点验证什么
@@ -133,9 +124,9 @@ GATEWAY_SCENARIO_RULES=pi-late:LATE_SUCCESS:3;pi-fail:FAILURE:0
 | 能力 | 实现位置 | 自动化验证 |
 | --- | --- | --- |
 | 无超卖 / 限购（协议 A：quota UPSERT → 锁 quota → 锁 inventory → 条件更新） | `service/BookingService` | `BookingConcurrencyIT`（100 并发 vs 50 容量；首次 quota 行并发） |
-| 状态竞争唯一获胜（协议 B：booking → quota → inventory → reservation → tickets/payment 固定锁序） | `service/BookingTransitions` | `BookingLifecycleIT`（支付单飞、超时 vs 迟到成功、取消退款） |
+| 状态竞争唯一获胜（协议 B：booking → quota → inventory → reservation → tickets/payment_balance → user_wallet） | `service/BookingTransitions` | `BookingLifecycleIT`（支付单飞、超时 vs 支付、取消退款） |
 | 请求指纹幂等（HMAC digest + canonical JSON hash，claim 随业务事务回滚） | `service/IdempotencyService` + `common/CanonicalJson` | `BookingConcurrencyIT` / `CanonicalJsonTest` |
-| 单活动支付意图（部分唯一索引）+ Durable Command 租约 + UNKNOWN 状态查询 + 迟到 capture 自动补偿退款 | `payment/CommandDispatcher` + `payment/SimulatedPaymentGateway` | `BookingLifecycleIT` |
+| 单活动支付意图（部分唯一索引）+ 事务内钱包扣款/退款 + 退款额度预占 | `service/BookingTransitions` + `user_wallets` | `BookingLifecycleIT` |
 | 退款额度预占（captured / refund_reserved / refunded 同行 CHECK） | `db/migration/V3` | `BookingLifecycleIT` |
 | 票券 CSPRNG token + pepper 哈希 + 原子核销 + 重复扫码幂等 | `service/TicketService` | `TicketRedeemIT` |
 | 无间隙 Outbox 序号（aggregate counter 行锁递增，回滚无洞）+ relay + consumer cursor + gap/DLT 恢复 | `outbox/*` | `OutboxKafkaIT` |
@@ -197,8 +188,8 @@ open http://localhost:5173
 make test                  # 构建 postgres 测试镜像 → mvn verify → 清理 Testcontainers
 # 等价拆开：
 docker build -t eventpulse/postgres:18-3.6-pgvector deploy/postgres
-mvn verify                 # 仓库根；含并发无超卖、限购、幂等、支付单飞、迟到 capture、
-                           # 退款预占、票券双扫、Outbox 无间隙/回滚无洞、消费者 gap、DLT
+mvn verify                 # 仓库根；含并发无超卖、限购、幂等、支付单飞、
+                           # 钱包余额不足、退款预占、票券双扫、Outbox 无间隙/回滚无洞、消费者 gap、DLT
 ```
 
 只跑某一个 IT 类：`mvn -pl backend -Dtest=BookingConcurrencyIT test`。
@@ -300,6 +291,6 @@ Grafana dashboard 与 Prometheus 告警规则见 `deploy/observability/`，可�
 
 ## 生产化边界（诚实声明）
 
-本仓库交付的是 demo 级闭环：单节点 Kafka/Redis 无故障容错；模拟支付网关为进程内隔离实现；
+本仓库交付的是 demo 级闭环：单节点 Kafka/Redis 无故障容错；支付为进程内用户钱包（开户赠金，无充值 API）；
 Kubernetes/Helm 等不属于 MVP。进入真实生产前需补齐备份/恢复演练、RPO/RTO、密钥轮换、
 真实支付/身份供应商合规等（见计划 §12 与 docs/security-matrix.md）。

@@ -128,6 +128,11 @@ public abstract class IntegrationTestBase {
         jdbc.update("""
                 INSERT INTO access_tokens (user_id, token_hash, expires_at) VALUES (?, ?, now() + interval '2 hours')
                 """, id, sha256(token));
+        jdbc.update("""
+                INSERT INTO user_wallets (user_id, currency, available_amount_minor)
+                VALUES (?, 'CNY', 1000000)
+                ON CONFLICT (user_id) DO NOTHING
+                """, id);
         return new UserRef(id, token);
     }
 

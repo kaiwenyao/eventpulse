@@ -80,6 +80,7 @@ public class AuthServiceImpl implements AuthService {
                         Map.of("email", "already registered"));
             }
             upsertPreferences(userId, request.preferences());
+            grantWallet(userId);
             issueRefresh(userId, response);
             return issueAccess(userId);
         });
@@ -205,11 +206,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public UserInfo me(UUID userId) {
-        return jdbc.query("""
-                SELECT id, email, role, display_name FROM users WHERE id = ?
-                """, (rs, i) -> new UserInfo(rs.getObject("id", UUID.class), rs.getString("email"),
-                rs.getString("role"), rs.getString("display_name")), userId).stream().findFirst()
-                .orElseThrow(ApiException::notFound);
+        return loadUser(userId);
     }
 
     @Override
@@ -262,11 +259,31 @@ public class AuthServiceImpl implements AuthService {
         Duration ttl = properties.security().accessTokenTtl();
         jdbc.update("INSERT INTO access_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
                 userId, CanonicalJson.sha256Hex(raw), java.sql.Timestamp.from(Instant.now().plus(ttl)));
-        UserInfo user = jdbc.query("""
-                SELECT id, email, role, display_name FROM users WHERE id = ?
-                """, (rs, i) -> new UserInfo(rs.getObject("id", UUID.class), rs.getString("email"),
-                rs.getString("role"), rs.getString("display_name")), userId).getFirst();
+        UserInfo user = loadUser(userId);
         return new TokenResponse(raw, ttl.toSeconds(), user);
+    }
+
+    private UserInfo loadUser(UUID userId) {
+        return jdbc.query("""
+                SELECT u.id, u.email, u.role, u.display_name,
+                       COALESCE(w.available_amount_minor, 0) AS available_amount_minor,
+                       COALESCE(w.currency, 'CNY') AS currency
+                FROM users u
+                LEFT JOIN user_wallets w ON w.user_id = u.id
+                WHERE u.id = ?
+                """, (rs, i) -> new UserInfo(rs.getObject("id", UUID.class), rs.getString("email"),
+                rs.getString("role"), rs.getString("display_name"),
+                rs.getObject("available_amount_minor", Long.class), rs.getString("currency")), userId)
+                .stream().findFirst().orElseThrow(ApiException::notFound);
+    }
+
+    private void grantWallet(UUID userId) {
+        long grant = properties.wallet() == null ? 1_000_000L : properties.wallet().signupGrantMinor();
+        jdbc.update("""
+                INSERT INTO user_wallets (user_id, currency, available_amount_minor)
+                VALUES (?, 'CNY', ?)
+                ON CONFLICT (user_id) DO NOTHING
+                """, userId, grant);
     }
 
     private void issueRefresh(UUID userId, HttpServletResponse response) {

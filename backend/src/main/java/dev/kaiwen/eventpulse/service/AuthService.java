@@ -15,7 +15,8 @@ public interface AuthService {
     public record TokenResponse(String accessToken, long expiresInSeconds, UserInfo user) {
     }
 
-    public record UserInfo(UUID id, String email, String role, String displayName) {
+    public record UserInfo(UUID id, String email, String role, String displayName,
+                           Long availableAmountMinor, String currency) {
     }
 
     public record RegisterRequest(String email, String password, String displayName, PreferencesInput preferences) {

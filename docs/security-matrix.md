@@ -25,8 +25,8 @@
 | --- | --- | --- |
 | 库存/限额 | 同行 CHECK + 条件 UPDATE（协议 A/B） | 100 并发无超卖、无限购突破（自动化） |
 | 单支付意图 | 部分唯一索引 | 双 key 一个意图（自动化） |
-| 退款预占 | balance 单行 CHECK + 预占先行 | 无超额退款；失败保留预占（自动化） |
-| 迟到 capture | 补偿 REFUND command（同 key 幂等） | 金额守恒 refunded == captured（自动化） |
+| 钱包扣款 | 条件 UPDATE available >= amt | 余额不足 409；过期不扣钱包（自动化） |
+| 退款预占 | balance 单行 CHECK + 预占后贷记钱包 | 无超额退款；取消后 refunded == captured（自动化） |
 | 票券 | CSPRNG >=128bit + HMAC(pepper) 哈希；原子 ACTIVE→USED；owner 校验；限流 | 双扫单成功；跨 owner 404；token 不入日志/事件/URL（自动化） |
 
 ## 浏览器边界

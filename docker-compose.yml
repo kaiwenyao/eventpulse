@@ -82,7 +82,6 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change-me-please-32-bytes-minimum-secret!!}
       TOKEN_PEPPER: ${TOKEN_PEPPER:-change-me-please-32-bytes-minimum-pepper!!}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
-      GATEWAY_SCENARIO_RULES: ${GATEWAY_SCENARIO_RULES:-}
     ports:
       - "8080:8080"
     healthcheck:

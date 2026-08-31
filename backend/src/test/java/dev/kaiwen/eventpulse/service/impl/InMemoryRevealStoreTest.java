@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,6 +21,14 @@ class InMemoryRevealStoreTest {
 
     private static final Instant FAR_FUTURE = Instant.now().plusSeconds(3600);
     private static final Instant EXPIRED = Instant.now().minusSeconds(1);
+
+    // The store is a static singleton; theStoreIsSizeBounded() fills it to its
+    // cap and must not leak that state into other tests that rely on the
+    // Redis-down fallback.
+    @AfterEach
+    void resetStore() {
+        TicketServiceImpl.InMemoryRevealStore.clear();
+    }
 
     @Test
     void snapshotIsNonDestructiveAndKeepsEveryEntry() {

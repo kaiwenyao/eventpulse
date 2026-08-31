@@ -3,18 +3,12 @@ package dev.kaiwen.eventpulse;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
-import dev.kaiwen.eventpulse.dto.BookingDtos;
 import dev.kaiwen.eventpulse.common.CanonicalJson;
-import dev.kaiwen.eventpulse.service.BookingService;
-import dev.kaiwen.eventpulse.payment.CommandDispatcher;
-import dev.kaiwen.eventpulse.service.TicketIssuer;
 import dev.kaiwen.eventpulse.IntegrationTestBase.OrganiserRef;
 import dev.kaiwen.eventpulse.IntegrationTestBase.UserRef;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,12 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Booking edge branches: age confirmation, sale window, quantity bounds,
  * idempotency key requirements, pay/redirect branches, redemption window and
- * the full void-to-refund compensation chain on a late capture.
+ * the cancel vs used-ticket rejection path.
  */
 class BookingEdgeCasesIT extends IntegrationTestBase {
-
-    @Autowired
-    private CommandDispatcher dispatcher;
 
     @Test
     void bookingRequestValidationBranches() {
@@ -171,7 +162,6 @@ class BookingEdgeCasesIT extends IntegrationTestBase {
         String bookingId = (String) body(created).get("id");
         post("/api/v1/bookings/" + bookingId + "/pay", user.token(), Map.of(),
                 CanonicalJson.newOpaqueToken());
-        dispatcher.tick();
         String key = CanonicalJson.newOpaqueToken();
 
         // Policy snapshot forbids cancellation -> 409 and the claim rolls back.
@@ -192,7 +182,7 @@ class BookingEdgeCasesIT extends IntegrationTestBase {
         ResponseEntity<Map> cancelled = post("/api/v1/bookings/" + bookingId + "/cancel", user.token(),
                 Map.of("reason", "plans changed"), key);
         assertThat(cancelled.getStatusCode().value()).isEqualTo(200);
-        assertThat(body(cancelled).get("status")).isEqualTo("CANCELLATION_PENDING");
+        assertThat(body(cancelled).get("status")).isEqualTo("CANCELLED");
     }
 
     @Test
@@ -206,7 +196,6 @@ class BookingEdgeCasesIT extends IntegrationTestBase {
         String bookingId = (String) body(created).get("id");
         post("/api/v1/bookings/" + bookingId + "/pay", user.token(), Map.of(),
                 CanonicalJson.newOpaqueToken());
-        dispatcher.tick();
         List<String> tokens = context.getBean(dev.kaiwen.eventpulse.service.TicketService.class)
                 .revealTokens(user.id(), UUID.fromString(bookingId));
         assertThat(tokens).hasSize(1);
@@ -224,52 +213,26 @@ class BookingEdgeCasesIT extends IntegrationTestBase {
     }
 
     @Test
-    void lateCaptureAfterVoidGoesThroughFullRefundChain() {
+    void expireWithoutPayDoesNotDebitWallet() {
         OrganiserRef fixture = createEventWithTier(10, 5);
         UserRef user = createUser("USER");
         ResponseEntity<Map> created = post("/api/v1/bookings", user.token(),
                 Map.of("eventId", fixture.eventId().toString(), "tierId", fixture.tierId().toString(),
                         "quantity", 2, "ageConfirmed", true),
                 CanonicalJson.newOpaqueToken());
-        String bookingId = (String) body(created).get("id");
-        UUID bookingUuid = UUID.fromString(bookingId);
-        post("/api/v1/bookings/" + bookingId + "/pay", user.token(), Map.of(),
-                CanonicalJson.newOpaqueToken());
-
-        // capture already succeeded at the gateway, but the command is unprocessed
-        String captureKey = jdbc.queryForObject(
-                "SELECT provider_key FROM payment_intents WHERE booking_id = ?", String.class, bookingUuid);
-        jdbc.update("""
-                INSERT INTO gateway_results (provider_key, kind, amount_minor, scenario, status, available_at)
-                VALUES (?, 'CAPTURE', 20000, 'SUCCESS', 'SUCCEEDED', now())
-                """, captureKey);
-        // ...and the booking expires while the capture command is RUNNING
-        jdbc.update("UPDATE commands SET state = 'RUNNING', lease_until = now() - interval '1 minute' "
-                + "WHERE kind = 'CAPTURE' AND aggregate_id = ?", bookingUuid);
+        UUID bookingUuid = UUID.fromString((String) body(created).get("id"));
+        long walletBefore = jdbc.queryForObject(
+                "SELECT available_amount_minor FROM user_wallets WHERE user_id = ?", Long.class, user.id());
         jdbc.update("UPDATE bookings SET expires_at = now() - interval '1 second' WHERE id = ?", bookingUuid);
         assertThat(transitionsExpire(bookingUuid)).isTrue();
-
-        dispatcher.tick();
-
-        // VOID saw the captured charge and converted; the capture replayed and
-        // detected the existing compensation refund
-        String voidState = jdbc.queryForObject(
-                "SELECT result::text FROM commands WHERE kind = 'VOID' AND aggregate_id = ?", String.class,
-                bookingUuid);
-        assertThat(voidState).contains("refund_exists");
-        long captured = jdbc.queryForObject(
-                "SELECT captured_amount_minor FROM payment_balance WHERE booking_id = ?", Long.class,
-                bookingUuid);
-        assertThat(captured).isEqualTo(20000L);
-
-        // the compensation refund settles on the next tick
-        dispatcher.tick();
-        long refunded = jdbc.queryForObject(
-                "SELECT refunded_amount_minor FROM payment_balance WHERE booking_id = ?", Long.class,
-                bookingUuid);
-        assertThat(refunded).isEqualTo(20000L);
-        assertThat(jdbc.queryForObject("SELECT refund_state FROM bookings WHERE id = ?", String.class,
-                bookingUuid)).isEqualTo("REFUNDED");
+        assertThat(jdbc.queryForObject("SELECT status FROM bookings WHERE id = ?", String.class, bookingUuid))
+                .isEqualTo("EXPIRED");
+        assertThat(jdbc.queryForObject(
+                "SELECT available_amount_minor FROM user_wallets WHERE user_id = ?", Long.class, user.id()))
+                .isEqualTo(walletBefore);
+        Integer reserved = jdbc.queryForObject("SELECT reserved FROM inventory WHERE tier_id = ?",
+                Integer.class, fixture.tierId());
+        assertThat(reserved).isZero();
     }
 
     private boolean transitionsExpire(UUID bookingId) {

@@ -8,8 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import dev.kaiwen.eventpulse.payment.CommandDispatcher;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -21,9 +19,6 @@ class AdminApiIT extends IntegrationTestBase {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
-
-    @Autowired
-    private CommandDispatcher dispatcher;
 
     private UserRef admin;
     private String reauthToken;
@@ -253,23 +248,17 @@ class AdminApiIT extends IntegrationTestBase {
     }
 
     @Test
-    void dispatcherManualRetryPicksUpCommandsAgain() {
+    void retryManualReviewCommandDoesNotRequireADispatcher() {
         setupAdmin();
         UUID commandId = jdbc.queryForObject("""
                 INSERT INTO commands (kind, aggregate_type, aggregate_id, provider_key, state)
-                VALUES ('CAPTURE', 'booking', ?, 'pi-it-dispatch-unknown', 'UNKNOWN_QUERY')
+                VALUES ('NOTIFY', 'booking', ?, 'nt-it-retry', 'MANUAL_REVIEW')
                 RETURNING id
                 """, UUID.class, UUID.randomUUID());
-        // gateway_results: pending forever (ALWAYS_UNKNOWN-like) -> stays in query loop
-        jdbc.update("""
-                INSERT INTO gateway_results (provider_key, kind, amount_minor, scenario, status, available_at)
-                VALUES ('pi-it-dispatch-unknown', 'CAPTURE', 0, 'ALWAYS_UNKNOWN', 'PENDING',
-                        now() + interval '365 days')
-                """);
-        dispatcher.tick();
-        // command either still UNKNOWN_QUERY (not yet claimable) or retried; never guessed
-        String state = jdbc.queryForObject("SELECT state FROM commands WHERE id = ?", String.class,
-                commandId);
-        assertThat(state).isIn("UNKNOWN_QUERY", "MANUAL_REVIEW", "READY");
+        assertThat(exchange("POST", "/api/v1/admin/commands/" + commandId + "/retry", admin.token(),
+                Map.of("reason", "it"), Map.of("X-Reauth-Token", reauthToken)).getStatusCode().value())
+                .isEqualTo(200);
+        assertThat(jdbc.queryForObject("SELECT state FROM commands WHERE id = ?", String.class, commandId))
+                .isEqualTo("READY");
     }
 }

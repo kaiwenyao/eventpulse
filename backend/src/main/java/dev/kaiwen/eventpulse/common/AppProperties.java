@@ -7,7 +7,7 @@ import java.util.List;
 
 @ConfigurationProperties(prefix = "eventpulse")
 public record AppProperties(Security security, Booking booking, Commands commands, Relay relay,
-                            Gateway gateway, RateLimit rateLimit, Seed seed) {
+                            Wallet wallet, RateLimit rateLimit, Seed seed) {
 
     public record Security(String secretKey, String tokenPepper, Duration accessTokenTtl,
                            Duration refreshTokenTtl, Duration adminReauthTtl, List<String> corsAllowedOrigins,
@@ -29,33 +29,8 @@ public record AppProperties(Security security, Booking booking, Commands command
     public record Relay(Duration interval, int batchSize) {
     }
 
-    /**
-     * Scenario rules are a compact server-side spec string, parsed lazily:
-     * "prefix:scenario:delaySeconds;prefix2:scenario2:delaySeconds".
-     * The prod profile must keep it empty (asserted at startup).
-     */
-    public record Gateway(String scenarioRulesSpec, Duration unknownResolveInterval) {
-
-        public List<ScenarioRule> parsedRules() {
-            if (scenarioRulesSpec == null || scenarioRulesSpec.isBlank()) {
-                return List.of();
-            }
-            java.util.ArrayList<ScenarioRule> rules = new java.util.ArrayList<>();
-            for (String entry : scenarioRulesSpec.split(";")) {
-                if (entry.isBlank()) {
-                    continue;
-                }
-                String[] parts = entry.split(":");
-                if (parts.length >= 2) {
-                    rules.add(new ScenarioRule(parts[0].trim(), parts[1].trim().toUpperCase(),
-                            parts.length >= 3 ? Integer.parseInt(parts[2].trim()) : 3));
-                }
-            }
-            return rules;
-        }
-    }
-
-    public record ScenarioRule(String providerKeyPrefix, String scenario, int delaySeconds) {
+    /** Demo signup grant credited onto a new user_wallets row. Not a top-up API. */
+    public record Wallet(long signupGrantMinor) {
     }
 
     public record RateLimit(String login, String register, String redeem, String interactions, String reauth) {

@@ -10,8 +10,6 @@ eventpulse:
     dispatcher-interval: PT1H
   relay:
     interval: PT1H
-  gateway:
-    unknown-resolve-interval: PT1H
   seed:
     enabled: false
 

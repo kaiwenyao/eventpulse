@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 
-import dev.kaiwen.eventpulse.payment.CommandDispatcher;
 import dev.kaiwen.eventpulse.service.TicketService;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,9 +23,6 @@ import dev.kaiwen.eventpulse.common.CanonicalJson;
  * cancel-vs-redeem race has exactly one winner.
  */
 class TicketRedeemIT extends IntegrationTestBase {
-
-    @Autowired
-    private CommandDispatcher dispatcher;
 
     @Autowired
     private TicketService ticketService;
@@ -43,7 +39,6 @@ class TicketRedeemIT extends IntegrationTestBase {
                 CanonicalJson.newOpaqueToken());
         String bookingId = (String) body(created).get("id");
         post("/api/v1/bookings/" + bookingId + "/pay", user.token(), Map.of(), CanonicalJson.newOpaqueToken());
-        dispatcher.tick();
         List<String> tokens = ticketService.revealTokens(user.id(), UUID.fromString(bookingId));
         assertThat(tokens).hasSize(2);
         return new Confirmed(fixture, user, bookingId, tokens);

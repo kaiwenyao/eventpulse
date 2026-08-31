@@ -357,5 +357,11 @@ public class TicketServiceImpl implements TicketService {
         private static void prune() {
             STORE.entrySet().removeIf(e -> e.getValue().expiresAt().isBefore(Instant.now()));
         }
+
+        // Test-only reset so theStoreIsSizeBounded() cannot leave the static
+        // store full and starve later tests that exercise the Redis-down path.
+        static void clear() {
+            STORE.clear();
+        }
     }
 }

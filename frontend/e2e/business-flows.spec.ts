@@ -57,20 +57,27 @@ test.describe('business journeys', () => {
     await expect(page.getByRole('button', { name: '已收藏' })).toBeDisabled()
   })
 
-  test('payment is single-flight while timeout and late-success states remain visible', async ({ page }) => {
+  test('payment debits the wallet and confirms immediately', async ({ page }) => {
     await mockCommon(page, true)
+    await page.route('**/api/v1/auth/me', (route) => json(route, {
+      ...user, availableAmountMinor: 1000000, currency: 'CNY',
+    }))
     let payCalls = 0
     await page.route('**/api/v1/bookings/booking-1/pay', async (route) => {
       payCalls += 1
       await new Promise((resolve) => setTimeout(resolve, 100))
-      await json(route, { id: 'intent-1', state: 'CAPTURE_SUBMITTED' })
+      await json(route, { id: 'intent-1', state: 'SUCCEEDED', providerKey: 'pi-1' })
     })
     await page.goto('/checkout/booking-1')
+    await expect(page.getByText(/钱包余额/)).toBeVisible()
     const payButton = page.getByRole('button', { name: '发起支付' })
     const paymentClick = payButton.click()
     await expect(page.getByRole('button', { name: '处理中…' })).toBeDisabled()
+    await page.route('**/api/v1/bookings/booking-1', (route) => json(route, {
+      ...pending, status: 'CONFIRMED',
+    }))
     await paymentClick
-    await expect(page.getByRole('button', { name: '发起支付' })).toBeVisible()
+    await expect(page.getByText(/出票成功/)).toBeVisible()
     expect(payCalls).toBe(1)
 
     await page.route('**/api/v1/bookings/booking-1', (route) => json(route, {
@@ -78,27 +85,24 @@ test.describe('business journeys', () => {
     }))
     await page.reload()
     await expect(page.getByText(/订单状态：EXPIRED/)).toBeVisible()
-
-    await page.route('**/api/v1/bookings/booking-1', (route) => json(route, {
-      ...pending, status: 'CONFIRMED', activeIntent: { id: 'intent-1', state: 'SUCCEEDED', providerKey: 'pi-1' },
-    }))
-    await page.reload()
-    await expect(page.getByText(/出票成功/)).toBeVisible()
   })
 
-  test('cancellation keeps a failed refund observable', async ({ page }) => {
+  test('cancellation credits the wallet and is immediately cancelled', async ({ page }) => {
     await mockCommon(page, true)
-    await page.route('**/api/v1/bookings/booking-1', (route) => json(route, {
-      ...pending, status: 'CONFIRMED', refunds: [{ id: 'refund-1', amountMinor: 10000, state: 'FAILED' }],
-    }))
-    await page.route('**/api/v1/bookings/booking-1/cancel', (route) => json(route, {
-      ...pending, status: 'CANCELLATION_PENDING', refunds: [{ id: 'refund-1', amountMinor: 10000, state: 'FAILED' }],
-    }))
+    let cancelled = false
+    const refunds = [{ id: 'refund-1', amountMinor: 10000, state: 'SUCCEEDED' }]
+    await page.route('**/api/v1/bookings/booking-1', (route) => json(route, cancelled
+      ? { ...pending, status: 'CANCELLED', refundState: 'REFUNDED', refunds }
+      : { ...pending, status: 'CONFIRMED', refunds }))
+    await page.route('**/api/v1/bookings/booking-1/cancel', (route) => {
+      cancelled = true
+      return json(route, { ...pending, status: 'CANCELLED', refundState: 'REFUNDED', refunds })
+    })
     await page.goto('/bookings/booking-1')
     await expect(page.getByText('退款记录')).toBeVisible()
     page.once('dialog', (dialog) => dialog.accept())
     await page.getByRole('button', { name: '取消订单' }).click()
-    await expect(page.getByText('退款失败时额度保持预占')).toBeVisible()
+    await expect(page.getByText('已取消')).toBeVisible()
   })
 
   test('organiser can redeem a ticket', async ({ page }) => {

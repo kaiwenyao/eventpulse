@@ -8,8 +8,7 @@ import jakarta.annotation.PostConstruct;
 
 /**
  * Week-one compatibility spike conclusion (ADR-005) plus production
- * assertions: the prod profile refuses default secrets and refuses
- * user-controllable gateway scenario rules.
+ * assertions: the prod profile refuses default secrets.
  */
 @Configuration
 @org.springframework.context.annotation.Profile("prod")
@@ -25,9 +24,6 @@ public class ProdSecurityAssertions {
     public void assertHardening() {
         if (properties.security().secretsAreDefaults()) {
             throw new IllegalStateException("prod profile requires SECRET_KEY and TOKEN_PEPPER to be set");
-        }
-        if (!properties.gateway().parsedRules().isEmpty()) {
-            throw new IllegalStateException("prod profile must not define gateway scenario rules");
         }
         // §12: the refresh cookie must be HttpOnly/Secure/SameSite. HttpOnly
         // and SameSite=Lax are unconditional in code; Secure is the
