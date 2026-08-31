@@ -208,6 +208,51 @@ class AdminApiIT extends IntegrationTestBase {
     }
 
     @Test
+    void exceptionOverviewMasksSensitiveFreeTextColumns() {
+        setupAdmin();
+        // a manual-review command with long provider_key + last_error values
+        UUID commandId = jdbc.queryForObject("""
+                INSERT INTO commands (kind, aggregate_type, aggregate_id, provider_key, state, last_error)
+                VALUES ('CAPTURE', 'booking', ?, 'pi-it-very-long-sensitive-key-1234567890',
+                        'MANUAL_REVIEW', 'gateway returned a long diagnostic message full of detail')
+                RETURNING id
+                """, UUID.class, UUID.randomUUID());
+        // a separate RUNNING command carries the lease so it shows up in the
+        // commandsRunningLeases view (filtered WHERE state = 'RUNNING').
+        UUID leaseCommandId = jdbc.queryForObject("""
+                INSERT INTO commands (kind, aggregate_type, aggregate_id, provider_key, state, lease_owner, lease_until)
+                VALUES ('CAPTURE', 'booking', ?, 'pi-it-running-lease-key', 'RUNNING',
+                        'dispatcher-node-secret-identity', now() + interval '5 minutes')
+                RETURNING id
+                """, UUID.class, UUID.randomUUID());
+
+        ResponseEntity<Map> exceptions = exchange("GET", "/api/v1/admin/exceptions", admin.token(), null,
+                Map.of("X-Reauth-Token", reauthToken));
+        assertThat(exceptions.getStatusCode().value()).isEqualTo(200);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> manual = (java.util.List<Map<String, Object>>)
+                body(exceptions).get("manualReviewCommands");
+        assertThat(manual).isNotEmpty();
+        Map<String, Object> row = manual.stream()
+                .filter(m -> commandId.toString().equals(String.valueOf(m.get("id")))).findFirst().orElseThrow();
+        // sensitive free-text columns are truncated to a 4-char prefix + mask marker
+        assertThat((String) row.get("provider_key")).isEqualTo("pi-i…");
+        assertThat((String) row.get("last_error")).isEqualTo("gate…");
+        // identifiers and amounts are left intact
+        assertThat(String.valueOf(row.get("id"))).isEqualTo(commandId.toString());
+        assertThat(row.get("kind")).isEqualTo("CAPTURE");
+        assertThat(((Number) row.get("attempts")).intValue()).isZero();
+
+        // lease_owner is masked in the commandsRunningLeases view
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> leases = (java.util.List<Map<String, Object>>)
+                body(exceptions).get("commandsRunningLeases");
+        Map<String, Object> leaseRow = leases.stream()
+                .filter(m -> leaseCommandId.toString().equals(String.valueOf(m.get("id")))).findFirst().orElseThrow();
+        assertThat((String) leaseRow.get("lease_owner")).isEqualTo("disp…");
+    }
+
+    @Test
     void dispatcherManualRetryPicksUpCommandsAgain() {
         setupAdmin();
         UUID commandId = jdbc.queryForObject("""

@@ -93,23 +93,23 @@ public class AdminController {
             @RequestHeader(value = "X-Reauth-Token", required = false) String reauthToken) {
         requireFreshReauth(user, reauthToken);
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("manualReviewCommands", jdbc.queryForList("""
+        out.put("manualReviewCommands", maskRows(jdbc.queryForList("""
                 SELECT id, kind, aggregate_id, provider_key, attempts, last_error, updated_at
                 FROM commands WHERE state = 'MANUAL_REVIEW' ORDER BY updated_at DESC LIMIT 100
-                """));
-        out.put("unknownCommands", jdbc.queryForList("""
+                """)));
+        out.put("unknownCommands", maskRows(jdbc.queryForList("""
                 SELECT id, kind, aggregate_id, provider_key, attempts, next_attempt_at
                 FROM commands WHERE state = 'UNKNOWN_QUERY' ORDER BY next_attempt_at LIMIT 100
-                """));
+                """)));
         out.put("failedRefunds", jdbc.queryForList("""
                 SELECT r.id, r.booking_id, r.amount_minor, r.state, r.updated_at
                 FROM refunds r WHERE r.state IN ('FAILED', 'MANUAL_REVIEW') ORDER BY r.updated_at DESC LIMIT 100
                 """));
-        out.put("unknownPayments", jdbc.queryForList("""
+        out.put("unknownPayments", maskRows(jdbc.queryForList("""
                 SELECT id, booking_id, provider_key, state, updated_at FROM payment_intents
                 WHERE state = 'UNKNOWN' OR (state = 'CAPTURE_SUBMITTED' AND updated_at < now() - interval '1 hour')
                 LIMIT 100
-                """));
+                """)));
         out.put("openConsumerGaps", jdbc.queryForList("""
                 SELECT id, consumer, aggregate_type, aggregate_id, expected, received, created_at
                 FROM consumer_gaps WHERE state = 'OPEN' ORDER BY created_at DESC LIMIT 100
@@ -118,10 +118,10 @@ public class AdminController {
                 SELECT COALESCE(EXTRACT(EPOCH FROM max(now() - created_at)), 0) FROM outbox
                 WHERE state = 'PENDING'
                 """, Double.class));
-        out.put("commandsRunningLeases", jdbc.queryForList("""
+        out.put("commandsRunningLeases", maskRows(jdbc.queryForList("""
                 SELECT id, kind, lease_owner, lease_until FROM commands
                 WHERE state = 'RUNNING' ORDER BY lease_until LIMIT 50
-                """));
+                """)));
         return out;
     }
 
@@ -307,6 +307,29 @@ public class AdminController {
 
     private String actorName(AuthUser user) {
         return user.email();
+    }
+
+    /**
+     * Mask free-text/credential-ish columns in exception rows (provider keys,
+     * error text, lease owners) so the admin view never leaks full values while
+     * leaving identifiers, amounts, states and timestamps intact for triage.
+     */
+    private List<Map<String, Object>> maskRows(List<Map<String, Object>> rows) {
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> masked = new LinkedHashMap<>(row);
+            // Mask any non-empty sensitive value (even short ones) so the full
+            // value never reaches the admin view. A fixed 4-char prefix plus the
+            // marker keeps enough for triage without leaking the remainder.
+            for (String col : new String[] {"provider_key", "last_error", "lease_owner"}) {
+                if (masked.get(col) instanceof String s && !s.isBlank()) {
+                    String prefix = s.length() <= 4 ? s : s.substring(0, 4);
+                    masked.put(col, prefix + "…");
+                }
+            }
+            out.add(masked);
+        }
+        return out;
     }
 
     private String planFor(long expected, long received) {
