@@ -6,8 +6,8 @@ import java.util.UUID;
 
 import dev.kaiwen.eventpulse.IntegrationTestBase.OrganiserRef;
 import dev.kaiwen.eventpulse.IntegrationTestBase.UserRef;
-import dev.kaiwen.eventpulse.recs.EmbeddingService;
-import dev.kaiwen.eventpulse.recs.RecommendationService;
+import dev.kaiwen.eventpulse.service.EmbeddingService;
+import dev.kaiwen.eventpulse.service.RecommendationService;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -109,9 +109,9 @@ class RecommendationApiIT extends IntegrationTestBase {
 
     /** A validly-signed cursor pointing at a never-created recommendation request. */
     private String forgeCursorWithUnknownRequest() {
-        dev.kaiwen.eventpulse.catalogue.CursorCodec codec = context.getBean(
-                dev.kaiwen.eventpulse.catalogue.CursorCodec.class);
-        dev.kaiwen.eventpulse.catalogue.SearchCursor cursor = new dev.kaiwen.eventpulse.catalogue.SearchCursor(1, "rec",
+        dev.kaiwen.eventpulse.common.CursorCodec codec = context.getBean(
+                dev.kaiwen.eventpulse.common.CursorCodec.class);
+        dev.kaiwen.eventpulse.dto.SearchCursor cursor = new dev.kaiwen.eventpulse.dto.SearchCursor(1, "rec",
                 "rec", List.of(UUID.randomUUID().toString(), 0), java.time.Instant.now(),
                 java.time.Instant.now().plusSeconds(600));
         return codec.encode(cursor);

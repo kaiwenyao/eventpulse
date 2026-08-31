@@ -5,8 +5,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
-import dev.kaiwen.eventpulse.common.error.ApiException;
-import dev.kaiwen.eventpulse.common.error.ErrorCode;
+import dev.kaiwen.eventpulse.exception.ApiException;
+import dev.kaiwen.eventpulse.exception.ErrorCode;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;

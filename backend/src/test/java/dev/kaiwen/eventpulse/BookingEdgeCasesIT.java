@@ -5,11 +5,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import dev.kaiwen.eventpulse.booking.BookingDtos;
+import dev.kaiwen.eventpulse.dto.BookingDtos;
 import dev.kaiwen.eventpulse.common.CanonicalJson;
-import dev.kaiwen.eventpulse.booking.BookingService;
+import dev.kaiwen.eventpulse.service.BookingService;
 import dev.kaiwen.eventpulse.payment.CommandDispatcher;
-import dev.kaiwen.eventpulse.ticketing.TicketIssuer;
+import dev.kaiwen.eventpulse.service.TicketIssuer;
 import dev.kaiwen.eventpulse.IntegrationTestBase.OrganiserRef;
 import dev.kaiwen.eventpulse.IntegrationTestBase.UserRef;
 
@@ -117,7 +117,7 @@ class BookingEdgeCasesIT extends IntegrationTestBase {
         post("/api/v1/bookings/" + bookingId + "/pay", user.token(), Map.of(),
                 CanonicalJson.newOpaqueToken());
         dispatcher.tick();
-        List<String> tokens = context.getBean(dev.kaiwen.eventpulse.ticketing.TicketService.class)
+        List<String> tokens = context.getBean(dev.kaiwen.eventpulse.service.TicketService.class)
                 .revealTokens(user.id(), UUID.fromString(bookingId));
         assertThat(tokens).hasSize(1);
 
@@ -183,7 +183,7 @@ class BookingEdgeCasesIT extends IntegrationTestBase {
     }
 
     private boolean transitionsExpire(UUID bookingId) {
-        return context.getBean(dev.kaiwen.eventpulse.booking.BookingTransitions.class).expireBooking(bookingId);
+        return context.getBean(dev.kaiwen.eventpulse.service.BookingTransitions.class).expireBooking(bookingId);
     }
 
     @org.springframework.beans.factory.annotation.Autowired

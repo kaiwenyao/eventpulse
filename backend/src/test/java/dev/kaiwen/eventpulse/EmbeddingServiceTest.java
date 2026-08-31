@@ -3,7 +3,8 @@ package dev.kaiwen.eventpulse;
 import java.util.List;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.recs.EmbeddingService;
+import dev.kaiwen.eventpulse.service.EmbeddingService;
+import dev.kaiwen.eventpulse.service.impl.EmbeddingServiceImpl;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,7 +27,7 @@ class EmbeddingServiceTest {
     private EmbeddingService service(boolean vectorAvailable) {
         jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForObject(anyString(), eq(Integer.class))).thenReturn(vectorAvailable ? 1 : 0);
-        return new EmbeddingService(jdbc);
+        return new EmbeddingServiceImpl(jdbc);
     }
 
     @Test

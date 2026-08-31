@@ -7,7 +7,7 @@ flowchart TB
     subgraph client["React Web · User · Organiser · Admin"]
         FE[React 19 + Vite SPA]
     end
-    subgraph app["Spring Boot 4 模块化单体（单部署单元，按领域模块隔离代码与表访问）"]
+    subgraph app["Spring Boot 4 模块化单体（单部署单元；代码按技术分层：controller/service/service.impl/dto/exception/config + 基础设施包，模块业务职责与表访问边界不变）"]
         AUTH[Auth/User]
         CAT[Catalogue/Venue]
         INV[Inventory/Quota]
@@ -36,6 +36,7 @@ flowchart TB
 
 - **资源舱壁**：交易写连接池（hikari tx-pool）与搜索/推荐查询分离超时与并发限制；推荐查询失败降级热门榜单。
 - **外部调用异步**：支付/退款/通知先落 durable command + outbox，dispatcher 在事务外调用，结果以新事务落库并写 outbox。
+- **代码分层组织**：代码目录按技术分层（`controller` 只做请求校验/当前用户/调用 Service 接口/组装响应；`service` 为业务接口；`service.impl` 为 `@Service` 业务实现并承载从 Controller 抽离的业务 SQL；`dto` 承载请求/响应/行 record；`exception`/`config`/`common`/`batch`/`outbox`/`payment` 为基础设施）。这只是代码目录与依赖方式的调整：数据库事务边界、上述领域模块的业务职责以及"不跨模块随意写表"等关键约束全部保持不变；认证过滤器、批处理、outbox 和 payment 等基础设施 SQL 仍由其所属组件维护。
 
 ## 2. 简化 ER（含不变量）
 

@@ -4,10 +4,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.booking.BookingCancellationBatch;
-import dev.kaiwen.eventpulse.booking.ExpiryScheduler;
-import dev.kaiwen.eventpulse.booking.BookingTransitions;
-import dev.kaiwen.eventpulse.common.error.ApiException;
+import dev.kaiwen.eventpulse.batch.BookingCancellationBatch;
+import dev.kaiwen.eventpulse.batch.ExpiryScheduler;
+import dev.kaiwen.eventpulse.service.BookingTransitions;
+import dev.kaiwen.eventpulse.exception.ApiException;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -67,7 +67,7 @@ class BatchRunnerTest {
                 .thenReturn(List.of());
         when(transitions.cancel(any(), eq(first), eq(true), anyString())).thenReturn(true);
         when(transitions.cancel(any(), eq(second), eq(true), anyString()))
-                .thenThrow(new ApiException(dev.kaiwen.eventpulse.common.error.ErrorCode.CONFLICT, "used ticket"));
+                .thenThrow(new ApiException(dev.kaiwen.eventpulse.exception.ErrorCode.CONFLICT, "used ticket"));
 
         BookingCancellationBatch.BatchResult result = batch.runForEvent(event);
         assertThat(result.cancelled()).isEqualTo(1);

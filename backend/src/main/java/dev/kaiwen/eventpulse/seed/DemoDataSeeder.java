@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 import dev.kaiwen.eventpulse.common.CanonicalJson;
-import dev.kaiwen.eventpulse.recs.EmbeddingService;
+import dev.kaiwen.eventpulse.service.EmbeddingService;
 
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;

@@ -4,13 +4,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.kaiwen.eventpulse.auth.AuthService;
-import dev.kaiwen.eventpulse.booking.BookingDtos;
-import dev.kaiwen.eventpulse.booking.BookingService;
-import dev.kaiwen.eventpulse.booking.IdempotencyService;
-import dev.kaiwen.eventpulse.common.error.ApiException;
-import dev.kaiwen.eventpulse.common.error.ErrorCode;
-import dev.kaiwen.eventpulse.common.error.GlobalExceptionHandler;
+import dev.kaiwen.eventpulse.service.AuthService;
+import dev.kaiwen.eventpulse.dto.BookingDtos;
+import dev.kaiwen.eventpulse.service.BookingService;
+import dev.kaiwen.eventpulse.service.IdempotencyService;
+import dev.kaiwen.eventpulse.exception.ApiException;
+import dev.kaiwen.eventpulse.exception.ErrorCode;
+import dev.kaiwen.eventpulse.exception.GlobalExceptionHandler;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -32,7 +32,7 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<?> response = handler.handleApi(new ApiException(ErrorCode.INSUFFICIENT_INVENTORY,
                 "no stock", Map.of("tierId", "only 2 left")));
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        var body = (dev.kaiwen.eventpulse.common.error.ApiError) response.getBody();
+        var body = (dev.kaiwen.eventpulse.exception.ApiError) response.getBody();
         assertThat(body.code()).isEqualTo("INSUFFICIENT_INVENTORY");
         assertThat(body.fieldErrors()).containsEntry("tierId", "only 2 left");
         assertThat(body.timestamp()).isNotNull();
@@ -65,14 +65,14 @@ class GlobalExceptionHandlerTest {
                 new MethodArgumentNotValidException(null, binding);
         ResponseEntity<?> validation = handler.handleValidation(invalid);
         assertThat(validation.getStatusCode().value()).isEqualTo(400);
-        assertThat(((dev.kaiwen.eventpulse.common.error.ApiError) validation.getBody()).fieldErrors())
+        assertThat(((dev.kaiwen.eventpulse.exception.ApiError) validation.getBody()).fieldErrors())
                 .containsEntry("quantity", "must be positive");
 
         MethodArgumentTypeMismatchException mismatch = new MethodArgumentTypeMismatchException("x",
                 UUID.class, "id", null, new IllegalArgumentException("bad uuid"));
         ResponseEntity<?> typeMismatch = handler.handleTypeMismatch(mismatch);
         assertThat(typeMismatch.getStatusCode().value()).isEqualTo(400);
-        assertThat(((dev.kaiwen.eventpulse.common.error.ApiError) typeMismatch.getBody()).message())
+        assertThat(((dev.kaiwen.eventpulse.exception.ApiError) typeMismatch.getBody()).message())
                 .contains("id");
 
         ResponseEntity<?> unreadable = handler.handleUnreadable(
@@ -87,6 +87,6 @@ class GlobalExceptionHandlerTest {
 
         ResponseEntity<?> generic = handler.handleGeneric(new IllegalStateException("boom"));
         assertThat(generic.getStatusCode().value()).isEqualTo(500);
-        assertThat(((dev.kaiwen.eventpulse.common.error.ApiError) generic.getBody()).code()).isEqualTo("INTERNAL");
+        assertThat(((dev.kaiwen.eventpulse.exception.ApiError) generic.getBody()).code()).isEqualTo("INTERNAL");
     }
 }

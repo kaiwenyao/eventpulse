@@ -12,7 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 
 import dev.kaiwen.eventpulse.payment.CommandDispatcher;
-import dev.kaiwen.eventpulse.ticketing.TicketService;
+import dev.kaiwen.eventpulse.service.TicketService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import dev.kaiwen.eventpulse.common.CanonicalJson;

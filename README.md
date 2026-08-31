@@ -11,16 +11,16 @@ Apache Kafka 4.3.1（KRaft）· Redis 8.2.9 · Docker Compose 一键启动。
 
 | 能力 | 实现位置 | 自动化验证 |
 | --- | --- | --- |
-| 无超卖 / 限购（协议 A：quota UPSERT → 锁 quota → 锁 inventory → 条件更新） | `booking/BookingService` | `BookingConcurrencyIT`（100 并发 vs 50 容量；首次 quota 行并发） |
-| 状态竞争唯一获胜（协议 B：booking → quota → inventory → reservation → tickets/payment 固定锁序） | `booking/BookingTransitions` | `BookingLifecycleIT`（支付单飞、超时 vs 迟到成功、取消退款） |
-| 请求指纹幂等（HMAC digest + canonical JSON hash，claim 随业务事务回滚） | `booking/IdempotencyService` + `common/CanonicalJson` | `BookingConcurrencyIT` / `CanonicalJsonTest` |
+| 无超卖 / 限购（协议 A：quota UPSERT → 锁 quota → 锁 inventory → 条件更新） | `service/BookingService` | `BookingConcurrencyIT`（100 并发 vs 50 容量；首次 quota 行并发） |
+| 状态竞争唯一获胜（协议 B：booking → quota → inventory → reservation → tickets/payment 固定锁序） | `service/BookingTransitions` | `BookingLifecycleIT`（支付单飞、超时 vs 迟到成功、取消退款） |
+| 请求指纹幂等（HMAC digest + canonical JSON hash，claim 随业务事务回滚） | `service/IdempotencyService` + `common/CanonicalJson` | `BookingConcurrencyIT` / `CanonicalJsonTest` |
 | 单活动支付意图（部分唯一索引）+ Durable Command 租约 + UNKNOWN 状态查询 + 迟到 capture 自动补偿退款 | `payment/CommandDispatcher` + `payment/SimulatedPaymentGateway` | `BookingLifecycleIT` |
 | 退款额度预占（captured / refund_reserved / refunded 同行 CHECK） | `db/migration/V3` | `BookingLifecycleIT` |
-| 票券 CSPRNG token + pepper 哈希 + 原子核销 + 重复扫码幂等 | `ticketing/TicketService` | `TicketRedeemIT` |
+| 票券 CSPRNG token + pepper 哈希 + 原子核销 + 重复扫码幂等 | `service/TicketService` | `TicketRedeemIT` |
 | 无间隙 Outbox 序号（aggregate counter 行锁递增，回滚无洞）+ relay + consumer cursor + gap/DLT 恢复 | `outbox/*` | `OutboxKafkaIT` |
-| 签名 keyset 搜索 cursor（filter hash + queryAsOf 服务端生成）+ PostGIS 半径搜索 | `catalogue/*` | 冒烟脚本 + 手工 |
-| 推荐 V0/V1（冻结候选 cursor、reason codes、pgvector 可选）+ 互动事件 | `recs/*` | 冒烟脚本 |
-| 最小 SSE（Origin 校验 + 所有权 + 心跳，REST 兜底） | `booking/BookingSseController` | 手工 curl 验证 |
+| 签名 keyset 搜索 cursor（filter hash + queryAsOf 服务端生成）+ PostGIS 半径搜索 | `service/CatalogueService` | 冒烟脚本 + 手工 |
+| 推荐 V0/V1（冻结候选 cursor、reason codes、pgvector 可选）+ 互动事件 | `service/RecommendationService` | 冒烟脚本 |
+| 最小 SSE（Origin 校验 + 所有权 + 心跳，REST 兜底） | `controller/BookingSseController` | 手工 curl 验证 |
 | 推荐离线评估（时间切分 / NDCG@10 / Recall@10 / coverage / diversity / bootstrap CI，synthetic 标注） | `ml/` | `uv run pytest`（3 项，可复现） |
 
 ## 快速开始（Docker Compose，唯一必达路径）
@@ -71,8 +71,9 @@ prod profile 检测到非空场景规则或默认密钥会拒绝启动。
 ## 仓库结构
 
 ```
-backend/    Spring Boot 模块化单体（auth/catalogue/inventory/booking/payment/
-            ticketing/outbox/recs/notification/admin/seed），Flyway 迁移即不变量
+backend/    Spring Boot 模块化单体，代码按技术分层（controller/ service/ service.impl/
+            dto/ exception/ config/ common/ + batch/outbox/payment/seed/security 基础设施包），
+            模块业务职责与事务边界不变，Flyway 迁移即不变量
 frontend/   React 19 SPA（发现/详情/结算/订单/票券二维码/主办方/核销/管理异常视图）
 deploy/     postgres(Dockerfile) / backend(Dockerfile) / frontend(Dockerfile+nginx.conf)
 scripts/    smoke-test.sh（全链路冒烟）、k6/booking.js（负载脚本）
