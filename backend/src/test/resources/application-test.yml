@@ -15,7 +15,7 @@ eventpulse:
 
 logging:
   level:
-    com.eventpulse: DEBUG
+    dev.kaiwen.eventpulse: DEBUG
 
 spring:
   kafka:

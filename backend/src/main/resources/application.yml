@@ -60,7 +60,7 @@ logging:
   pattern:
     console: "%d{ISO8601} %-5level [%thread] [%X{traceId:-}] [%X{module:-}] %logger{36} - %msg%n"
   level:
-    com.eventpulse: INFO
+    dev.kaiwen.eventpulse: INFO
 
 eventpulse:
   security:

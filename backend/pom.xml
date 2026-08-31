@@ -11,7 +11,7 @@
     <relativePath/>
   </parent>
 
-  <groupId>com.eventpulse</groupId>
+  <groupId>dev.kaiwen.eventpulse</groupId>
   <artifactId>eventpulse-backend</artifactId>
   <version>0.1.0</version>
   <name>eventpulse-backend</name>
