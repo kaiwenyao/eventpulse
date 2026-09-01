@@ -22,9 +22,29 @@ public final class BookingDtos {
             String eventTitle,
             int quantity,
             String status,
+            Instant createdAt,
+            Instant cancelledAt,
+            String organiserNote,
+            long checkedInCount,
+            long validCount) {
+    }
+
+    public record NotificationVo(
+            Long id,
+            Long userId,
+            Long eventId,
+            Long bookingId,
+            String type,
+            String title,
+            String message,
+            String payload,
+            Instant readAt,
             Instant createdAt) {
     }
 
-    public record NotificationVo(Long id, Long bookingId, String message, Instant createdAt) {
+    public record CheckInRequest(String code, String source) {
+    }
+
+    public record UndoCheckInRequest(String reason) {
     }
 }

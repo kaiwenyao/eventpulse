@@ -13,7 +13,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> handleBusiness(BusinessException ex) {
-        return ResponseEntity.badRequest().body(Result.error(ex.getMessage()));
+        return ResponseEntity.status(ex.getStatus()).body(Result.error(ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

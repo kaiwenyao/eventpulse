@@ -45,4 +45,9 @@ public class BookingController {
     public Result<BookingVo> cancel(@PathVariable Long id) {
         return Result.success(bookingService.cancel(id));
     }
+
+    @GetMapping("/{id}/tickets")
+    public Result<List<dev.kaiwen.eventpulse.service.TicketService.TicketView>> tickets(@PathVariable Long id) {
+        return Result.success(bookingService.tickets(id));
+    }
 }

@@ -27,11 +27,14 @@ public class JwtInterceptor implements HandlerInterceptor {
             return true;
         }
         String header = request.getHeader("Authorization");
-        if (header == null || !header.startsWith("Bearer ")) {
+        String token = header != null && header.startsWith("Bearer ")
+                ? header.substring(7)
+                : request.getParameter("access_token");
+        if (token == null || token.isBlank()) {
             return unauthorized(response);
         }
         try {
-            Claims claims = jwtService.parseToken(header.substring(7));
+            Claims claims = jwtService.parseToken(token);
             BaseContext.setUserId(claims.get("userId", Number.class).longValue());
             BaseContext.setRole(claims.get("role", String.class));
             return true;
@@ -56,10 +59,14 @@ public class JwtInterceptor implements HandlerInterceptor {
         if ("POST".equals(method) && ("/api/auth/login".equals(path) || "/api/auth/register".equals(path))) {
             return true;
         }
-        if ("GET".equals(method) && "/api/events".equals(path)) {
+        if ("GET".equals(method) && path.startsWith("/api/events") && !path.equals("/api/events/mine")
+                && !path.contains("/favourite")) {
             return true;
         }
-        return "GET".equals(method) && path.matches("/api/events/\\d+");
+        if ("GET".equals(method) && path.equals("/api/recommendations")) {
+            return true;
+        }
+        return "GET".equals(method) && path.startsWith("/api/media/images/");
     }
 
     private boolean unauthorized(HttpServletResponse response) throws Exception {

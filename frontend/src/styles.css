@@ -724,6 +724,18 @@ label {
   font-size: 13px;
 }
 
+.qr {
+  width: 120px;
+  height: 120px;
+  color: var(--paper);
+  background: #111;
+  padding: 8px;
+}
+
+.lifecycle {
+  letter-spacing: 0.02em;
+}
+
 /* ---------------------------------------------------------------- motion */
 
 @keyframes pulse {

@@ -3,7 +3,9 @@ package dev.kaiwen.eventpulse;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -53,7 +55,9 @@ import dev.kaiwen.eventpulse.exception.GlobalExceptionHandler;
 import dev.kaiwen.eventpulse.interceptor.JwtInterceptor;
 import dev.kaiwen.eventpulse.kafka.BookingConsumer;
 import dev.kaiwen.eventpulse.kafka.BookingProducer;
+import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
+import dev.kaiwen.eventpulse.repository.TicketRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.repository.UserRepository;
@@ -62,6 +66,8 @@ import dev.kaiwen.eventpulse.service.AuthService;
 import dev.kaiwen.eventpulse.service.BookingService;
 import dev.kaiwen.eventpulse.service.EventService;
 import dev.kaiwen.eventpulse.service.JwtService;
+import dev.kaiwen.eventpulse.service.PlatformService;
+import dev.kaiwen.eventpulse.service.TicketService;
 
 @ExtendWith(MockitoExtension.class)
 class UnitTest {
@@ -74,6 +80,14 @@ class UnitTest {
     BookingRepository bookings;
     @Mock
     NotificationRepository notifications;
+    @Mock
+    TicketRepository tickets;
+    @Mock
+    TicketService ticketService;
+    @Mock
+    OutboxWriter outbox;
+    @Mock
+    PlatformService platform;
     @Mock
     PasswordEncoder passwordEncoder;
     @Mock
@@ -162,9 +176,13 @@ class UnitTest {
         EventService service = new EventService(events);
         Event published = event(1L, "摇滚夜", "music", "上海", 0, 10, 1L, "PUBLISHED");
         Event other = event(2L, "晨跑", "sports", "北京", 0, 5, 1L, "PUBLISHED");
-        when(events.findByStatusOrderByStartsAtAsc("PUBLISHED")).thenReturn(List.of(published, other));
+        when(events.findByStatusInOrderByStartsAtAsc(any())).thenReturn(List.of(published, other));
         assertThat(service.list("上海", "music", "摇")).hasSize(1);
         assertThat(service.list(null, null, "   ")).hasSize(2);
+        assertThat(service.search("上海", "music", "摇", Instant.EPOCH, Instant.now().plusSeconds(40L * 86400),
+                0, 99999, true, "price", true).getTotal()).isEqualTo(1);
+        assertThat(service.search(null, null, null, null, null, null, null, false, "sold", true).getTotal()).isEqualTo(2);
+        assertThat(service.search(null, null, null, null, null, null, null, null, "updatedAt", false).getTotal()).isEqualTo(2);
 
         when(events.findById(1L)).thenReturn(Optional.of(published));
         assertThat(service.get(1L).remaining()).isEqualTo(10);
@@ -199,8 +217,11 @@ class UnitTest {
     @Test
     void bookingAndKafka() {
         EventService eventService = new EventService(events);
-        BookingProducer producer = new BookingProducer(kafkaTemplate, new ObjectMapper());
-        BookingService service = new BookingService(bookings, eventService, producer);
+        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, outbox);
+        when(events.incrementSold(any(), anyInt())).thenReturn(1);
+        when(events.decrementSold(any(), anyInt())).thenReturn(1);
+        when(tickets.countByBookingIdAndStatus(any(), any())).thenReturn(0L);
+        when(ticketService.issue(any(), any(), anyInt())).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.create(new CreateBookingRequest(1L, 1)))
                 .isInstanceOf(BusinessException.class);
@@ -225,8 +246,7 @@ class UnitTest {
             return b;
         });
         assertThat(service.create(new CreateBookingRequest(3L, 2)).status()).isEqualTo("CONFIRMED");
-        assertThat(open.getSold()).isEqualTo(3);
-        verify(kafkaTemplate).send(anyString(), anyString(), anyString());
+        verify(outbox).write(anyString(), eq("BOOKING_CREATED"), anyString(), any());
 
         Booking mine = booking(11L, 7L, 3L, 2, "CONFIRMED");
         when(bookings.findByUserIdOrderByCreatedAtDesc(7L)).thenReturn(List.of(mine));
@@ -241,8 +261,18 @@ class UnitTest {
         assertThatThrownBy(() -> service.get(13L)).isInstanceOf(BusinessException.class);
 
         assertThat(service.cancel(11L).status()).isEqualTo("CANCELLED");
-        assertThat(open.getSold()).isEqualTo(1);
+        verify(events).decrementSold(3L, 2);
         assertThatThrownBy(() -> service.cancel(11L)).isInstanceOf(BusinessException.class);
+
+        when(events.incrementSold(any(), anyInt())).thenReturn(0);
+        Event stillOpen = event(3L, "可订", "music", "上海", 9, 10, 1L, "PUBLISHED");
+        when(events.findById(3L)).thenReturn(Optional.of(stillOpen));
+        assertThatThrownBy(() -> service.create(new CreateBookingRequest(3L, 2)))
+                .isInstanceOf(BusinessException.class);
+        when(ticketService.forBooking(11L)).thenReturn(List.of());
+        mine.setStatus("CONFIRMED");
+        assertThat(service.tickets(11L)).isEmpty();
+        service.toPublic(mine);
     }
 
     @Test
@@ -376,8 +406,8 @@ class UnitTest {
 
         EventService eventService = new EventService(events);
         EventController eventsApi = new EventController(eventService);
-        when(events.findByStatusOrderByStartsAtAsc("PUBLISHED")).thenReturn(List.of());
-        assertThat(eventsApi.list(null, null, null).getData()).isEmpty();
+        when(events.findByStatusInOrderByStartsAtAsc(any())).thenReturn(List.of());
+        assertThat(eventsApi.list(null, null, null, null, null, null, null, null, null, null, null, null).getData()).isEmpty();
         Event published = event(1L, "t", "music", "上海", 0, 10, 1L, "PUBLISHED");
         when(events.findById(1L)).thenReturn(Optional.of(published));
         assertThat(eventsApi.get(1L).getData().id()).isEqualTo(1L);
@@ -385,7 +415,7 @@ class UnitTest {
         BaseContext.setUserId(1L);
         when(events.findByOrganiserIdOrderByStartsAtDesc(1L)).thenReturn(List.of(published));
         assertThat(eventsApi.mine().getData()).hasSize(1);
-        EventRequest req = new EventRequest("新", "d", "art", "上海", Instant.now(), 1, 10);
+        EventRequest req = new EventRequest("新", "d", "art", "上海", Instant.now().plusSeconds(7L * 86400), 1, 10);
         when(events.save(any())).thenAnswer(inv -> {
             Event e = inv.getArgument(0);
             e.setId(2L);
@@ -395,8 +425,11 @@ class UnitTest {
         assertThat(eventsApi.update(1L, req).getCode()).isEqualTo(1);
         assertThat(eventsApi.cancel(1L).getCode()).isEqualTo(1);
 
-        BookingService bookingService = new BookingService(bookings, eventService,
-                new BookingProducer(kafkaTemplate, new ObjectMapper()));
+        when(events.incrementSold(any(), anyInt())).thenReturn(1);
+        when(events.decrementSold(any(), anyInt())).thenReturn(1);
+        when(tickets.countByBookingIdAndStatus(any(), any())).thenReturn(0L);
+        when(ticketService.issue(any(), any(), anyInt())).thenReturn(List.of());
+        BookingService bookingService = new BookingService(bookings, eventService, events, ticketService, tickets, outbox);
         BookingController bookingsApi = new BookingController(bookingService);
         when(bookings.save(any())).thenAnswer(inv -> {
             Booking b = inv.getArgument(0);
@@ -413,14 +446,15 @@ class UnitTest {
         assertThat(bookingsApi.get(4L).getData().id()).isEqualTo(4L);
         assertThat(bookingsApi.cancel(4L).getData().status()).isEqualTo("CANCELLED");
 
-        NotificationController notes = new NotificationController(notifications, bookings);
-        when(bookings.findByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of());
+        NotificationController notes = new NotificationController(platform);
+        when(platform.myNotifications()).thenReturn(List.of());
         assertThat(notes.list().getData()).isEmpty();
-        when(bookings.findByUserIdOrderByCreatedAtDesc(1L)).thenReturn(List.of(mine));
-        Notification n = new Notification(4L, "Kafka 已处理：BOOKING_CREATED");
-        n.setId(1L);
-        when(notifications.findByBookingIdInOrderByCreatedAtDesc(List.of(4L))).thenReturn(List.of(n));
+        var note = new dev.kaiwen.eventpulse.dto.BookingDtos.NotificationVo(
+                1L, 1L, 1L, 4L, "BOOKING", "预订成功", "Kafka 已处理：BOOKING_CREATED", null, null,
+                Instant.parse("2026-08-31T00:00:00Z"));
+        when(platform.myNotifications()).thenReturn(List.of(note));
         assertThat(notes.list().getData()).hasSize(1);
+        notes.read(1L);
 
         AppProperties props = new AppProperties();
         WebMvcConfig web = new WebMvcConfig(new JwtInterceptor(new JwtService(props)), props);
@@ -449,13 +483,17 @@ class UnitTest {
         event.setDescription("d");
         event.setCategory(category);
         event.setCity(city);
-        event.setStartsAt(Instant.parse("2026-09-15T12:00:00Z"));
+        Instant starts = Instant.now().plusSeconds(14L * 24 * 3600);
+        event.setStartsAt(starts);
+        event.setEndsAt(starts.plusSeconds(3 * 3600));
         event.setPriceCents(100);
         event.setCapacity(capacity);
         event.setSold(sold);
+        event.setMaxQuantityPerBooking(10);
         event.setOrganiserId(organiserId);
         event.setStatus(status);
         event.setCreatedAt(Instant.parse("2026-08-01T00:00:00Z"));
+        event.setUpdatedAt(Instant.parse("2026-08-01T00:00:00Z"));
         return event;
     }
 

@@ -30,6 +30,12 @@ public class Booking {
     @Column(nullable = false)
     private String status;
 
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    @Column(name = "organiser_note")
+    private String organiserNote;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -71,6 +77,22 @@ public class Booking {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Instant getCancelledAt() {
+        return cancelledAt;
+    }
+
+    public void setCancelledAt(Instant cancelledAt) {
+        this.cancelledAt = cancelledAt;
+    }
+
+    public String getOrganiserNote() {
+        return organiserNote;
+    }
+
+    public void setOrganiserNote(String organiserNote) {
+        this.organiserNote = organiserNote;
     }
 
     public Instant getCreatedAt() {

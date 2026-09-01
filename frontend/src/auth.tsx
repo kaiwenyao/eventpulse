@@ -24,6 +24,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!getAccessToken()) {
+      // Token restore is an external session check; ready must flip after mount.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setReady(true)
       return
     }

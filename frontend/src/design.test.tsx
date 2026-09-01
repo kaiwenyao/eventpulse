@@ -117,7 +117,7 @@ describe('list pages (signed in)', () => {
     expect(screen.getByText('还没有预订')).toBeInTheDocument()
 
     renderSignedIn('/notifications')
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Kafka 消息' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('heading', { name: '消息中心' })).toBeInTheDocument())
     expect(screen.getByText('还没有消息')).toBeInTheDocument()
   })
 
@@ -134,5 +134,25 @@ describe('list pages (signed in)', () => {
     })
     renderApp('/notifications')
     await waitFor(() => expect(screen.getByText('Kafka 已处理：BOOKING_CREATED')).toBeInTheDocument())
+  })
+
+  it('renders booking detail tickets and organiser analytics', async () => {
+    apiMock.token = 'tok'
+    apiMock.fn.mockImplementation((_m: string, path: string) => {
+      if (path === '/api/auth/me') return Promise.resolve(user)
+      if (path === '/api/bookings/1') {
+        return Promise.resolve({ id: 1, eventId: 1, eventTitle: '摇滚夜', quantity: 2, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z' })
+      }
+      if (path === '/api/bookings/1/tickets') {
+        return Promise.resolve([{ id: 11, code: 'abc123', status: 'VALID' }])
+      }
+      if (path === '/api/organiser/analytics') return Promise.resolve({ views: 3, clicks: 2, bookings: 1, conversion: 10 })
+      if (path === '/api/organiser/dashboard') return Promise.resolve({ eventCount: 1, sold: 2, sellThrough: 20 })
+      if (path.startsWith('/api/organiser/events')) return Promise.resolve({ records: [event], total: 1 })
+      return Promise.resolve([])
+    })
+    renderApp('/bookings/1')
+    await waitFor(() => expect(screen.getByRole('heading', { name: '订单详情' })).toBeInTheDocument())
+    expect(screen.getByText(/票 #11/)).toBeInTheDocument()
   })
 })

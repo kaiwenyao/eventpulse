@@ -32,8 +32,22 @@ public class BookingConsumer {
         try {
             JsonNode node = objectMapper.readTree(json);
             long bookingId = node.path("bookingId").asLong();
+            Long userId = node.path("userId").isNumber() ? node.path("userId").asLong() : null;
+            Long eventId = node.path("eventId").isNumber() ? node.path("eventId").asLong() : null;
             String type = node.path("type").asText("UNKNOWN");
-            notifications.save(new Notification(bookingId, "Kafka 已处理：" + type));
+            String dedupKey = node.path("dedupKey").asText(type + ":" + bookingId);
+            if (dedupKey != null && !dedupKey.isBlank() && notifications.existsByDedupKey(dedupKey)) {
+                return;
+            }
+            Notification notice = new Notification(bookingId == 0 ? null : bookingId,
+                    node.path("message").asText("已处理：" + type));
+            notice.setUserId(userId);
+            notice.setEventId(eventId);
+            notice.setType(type);
+            notice.setTitle(node.path("title").asText("消息通知"));
+            notice.setPayload(json);
+            notice.setDedupKey(dedupKey);
+            notifications.save(notice);
         }
         catch (Exception e) {
             log.warn("忽略一条无法解析的 Kafka 消息: {}", json, e);

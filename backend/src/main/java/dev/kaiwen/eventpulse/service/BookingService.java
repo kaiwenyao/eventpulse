@@ -2,43 +2,66 @@ package dev.kaiwen.eventpulse.service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import dev.kaiwen.eventpulse.common.BaseContext;
+import dev.kaiwen.eventpulse.domain.TicketStatus;
 import dev.kaiwen.eventpulse.dto.BookingDtos.BookingVo;
 import dev.kaiwen.eventpulse.dto.BookingDtos.CreateBookingRequest;
 import dev.kaiwen.eventpulse.entity.Booking;
 import dev.kaiwen.eventpulse.entity.Event;
 import dev.kaiwen.eventpulse.exception.BusinessException;
-import dev.kaiwen.eventpulse.kafka.BookingProducer;
+import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
+import dev.kaiwen.eventpulse.repository.EventRepository;
+import dev.kaiwen.eventpulse.repository.TicketRepository;
 
 @Service
 public class BookingService {
 
     private final BookingRepository bookings;
     private final EventService eventService;
-    private final BookingProducer producer;
+    private final EventRepository events;
+    private final TicketService ticketService;
+    private final TicketRepository tickets;
+    private final OutboxWriter outbox;
 
-    public BookingService(BookingRepository bookings, EventService eventService, BookingProducer producer) {
+    public BookingService(
+            BookingRepository bookings,
+            EventService eventService,
+            EventRepository events,
+            TicketService ticketService,
+            TicketRepository tickets,
+            OutboxWriter outbox) {
         this.bookings = bookings;
         this.eventService = eventService;
-        this.producer = producer;
+        this.events = events;
+        this.ticketService = ticketService;
+        this.tickets = tickets;
+        this.outbox = outbox;
     }
 
     @Transactional
     public BookingVo create(CreateBookingRequest request) {
         Long userId = requireLogin();
         Event event = eventService.require(request.eventId());
-        if (!"PUBLISHED".equals(event.getStatus())) {
-            throw new BusinessException("活动已取消，无法预订");
+        String reason = EventService.unbookableReason(event, Instant.now());
+        if (reason != null) {
+            throw "余票不足".equals(reason) ? BusinessException.conflict(reason) : new BusinessException(reason);
         }
-        if (event.getSold() + request.quantity() > event.getCapacity()) {
-            throw new BusinessException("余票不足");
+        int maxQty = event.getMaxQuantityPerBooking() <= 0 ? 10 : event.getMaxQuantityPerBooking();
+        if (request.quantity() > maxQty) {
+            throw new BusinessException("单次最多预订 " + maxQty + " 张");
         }
-        event.setSold(event.getSold() + request.quantity());
+        int updated = events.incrementSold(event.getId(), request.quantity());
+        if (updated == 0) {
+            Event latest = eventService.require(request.eventId());
+            String latestReason = EventService.unbookableReason(latest, Instant.now());
+            throw BusinessException.conflict(latestReason == null ? "余票不足" : latestReason);
+        }
 
         Booking booking = new Booking();
         booking.setUserId(userId);
@@ -47,8 +70,16 @@ public class BookingService {
         booking.setStatus("CONFIRMED");
         booking.setCreatedAt(Instant.now());
         bookings.save(booking);
-
-        producer.sendCreated(booking);
+        ticketService.issue(booking.getId(), event.getId(), request.quantity());
+        outbox.write("booking-events", "BOOKING_CREATED", "BOOKING_CREATED:" + booking.getId(),
+                Map.of(
+                        "type", "BOOKING_CREATED",
+                        "userId", userId,
+                        "eventId", event.getId(),
+                        "bookingId", booking.getId(),
+                        "quantity", request.quantity(),
+                        "title", "预订成功",
+                        "message", "你已预订「" + event.getTitle() + "」" + request.quantity() + " 张票"));
         return toVo(booking, event.getTitle());
     }
 
@@ -63,6 +94,13 @@ public class BookingService {
         return toVo(requireOwn(id));
     }
 
+    public List<TicketService.TicketView> tickets(Long id) {
+        requireOwn(id);
+        return ticketService.forBooking(id).stream()
+                .map(ticket -> ticketService.toView(ticket, true))
+                .toList();
+    }
+
     @Transactional
     public BookingVo cancel(Long id) {
         Booking booking = requireOwn(id);
@@ -70,17 +108,27 @@ public class BookingService {
             throw new BusinessException("订单已取消");
         }
         Event event = eventService.require(booking.getEventId());
-        event.setSold(Math.max(0, event.getSold() - booking.getQuantity()));
+        events.decrementSold(event.getId(), booking.getQuantity());
         booking.setStatus("CANCELLED");
-        producer.sendCancelled(booking);
+        booking.setCancelledAt(Instant.now());
+        ticketService.cancelForBooking(booking.getId());
+        outbox.write("booking-events", "BOOKING_CANCELLED", "BOOKING_CANCELLED:" + booking.getId(),
+                Map.of(
+                        "type", "BOOKING_CANCELLED",
+                        "userId", booking.getUserId(),
+                        "eventId", event.getId(),
+                        "bookingId", booking.getId(),
+                        "quantity", booking.getQuantity(),
+                        "title", "预订已取消",
+                        "message", "你已取消「" + event.getTitle() + "」的预订"));
         return toVo(booking, event.getTitle());
     }
 
     private Booking requireOwn(Long id) {
         Long userId = requireLogin();
-        Booking booking = bookings.findById(id).orElseThrow(() -> new BusinessException("订单不存在"));
+        Booking booking = bookings.findById(id).orElseThrow(() -> BusinessException.notFound("订单不存在"));
         if (!booking.getUserId().equals(userId)) {
-            throw new BusinessException("只能查看自己的订单");
+            throw BusinessException.forbidden("只能查看自己的订单");
         }
         return booking;
     }
@@ -93,18 +141,28 @@ public class BookingService {
         return userId;
     }
 
+    public BookingVo toPublic(Booking booking) {
+        return toVo(booking);
+    }
+
     private BookingVo toVo(Booking booking) {
         String title = eventService.require(booking.getEventId()).getTitle();
         return toVo(booking, title);
     }
 
-    private static BookingVo toVo(Booking booking, String eventTitle) {
+    private BookingVo toVo(Booking booking, String eventTitle) {
+        long checkedIn = tickets.countByBookingIdAndStatus(booking.getId(), TicketStatus.CHECKED_IN);
+        long valid = tickets.countByBookingIdAndStatus(booking.getId(), TicketStatus.VALID);
         return new BookingVo(
                 booking.getId(),
                 booking.getEventId(),
                 eventTitle,
                 booking.getQuantity(),
                 booking.getStatus(),
-                booking.getCreatedAt());
+                booking.getCreatedAt(),
+                booking.getCancelledAt(),
+                booking.getOrganiserNote(),
+                checkedIn,
+                valid);
     }
 }

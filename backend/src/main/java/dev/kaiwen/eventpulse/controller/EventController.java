@@ -1,5 +1,6 @@
 package dev.kaiwen.eventpulse.controller;
 
+import java.time.Instant;
 import java.util.List;
 
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,8 +34,19 @@ public class EventController {
     public Result<List<EventVo>> list(
             @RequestParam(required = false) String city,
             @RequestParam(required = false) String category,
-            @RequestParam(required = false) String q) {
-        return Result.success(eventService.list(city, category, q));
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Instant dateFrom,
+            @RequestParam(required = false) Instant dateTo,
+            @RequestParam(required = false) Integer minPrice,
+            @RequestParam(required = false) Integer maxPrice,
+            @RequestParam(required = false) Boolean hasRemaining,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) Boolean desc,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        return Result.success(eventService.search(
+                city, category, q, dateFrom, dateTo, minPrice, maxPrice, hasRemaining,
+                sort == null ? "startsAt" : sort, Boolean.TRUE.equals(desc), page, size).getRecords());
     }
 
     @GetMapping("/{id}")

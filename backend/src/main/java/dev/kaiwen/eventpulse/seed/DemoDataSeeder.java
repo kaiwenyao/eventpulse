@@ -55,13 +55,17 @@ public class DemoDataSeeder implements CommandLineRunner {
         event.setDescription("演示活动，可直接预订。");
         event.setCategory(category);
         event.setCity(city);
-        event.setStartsAt(Instant.now().plus(14, ChronoUnit.DAYS));
+        Instant starts = Instant.now().plus(14, ChronoUnit.DAYS);
+        event.setStartsAt(starts);
+        event.setEndsAt(starts.plus(3, ChronoUnit.HOURS));
         event.setPriceCents(priceCents);
         event.setCapacity(capacity);
         event.setSold(0);
+        event.setMaxQuantityPerBooking(10);
         event.setOrganiserId(organiserId);
         event.setStatus("PUBLISHED");
         event.setCreatedAt(Instant.now());
+        event.setUpdatedAt(Instant.now());
         events.save(event);
     }
 }

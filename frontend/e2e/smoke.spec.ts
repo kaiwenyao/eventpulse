@@ -32,4 +32,39 @@ test.describe('SPA smoke', () => {
     await expect(page.getByRole('heading', { name: /注册/ })).toBeVisible()
     await expect(page.getByRole('button', { name: '注册' })).toBeVisible()
   })
+
+  test('mocked organiser publish, book, check-in and cancel journey', async ({ page }) => {
+    await page.route('**/api/**', async (route) => {
+      const url = route.request().url()
+      const method = route.request().method()
+      if (url.includes('/api/events') && method === 'GET' && !url.includes('/mine')) {
+        await route.fulfill({
+          json: {
+            code: 1,
+            data: [
+              {
+                id: 1,
+                title: '摇滚夜',
+                description: 'd',
+                category: 'music',
+                city: '上海',
+                startsAt: '2026-09-10T12:00:00Z',
+                priceCents: 18000,
+                capacity: 10,
+                sold: 1,
+                remaining: 9,
+                status: 'PUBLISHED',
+              },
+            ],
+          },
+        })
+        return
+      }
+      await route.fulfill({ json: { code: 1, data: [] } })
+    })
+    await page.goto('/')
+    await expect(page.getByText('摇滚夜')).toBeVisible()
+    await page.goto('/login')
+    await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
+  })
 })

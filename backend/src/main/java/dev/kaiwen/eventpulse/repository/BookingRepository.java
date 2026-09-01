@@ -9,4 +9,8 @@ import dev.kaiwen.eventpulse.entity.Booking;
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     List<Booking> findByUserIdOrderByCreatedAtDesc(Long userId);
+
+    List<Booking> findByEventIdOrderByCreatedAtDesc(Long eventId);
+
+    long countByEventIdAndStatus(Long eventId, String status);
 }

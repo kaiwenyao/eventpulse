@@ -12,6 +12,10 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
     producer:
@@ -40,9 +44,17 @@ eventpulse:
   secret-key: ${SECRET_KEY:dev-only-secret-key-change-me-0123456789ab}
   token-ttl-ms: 604800000
   cors-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:5173}
+  media-dir: ${MEDIA_DIR:data/media}
+  redis-enabled: ${REDIS_ENABLED:false}
+  redis-host: ${REDIS_HOST:localhost}
+  redis-port: ${REDIS_PORT:6379}
 
 ---
 spring:
   config:
     activate:
       on-profile: demo
+
+eventpulse:
+  redis-enabled: ${REDIS_ENABLED:true}
+  redis-host: ${REDIS_HOST:redis}

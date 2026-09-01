@@ -232,7 +232,9 @@ describe('App pages', () => {
     const organiser = { ...user, role: 'ORGANISER' }
     apiMock.fn.mockImplementation((_m: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(organiser)
-      if (path === '/api/events/mine' || path === '/api/events') return Promise.resolve([])
+      if (path.startsWith('/api/organiser/events') || path === '/api/events/mine' || path === '/api/events') {
+        return Promise.resolve({ records: [], total: 0 })
+      }
       if (path === '/api/events') return Promise.resolve([])
       return Promise.resolve([])
     })
@@ -243,9 +245,9 @@ describe('App pages', () => {
         </AuthProvider>
       </MemoryRouter>,
     )
-    await waitFor(() => expect(screen.getByRole('heading', { name: '主办方' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('heading', { name: '主办方工作台' })).toBeInTheDocument())
     await userEvent.type(screen.getAllByRole('textbox')[0], '夜')
-    await userEvent.click(screen.getByRole('button', { name: '发布' }))
-    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/events', expect.anything()))
+    await userEvent.click(screen.getByRole('button', { name: '发布活动' }))
+    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/organiser/events', expect.anything()))
   })
 })

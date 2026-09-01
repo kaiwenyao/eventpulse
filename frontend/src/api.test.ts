@@ -30,6 +30,21 @@ describe('api()', () => {
   })
 })
 
+describe('uploadFile()', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    setAccessToken(null)
+  })
+
+  it('posts multipart and returns data', async () => {
+    setAccessToken('tok-1')
+    const { uploadFile } = await import('./api')
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ code: 1, data: { id: 9 } }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(uploadFile<{ id: number }>('/api/media/images', new File(['x'], 'a.png'))).resolves.toEqual({ id: 9 })
+  })
+})
+
 describe('formatters', () => {
   it('formats money and time', () => {
     expect(formatMoney(123456)).toBe('¥1234.56')

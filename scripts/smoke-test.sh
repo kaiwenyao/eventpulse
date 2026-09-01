@@ -74,7 +74,20 @@ code=$(req POST "/api/bookings/$booking_id/cancel" "$user_token")
 status=$(jget "['data']['status']" < /tmp/ep_body.json)
 [ "$code" = "200" ] && [ "$status" = "CANCELLED" ] && ok "cancel booking ($status)" || bad "cancel booking ($code/$status)"
 
-say "== 7. summary =="
+say "== 7. tickets, recommendations, dashboard, nearby =="
+code=$(req GET "/api/bookings/$booking_id/tickets" "$user_token")
+[ "$code" = "200" ] && ok "booking tickets ($code)" || bad "booking tickets ($code)"
+
+code=$(req GET /api/recommendations "$user_token")
+[ "$code" = "200" ] && ok "recommendations ($code)" || bad "recommendations ($code)"
+
+code=$(req GET /api/organiser/dashboard "$org_token")
+[ "$code" = "200" ] && ok "organiser dashboard ($code)" || bad "organiser dashboard ($code)"
+
+code=$(req GET /api/events/nearby)
+[ "$code" = "200" ] && ok "nearby events ($code)" || bad "nearby events ($code)"
+
+say "== 8. summary =="
 say "passed=$PASS failed=$FAIL"
 if [ "$FAIL" -gt 0 ]; then exit 1; fi
 say "SMOKE TEST: ALL GREEN"

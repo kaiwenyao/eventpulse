@@ -11,6 +11,7 @@ frontend/dist/
 
 # Env / secrets
 .env
+data/
 
 # IDE / OS
 .idea/
