@@ -4,10 +4,14 @@
 
 本机需要 Docker Desktop（macOS / Windows）或 Docker Engine + Compose v2（Linux）。
 
+先清掉可能残留的 Compose 环境和 Testcontainers 容器，再启动：
+
 ```bash
 cp .env.example .env
-make up          # docker compose up -d --build
-make ps          # postgres / kafka / backend / frontend 均应 healthy
+make down-v                  # 停栈并删数据卷
+make testcontainers-cleanup  # 清掉 Testcontainers 残留容器
+make up                      # docker compose up -d --build
+make ps                      # postgres / redis / kafka / backend / frontend 均应 healthy
 ```
 
 第一次会构建镜像，大约几分钟。backend 健康检查有 60s `start_period`（Flyway + demo seed）。
@@ -17,6 +21,7 @@ make ps          # postgres / kafka / backend / frontend 均应 healthy
 | 3000 | 前端（`/api` 反代到 backend） |
 | 8080 | 后端 API |
 | 5432 | PostgreSQL |
+| 6379 | Redis |
 | 9092 | Kafka |
 
 ```bash
@@ -45,9 +50,11 @@ make down-v      # 停容器并删数据卷；下次 make up 会重新 seed
 
 ## 本地开发
 
-本机需要 JDK 21、Maven、Node.js。
+本机需要 JDK 21、Maven、Node.js。同样先清残留，再只起基础设施：
 
 ```bash
+make down-v
+make testcontainers-cleanup
 make infra       # 只启动 postgres / kafka
 ```
 
