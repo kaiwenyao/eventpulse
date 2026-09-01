@@ -24,7 +24,9 @@ curl -s http://localhost:8080/actuator/health
 # 期望：{"status":"UP", ...}
 ```
 
-打开 http://localhost:3000。`SECRET_KEY` 用于 JWT 签名，`DB_PASSWORD` 是 Postgres 密码；demo 可直接用 `.env.example` 默认值。
+打开 http://localhost:3000。
+
+`SECRET_KEY` 用于 JWT 签名，`DB_PASSWORD` 是 Postgres 密码；demo 可直接用 `.env.example` 默认值。
 
 `demo` profile 启动时播种：
 
