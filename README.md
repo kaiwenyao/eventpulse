@@ -65,7 +65,14 @@ cd frontend && npm ci && npm run dev
 
 ## 测试
 
-栈 healthy 之后（需要本机 `curl` 和 `python3`）：
+先清掉可能残留的 Compose 环境和 Testcontainers 容器：
+
+```bash
+make down-v                  # 停栈并删数据卷
+make testcontainers-cleanup  # 清掉 Testcontainers 残留容器
+```
+
+然后 `make up`，等栈 healthy 之后再冒烟（需要本机 `curl` 和 `python3`）：
 
 ```bash
 make smoke                 # 默认打 http://localhost:8080

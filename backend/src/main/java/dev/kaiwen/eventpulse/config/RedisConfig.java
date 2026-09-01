@@ -9,7 +9,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import dev.kaiwen.eventpulse.common.AppProperties;
 
 @Configuration
-@ConditionalOnProperty(name = "eventpulse.redis.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "eventpulse.redis-enabled", havingValue = "true")
 public class RedisConfig {
 
     @Bean
