@@ -70,6 +70,25 @@ cd frontend && npm ci && npm run dev
 
 前端：http://localhost:5173
 
+### 前端结构
+
+```
+frontend/src
+├─ App.tsx           路由与应用外壳（顶栏 / Toast / 页脚）
+├─ api.ts  auth.tsx  网络层与会话
+├─ types.ts          与后端 DTO 对应的视图模型、分类与状态字典
+├─ lib/              纯函数工具（ISO ↔ datetime-local 转换、相对时间）
+├─ ui/               设计系统原语：Field / Badges / Modal / Toast / Skeleton / Icons
+├─ components/       跨页面组件（顶栏、活动票卡）
+├─ pages/            观众端页面（发现、详情、登录、预订、收藏、消息）
+├─ organiser/        主办方控制台（概览、活动表格、发布表单、生命周期、参与者、数据）
+└─ styles/           按关注点拆分的样式表，由 styles.css 汇总导入
+```
+
+发布活动的表单逻辑（默认值、字段校验、请求体映射）集中在
+`organiser/eventForm.ts`，是纯函数，单独做了单元测试；页面组件只负责把状态接到
+表单控件上。
+
 ## 测试
 
 先清掉可能残留的 Compose 环境和 Testcontainers 容器：

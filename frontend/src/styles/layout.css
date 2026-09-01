@@ -1,0 +1,361 @@
+/* Page frame: top bar, container, footer, page headers, and the operator shell. */
+
+:root {
+  /* Shell width, shared by the top bar, the page body and the footer so the
+     three stay in one vertical gutter. */
+  --shell: 1180px;
+}
+
+/* The operator console carries a nav rail, a work surface and a preview rail;
+   it needs more room than the reading-width marketing pages. */
+body:has(.console) {
+  --shell: 1400px;
+}
+
+.container {
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: 0 var(--space-5) var(--space-7);
+  min-height: 60vh;
+}
+
+/* ------------------------------------------------------------------ topbar */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid var(--line);
+  background: rgba(10, 12, 20, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.topbar-inner {
+  max-width: var(--shell);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-3) var(--space-5);
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: 0.02em;
+  color: var(--paper);
+  white-space: nowrap;
+}
+
+.brand:hover {
+  text-decoration: none;
+}
+
+.brand span {
+  color: var(--accent);
+}
+
+.topbar nav {
+  display: flex;
+  gap: var(--space-5);
+  flex: 1;
+}
+
+.topbar nav a {
+  position: relative;
+  color: var(--muted);
+  font-size: 14px;
+  padding: var(--space-1) 0;
+}
+
+.topbar nav a:hover {
+  color: var(--paper);
+  text-decoration: none;
+}
+
+.topbar nav a.active {
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.topbar nav a.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.user-box {
+  gap: var(--space-3);
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--violet));
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  flex: none;
+}
+
+.nav-toggle {
+  display: none;
+}
+
+/* -------------------------------------------------------------------- hero */
+
+.hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  padding: var(--space-7) 0 var(--space-5);
+}
+
+.hero h1 {
+  font-size: clamp(32px, 5vw, 46px);
+  letter-spacing: -0.02em;
+  margin: 0 0 var(--space-2);
+}
+
+.hero-sub {
+  margin: 0;
+  font-size: 16px;
+}
+
+.hero-stats {
+  display: flex;
+  gap: var(--space-6);
+  margin: 0;
+}
+
+.hero-stats dt {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hero-stats dd {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------- page heads */
+
+.page {
+  padding-top: var(--space-6);
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+
+.page-head h1 {
+  margin: 0 0 var(--space-1);
+}
+
+.page-head p {
+  margin: 0;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: var(--space-6) 0 var(--space-3);
+}
+
+.section-title {
+  font-size: 18px;
+  margin: var(--space-6) 0 var(--space-3);
+}
+
+.section-head .section-title {
+  margin: 0;
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.crumbs a {
+  color: var(--muted);
+}
+
+.crumbs a:hover {
+  color: var(--paper);
+}
+
+/* --------------------------------------------------------- operator shell */
+
+.console {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: var(--space-6);
+  padding-top: var(--space-6);
+}
+
+.console-rail {
+  position: sticky;
+  top: 76px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.console-brand {
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+.console-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.console-nav a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.console-nav a:hover {
+  background: var(--surface-2);
+  color: var(--paper);
+  text-decoration: none;
+}
+
+.console-nav a.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.console-user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.console-user-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.console-user-copy strong,
+.console-user-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-main {
+  min-width: 0;
+}
+
+.console-main .page {
+  padding-top: 0;
+}
+
+/* ------------------------------------------------------------------ footer */
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  margin-top: var(--space-7);
+  background: rgba(10, 12, 20, 0.6);
+}
+
+.site-footer-inner {
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.site-footer p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------- auth screen */
+
+.auth-shell {
+  display: grid;
+  place-items: center;
+  padding: var(--space-7) 0;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  margin: 0;
+}
+
+.auth-card h1 {
+  margin-top: 0;
+}
+
+.auth-sub {
+  margin: 0 0 var(--space-5);
+}
+
+.demo-block {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.demo-hint {
+  font-size: 12.5px;
+  margin: 0 0 var(--space-2);
+}

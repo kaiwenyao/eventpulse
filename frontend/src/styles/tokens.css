@@ -1,0 +1,168 @@
+/* ---------------------------------------------------------------------------
+   Design tokens + base element styles.
+
+   Palette  — ink surfaces + paper text + pulse-pink CTA (violet/green accents)
+   Type     — Space Grotesk (display) + system PingFang SC (body)
+   Rhythm   — a 4px spacing scale; every gap/padding below is a multiple of it.
+--------------------------------------------------------------------------- */
+
+:root {
+  --ink: #0a0c14;
+  --surface: #11141f;
+  --surface-2: #1a1f2e;
+  --surface-3: #232a3e;
+  --surface-4: #2c344b;
+  --line: #232a3e;
+  --line-strong: #333c56;
+  --paper: #edf0f8;
+  --paper-dim: #c6cbd9;
+  --muted: #8e96ac;
+  --accent: #ff4d8d;
+  --accent-soft: rgba(255, 77, 141, 0.12);
+  --violet: #7c6cff;
+  --green: #2dd4a7;
+  --amber: #f5b040;
+  --red: #ff5d6c;
+
+  --font-display: 'Space Grotesk', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-body: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 20px;
+
+  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.24);
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 28px 70px rgba(0, 0, 0, 0.5);
+  --focus: 0 0 0 3px rgba(255, 77, 141, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--ink);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1000px 480px at 85% -10%, rgba(124, 108, 255, 0.14), transparent 60%),
+    radial-gradient(800px 420px at -10% 12%, rgba(255, 77, 141, 0.1), transparent 60%),
+    var(--ink);
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+::selection {
+  background: rgba(255, 77, 141, 0.35);
+}
+
+/* Visible keyboard focus everywhere, per accessibility floor. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+  border-radius: var(--radius-sm);
+}
+
+h1 {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-2);
+}
+
+h2,
+h3 {
+  font-family: var(--font-display);
+  line-height: 1.3;
+}
+
+p {
+  margin: 0 0 var(--space-3);
+}
+
+.eyebrow {
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 var(--space-2);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 12.5px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.spread {
+  justify-content: space-between;
+}
+
+.error-text {
+  color: var(--red);
+  font-size: 13px;
+  margin: var(--space-2) 0;
+}
+
+.ok-text {
+  color: var(--green);
+  font-size: 13px;
+  margin: 0;
+}
+
+/* Shared inline icon sizing — every glyph inherits the text colour. */
+.icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

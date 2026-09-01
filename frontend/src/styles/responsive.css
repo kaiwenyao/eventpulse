@@ -1,0 +1,188 @@
+/* Breakpoints. The console collapses to a single column first, then the
+   discovery/detail layouts fold at phone width. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 1080px) {
+  .form-columns,
+  .detail-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .form-preview,
+  .detail-side {
+    position: static;
+  }
+
+  .console {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .console-rail {
+    position: static;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-4);
+    overflow-x: auto;
+  }
+
+  .console-brand,
+  .console-user {
+    display: none;
+  }
+
+  .console-nav {
+    flex-direction: row;
+    gap: var(--space-2);
+  }
+}
+
+@media (max-width: 720px) {
+  .container {
+    padding: 0 var(--space-4) var(--space-6);
+  }
+
+  .topbar-inner {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .nav-toggle {
+    display: inline-flex;
+    order: 2;
+    margin-left: auto;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px;
+  }
+
+  .nav-toggle span,
+  .nav-toggle span::before,
+  .nav-toggle span::after {
+    display: block;
+    width: 16px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--paper);
+    position: relative;
+  }
+
+  .nav-toggle span::before,
+  .nav-toggle span::after {
+    content: '';
+    position: absolute;
+    left: 0;
+  }
+
+  .nav-toggle span::before {
+    top: -5px;
+  }
+
+  .nav-toggle span::after {
+    top: 5px;
+  }
+
+  .topbar nav {
+    order: 4;
+    display: none;
+    flex-basis: 100%;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding-bottom: var(--space-2);
+  }
+
+  .topbar nav.open {
+    display: flex;
+  }
+
+  .topbar nav a.active::after {
+    display: none;
+  }
+
+  .user-box {
+    order: 3;
+  }
+
+  .hide-sm {
+    display: none;
+  }
+
+  .hero {
+    padding: var(--space-6) 0 var(--space-4);
+  }
+
+  .hero-stats {
+    gap: var(--space-5);
+  }
+
+  .search-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  /* In a column flex container `flex-basis` sizes the height — reset it so the
+     inputs keep their natural height instead of stretching to 160px. */
+  .search,
+  .search-city {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .search-row select,
+  .analytics-picker {
+    width: 100%;
+  }
+
+  .grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-cover {
+    height: 180px;
+  }
+
+  .detail-main h1 {
+    font-size: 26px;
+  }
+
+  .ticket-stub {
+    width: 78px;
+  }
+
+  .form-actions {
+    flex-wrap: wrap;
+  }
+
+  .form-actions-spacer {
+    display: none;
+  }
+
+  .form-actions .btn-link,
+  .form-actions button {
+    flex: 1;
+  }
+
+  .booking-row,
+  .notification-row {
+    flex-wrap: wrap;
+  }
+
+  .site-footer-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+}

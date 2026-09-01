@@ -114,11 +114,12 @@ describe('list pages (signed in)', () => {
   it('shows empty states for bookings and notifications', async () => {
     renderSignedIn('/bookings')
     await waitFor(() => expect(screen.getByRole('heading', { name: '我的预订' })).toBeInTheDocument())
-    expect(screen.getByText('还没有预订')).toBeInTheDocument()
+    // The list renders a skeleton first, so the empty state settles a tick later.
+    expect(await screen.findByText('还没有预订')).toBeInTheDocument()
 
     renderSignedIn('/notifications')
     await waitFor(() => expect(screen.getByRole('heading', { name: '消息中心' })).toBeInTheDocument())
-    expect(screen.getByText('还没有消息')).toBeInTheDocument()
+    expect(await screen.findByText('还没有消息')).toBeInTheDocument()
   })
 
   it('renders notifications with a timestamp', async () => {

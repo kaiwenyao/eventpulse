@@ -1,0 +1,128 @@
+/* The event create/edit surface: two columns of fields plus a live preview,
+   with a sticky action bar so 保存草稿 / 发布活动 stay reachable on long forms. */
+
+.form-page {
+  padding-bottom: var(--space-7);
+}
+
+.form-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.form-fields {
+  min-width: 0;
+}
+
+.form-section {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--space-5);
+  margin: 0 0 var(--space-5);
+}
+
+.form-section legend {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  padding: 0 var(--space-2);
+  margin-left: calc(-1 * var(--space-2));
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-5);
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+/* ------------------------------------------------------------ live preview */
+
+.form-preview {
+  position: sticky;
+  top: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.form-preview .eyebrow {
+  margin: 0;
+}
+
+.checklist {
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.checklist-title {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.checklist ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* -------------------------------------------------------------- action bar */
+
+.form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: rgba(17, 20, 31, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.form-actions-spacer {
+  flex: 1;
+}
+
+.check-in-card {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.check-in-card .field {
+  flex: 1;
+  min-width: 240px;
+}
+
+.check-in-card .error-text {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.analytics-picker {
+  width: auto;
+  min-width: 200px;
+  max-width: 100%;
+}
