@@ -128,9 +128,11 @@ class BookingConcurrencyIT {
 
         // 20 个并发线程各自执行一次「原子加一」（INSERT ... ON CONFLICT DO UPDATE），
         // 对应 Kafka 同时到达的 20 条 BOOKING_CREATED 消息处理同一活动。
+        // 每张订单张数各不相同（1..20），验证 tickets 按实际张数累加、bookings 按订单数累加。
         ExecutorService pool = Executors.newFixedThreadPool(20);
         List<Callable<Integer>> jobs = new ArrayList<>();
         for (int i = 0; i < 20; i++) {
+            int qty = i + 1;
             jobs.add(() -> {
                 try (Connection conn = DriverManager.getConnection(
                         postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
@@ -138,12 +140,14 @@ class BookingConcurrencyIT {
                                 INSERT INTO event_daily_metrics
                                     (event_id, metric_date, views, clicks, saves, unsaves,
                                      bookings, tickets, cancels, check_ins)
-                                VALUES (?, CURRENT_DATE, 0, 0, 0, 0, 1, 1, 0, 0)
+                                VALUES (?, CURRENT_DATE, 0, 0, 0, 0, 1, ?, 0, 0)
                                 ON CONFLICT (event_id, metric_date) DO UPDATE
                                   SET bookings = event_daily_metrics.bookings + 1,
-                                      tickets  = event_daily_metrics.tickets  + 1
+                                      tickets  = event_daily_metrics.tickets  + ?
                                 """)) {
                     upsert.setLong(1, targetId);
+                    upsert.setInt(2, qty);
+                    upsert.setInt(3, qty);
                     return upsert.executeUpdate();
                 }
             });
@@ -159,9 +163,10 @@ class BookingConcurrencyIT {
                 ResultSet rs = connection.createStatement().executeQuery(
                         "SELECT bookings, tickets FROM event_daily_metrics WHERE event_id = " + targetId)) {
             assertThat(rs.next()).isTrue();
-            // 20 次并发加一不能丢更新：最终必须是 20（首日 INSERT 已带 1，冲突则 +1）。
+            // bookings 按订单数：20 次并发各 +1 = 20（首日 INSERT 已带 1，冲突则 +1）。
             assertThat(rs.getInt(1)).isEqualTo(20);
-            assertThat(rs.getInt(2)).isEqualTo(20);
+            // tickets 按实际张数累加：1+2+...+20 = 210。
+            assertThat(rs.getInt(2)).isEqualTo(210);
         }
     }
 }

@@ -314,13 +314,14 @@ class UnitTest {
     void consumerHandlerInterceptorSeeder() throws Exception {
         InteractionService interactionService = new InteractionService(interactionRepo, metricsRepo);
         BookingConsumer consumer = new BookingConsumer(consumedEvents, notifications, interactionService, new ObjectMapper());
-        // 首次处理：写入 consumed_events 成功，创建通知，并写 BOOK interaction。
+        // 首次处理：写入 consumed_events 成功，创建通知，并写 BOOK interaction（张数 4）。
         when(consumedEvents.tryInsert(eq("eventpulse"), anyString())).thenReturn(1);
-        consumer.onMessage("{\"type\":\"BOOKING_CREATED\",\"bookingId\":5,\"dedupKey\":\"k\",\"userId\":1,\"eventId\":2}");
+        consumer.onMessage("{\"type\":\"BOOKING_CREATED\",\"bookingId\":5,\"dedupKey\":\"k\",\"userId\":1,\"eventId\":2,\"quantity\":4}");
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         verify(notifications).save(captor.capture());
         assertThat(captor.getValue().getBookingId()).isEqualTo(5L);
         verify(interactionRepo).save(org.mockito.ArgumentMatchers.argThat(i -> "BOOK".equals(((Interaction) i).getType())));
+        verify(metricsRepo).incrementBookings(2L, java.time.LocalDate.now(), 4);
         // 重复投递：consumed_events 插入 0 行，直接结束，不重复通知。
         when(consumedEvents.tryInsert(eq("eventpulse"), anyString())).thenReturn(0);
         consumer.onMessage("{\"type\":\"BOOKING_CREATED\",\"bookingId\":5,\"dedupKey\":\"k\"}");

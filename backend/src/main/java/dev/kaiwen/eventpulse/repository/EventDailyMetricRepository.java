@@ -19,17 +19,19 @@ public interface EventDailyMetricRepository extends JpaRepository<EventDailyMetr
     /**
      * 数据库原子加一：当天还没有统计行时，INSERT 里已经带 1（首次即 +1）；
      * 已有行时 ON CONFLICT 只把对应列 +1。并发下不会互相覆盖。
+     * tickets 同时增加实际预订张数 quantity（一次订 4 张就记 4 张）。
      */
     @Modifying
     @Query(value = """
             insert into event_daily_metrics (event_id, metric_date, views, clicks, saves, unsaves,
                                              bookings, tickets, cancels, check_ins)
-            values (:eventId, :date, 0, 0, 0, 0, 1, 1, 0, 0)
+            values (:eventId, :date, 0, 0, 0, 0, 1, :quantity, 0, 0)
             on conflict (event_id, metric_date) do update
               set bookings = event_daily_metrics.bookings + 1,
-                  tickets  = event_daily_metrics.tickets  + 1
+                  tickets  = event_daily_metrics.tickets  + :quantity
             """, nativeQuery = true)
-    void incrementBookings(@Param("eventId") Long eventId, @Param("date") LocalDate date);
+    void incrementBookings(@Param("eventId") Long eventId, @Param("date") LocalDate date,
+                           @Param("quantity") int quantity);
 
     @Modifying
     @Query(value = """

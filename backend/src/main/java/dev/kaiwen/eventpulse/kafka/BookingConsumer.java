@@ -60,7 +60,9 @@ public class BookingConsumer {
         switch (event.type()) {
             case "BOOKING_CREATED" -> {
                 requireInteractionFields(event);
-                interactionService.record(event.userId(), event.eventId(), "BOOK");
+                requirePositiveQuantity(event);
+                interactionService.record(event.userId(), event.eventId(), "BOOK",
+                        Math.toIntExact(event.quantity()));
             }
             case "BOOKING_CANCELLED" -> {
                 requireInteractionFields(event);
@@ -84,6 +86,16 @@ public class BookingConsumer {
     private static void requireInteractionFields(BookingEvent event) {
         if (!event.validForInteraction()) {
             throw new IllegalStateException("预订消息缺少 dedupKey / userId / eventId / bookingId: " + event);
+        }
+    }
+
+    /**
+     * BOOKING_CREATED 必须携带有效张数（> 0）。缺少或非法张数会写错 tickets 统计，
+     * 直接抛出异常交给 Error Handler 进 DLT。
+     */
+    private static void requirePositiveQuantity(BookingEvent event) {
+        if (event.quantity() == null || event.quantity() <= 0) {
+            throw new IllegalStateException("BOOKING_CREATED 缺少有效 quantity（须 > 0）: " + event);
         }
     }
 

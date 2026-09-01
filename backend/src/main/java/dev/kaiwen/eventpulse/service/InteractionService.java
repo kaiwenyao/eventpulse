@@ -30,18 +30,30 @@ public class InteractionService {
     /**
      * 记录一次行为。type 由调用方决定；页面只能提交 VIEW / CLICK / SAVE / UNSAVE，
      * Kafka 消费者提交 BOOK / CANCEL（数据来自已完成的后端事务，不是客户端自报）。
+     * quantity 仅对 BOOK 有意义：一次预订 4 张票，tickets 统计就 +4。
      */
     public void record(Long userId, Long eventId, String type) {
+        record(userId, eventId, type, 1);
+    }
+
+    /**
+     * 带张数的记录。BOOK / CANCEL 由 Kafka 消费者传入实际预订/取消张数；
+     * quantity 必须大于 0，否则视为消息数据损坏，抛异常交给 DLT。
+     */
+    public void record(Long userId, Long eventId, String type, int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("quantity 必须大于 0，实际为 " + quantity);
+        }
         Interaction interaction = new Interaction();
         interaction.setUserId(userId);
         interaction.setEventId(eventId);
         interaction.setType(type);
         interaction.setCreatedAt(Instant.now());
         interactions.save(interaction);
-        incrementDailyMetric(eventId, type);
+        incrementDailyMetric(eventId, type, quantity);
     }
 
-    private void incrementDailyMetric(Long eventId, String type) {
+    private void incrementDailyMetric(Long eventId, String type, int quantity) {
         LocalDate today = LocalDate.now();
         // 数据库直接原子加一，避免并发读取同一个旧值后互相覆盖。
         switch (type) {
@@ -49,7 +61,7 @@ public class InteractionService {
             case "CLICK" -> metrics.incrementClicks(eventId, today);
             case "SAVE" -> metrics.incrementSaves(eventId, today);
             case "UNSAVE" -> metrics.incrementUnsaves(eventId, today);
-            case "BOOK" -> metrics.incrementBookings(eventId, today);
+            case "BOOK" -> metrics.incrementBookings(eventId, today, quantity);
             case "CANCEL" -> metrics.incrementCancels(eventId, today);
             default -> {
             }
