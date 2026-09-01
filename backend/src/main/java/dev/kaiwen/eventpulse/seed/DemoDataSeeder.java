@@ -46,6 +46,7 @@ public class DemoDataSeeder implements CommandLineRunner {
         user.setPassword(passwordEncoder.encode(rawPassword));
         user.setName(name);
         user.setRole(role);
+        user.setWalletCents(88800); // 演示钱包：预存 ¥888，方便个人中心直接展示与充值。
         return users.save(user);
     }
 

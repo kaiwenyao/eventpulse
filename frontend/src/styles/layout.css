@@ -19,6 +19,27 @@ body:has(.console) {
   min-height: 60vh;
 }
 
+/* 页脚真正贴到视口 / 文档底部：内容不满一屏时由 flex 撑开，
+   内容超出一屏时 footer 落在内容之后，不再悬在半空。 */
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  min-width: 0;
+}
+
+.container {
+  /* 撑满剩余高度，把 footer 顶到最底部。 */
+  flex: 1 0 auto;
+  width: 100%;
+}
+
 /* ------------------------------------------------------------------ topbar */
 
 .topbar {

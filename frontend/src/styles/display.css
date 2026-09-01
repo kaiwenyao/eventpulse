@@ -913,3 +913,98 @@ a.table-title:hover {
     transform: scale(0.8);
   }
 }
+
+/* ----------------------------------------------------------------- profile */
+
+.profile-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  margin-top: 0;
+}
+
+.profile-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--violet));
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  flex: none;
+}
+
+.profile-copy h2 {
+  margin: 0 0 var(--space-1);
+}
+
+.profile-copy p {
+  margin: 0;
+}
+
+.profile-balance {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.balance-num {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-3);
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--paper);
+}
+
+.stat-card strong {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card span {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stat-card:hover {
+  border-color: var(--line-strong);
+  color: var(--paper);
+  text-decoration: none;
+}
+
+.recharge-field {
+  max-width: 280px;
+}
+
+.quick-chips {
+  margin: var(--space-2) 0 var(--space-4);
+}
+
+.recharge-hint {
+  margin: var(--space-3) 0 0;
+}

@@ -1,5 +1,6 @@
 package dev.kaiwen.eventpulse.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,4 +19,6 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
     long countByEventIdAndStatus(Long eventId, String status);
 
     long countByBookingIdAndStatus(Long bookingId, String status);
+
+    long countByBookingIdIn(Collection<Long> bookingIds);
 }

@@ -28,6 +28,10 @@ public class User {
     @Column(nullable = false)
     private String role;
 
+    /** 演示钱包余额（分）。注册时为零，个人中心可充值，取消预订时按规则退回。 */
+    @Column(name = "wallet_cents", nullable = false)
+    private long walletCents;
+
     public Long getId() {
         return id;
     }
@@ -66,5 +70,13 @@ public class User {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public long getWalletCents() {
+        return walletCents;
+    }
+
+    public void setWalletCents(long walletCents) {
+        this.walletCents = walletCents;
     }
 }

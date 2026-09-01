@@ -44,6 +44,7 @@ import dev.kaiwen.eventpulse.common.PageResult;
 import dev.kaiwen.eventpulse.common.Result;
 import dev.kaiwen.eventpulse.dto.AuthDtos.LoginRequest;
 import dev.kaiwen.eventpulse.dto.AuthDtos.RegisterRequest;
+import dev.kaiwen.eventpulse.dto.AuthDtos.WalletRechargeRequest;
 import dev.kaiwen.eventpulse.dto.BookingDtos.CreateBookingRequest;
 import dev.kaiwen.eventpulse.dto.EventDtos.EventRequest;
 import dev.kaiwen.eventpulse.entity.Booking;
@@ -58,6 +59,7 @@ import dev.kaiwen.eventpulse.kafka.BookingProducer;
 import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
+import dev.kaiwen.eventpulse.repository.EventFavouriteRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.repository.UserRepository;
@@ -80,6 +82,8 @@ class UnitTest {
     BookingRepository bookings;
     @Mock
     NotificationRepository notifications;
+    @Mock
+    EventFavouriteRepository favourites;
     @Mock
     TicketRepository tickets;
     @Mock
@@ -147,7 +151,7 @@ class UnitTest {
         String token = jwt.createToken(3L, "ORGANISER");
         assertThat(jwt.parseToken(token).get("userId", Number.class).longValue()).isEqualTo(3L);
 
-        AuthService auth = new AuthService(users, passwordEncoder, jwt);
+        AuthService auth = new AuthService(users, passwordEncoder, jwt, bookings, tickets, favourites, notifications, new EventService(events));
         when(users.existsByEmail("a@b.c")).thenReturn(true);
         assertThatThrownBy(() -> auth.register(new RegisterRequest("a@b.c", "123456", "A")))
                 .isInstanceOf(BusinessException.class);
@@ -177,6 +181,17 @@ class UnitTest {
         assertThat(auth.me(2L).email()).isEqualTo("u@b.c");
         when(users.findById(99L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> auth.me(99L)).isInstanceOf(BusinessException.class);
+
+        // 个人中心：余额 + 账户统计 + 演示充值。
+        when(bookings.findByUserIdOrderByCreatedAtDesc(2L)).thenReturn(List.of());
+        when(favourites.countByUserId(2L)).thenReturn(2L);
+        when(notifications.countByUserId(2L)).thenReturn(3L);
+        assertThat(auth.profile(2L).walletCents()).isEqualTo(0);
+        assertThat(auth.profile(2L).favouriteCount()).isEqualTo(2);
+        assertThat(auth.profile(2L).notificationCount()).isEqualTo(3);
+        WalletRechargeRequest recharge = new WalletRechargeRequest(50000);
+        assertThat(auth.recharge(2L, recharge).walletCents()).isEqualTo(50000);
+        assertThat(stored.getWalletCents()).isEqualTo(50000);
     }
 
     @Test
@@ -401,7 +416,8 @@ class UnitTest {
 
     @Test
     void controllersAndConfig() {
-        AuthService auth = new AuthService(users, passwordEncoder, new JwtService(new AppProperties()));
+        AuthService auth = new AuthService(users, passwordEncoder, new JwtService(new AppProperties()),
+                bookings, tickets, favourites, notifications, new EventService(events));
         when(users.existsByEmail("n@b.c")).thenReturn(false);
         when(passwordEncoder.encode(anyString())).thenReturn("hash");
         when(users.save(any())).thenAnswer(inv -> {

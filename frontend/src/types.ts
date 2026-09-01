@@ -46,6 +46,19 @@ export interface BookingVo {
   createdAt: string
 }
 
+export interface UserProfile {
+  id: number
+  email: string
+  name: string
+  role: string
+  walletCents: number
+  totalSpentCents: number
+  bookingCount: number
+  ticketCount: number
+  favouriteCount: number
+  notificationCount: number
+}
+
 export interface NotificationVo {
   id: number
   bookingId?: number

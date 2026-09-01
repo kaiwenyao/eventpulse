@@ -13,4 +13,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     List<Notification> findAllByOrderByCreatedAtDesc();
 
     boolean existsByDedupKey(String dedupKey);
+
+    long countByUserId(Long userId);
 }
