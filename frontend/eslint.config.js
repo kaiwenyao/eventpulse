@@ -5,7 +5,19 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'e2e', 'playwright.config.ts'] },
+  // Generated output (coverage reports, Playwright artifacts) ships vendored
+  // JS that is not ours to lint.
+  {
+    ignores: [
+      'dist',
+      'node_modules',
+      'coverage',
+      'test-results',
+      'playwright-report',
+      'e2e',
+      'playwright.config.ts',
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

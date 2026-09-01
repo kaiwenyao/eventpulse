@@ -246,7 +246,10 @@ describe('App pages', () => {
       </MemoryRouter>,
     )
     await waitFor(() => expect(screen.getByRole('heading', { name: '主办方工作台' })).toBeInTheDocument())
-    await userEvent.type(screen.getAllByRole('textbox')[0], '夜')
+    // The console rail, the page header and the empty state all offer the same
+    // entry point; any of them must land on the create form.
+    await userEvent.click(screen.getAllByRole('link', { name: '新建活动' })[0])
+    await waitFor(() => expect(screen.getByRole('heading', { name: '新建活动' })).toBeInTheDocument())
     await userEvent.click(screen.getByRole('button', { name: '发布活动' }))
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/organiser/events', expect.anything()))
   })

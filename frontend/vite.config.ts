@@ -24,9 +24,10 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html'],
       // Measure the complete application surface (routing, auth, API client
-      // and every customer/operator page). Tests may use mocked API responses,
-      // but production files may not be silently removed from the gate.
-      include: ['src/api.ts', 'src/auth.tsx', 'src/App.tsx'],
+      // and every customer/operator page, component and UI primitive). Tests
+      // may use mocked API responses, but production files may not be silently
+      // removed from the gate.
+      include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.test.*', 'src/test/**', 'src/main.tsx'],
       thresholds: {
         statements: 80,
