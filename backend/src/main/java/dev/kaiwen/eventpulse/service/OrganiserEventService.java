@@ -25,6 +25,7 @@ import dev.kaiwen.eventpulse.entity.Booking;
 import dev.kaiwen.eventpulse.entity.Event;
 import dev.kaiwen.eventpulse.entity.EventAuditLog;
 import dev.kaiwen.eventpulse.exception.BusinessException;
+import dev.kaiwen.eventpulse.outbox.KafkaTopics;
 import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.EventAuditLogRepository;
@@ -142,7 +143,7 @@ public class OrganiserEventService {
         });
         for (Booking booking : bookings.findByEventIdOrderByCreatedAtDesc(id)) {
             if ("CONFIRMED".equals(booking.getStatus())) {
-                outbox.write("booking-events", "EVENT_CANCELLED",
+                outbox.write(KafkaTopics.BOOKING_EVENTS, "EVENT_CANCELLED",
                         "EVENT_CANCELLED:" + id + ":" + booking.getUserId(),
                         Map.of(
                                 "type", "EVENT_CANCELLED",

@@ -49,15 +49,18 @@ import dev.kaiwen.eventpulse.dto.BookingDtos.CreateBookingRequest;
 import dev.kaiwen.eventpulse.dto.EventDtos.EventRequest;
 import dev.kaiwen.eventpulse.entity.Booking;
 import dev.kaiwen.eventpulse.entity.Event;
+import dev.kaiwen.eventpulse.entity.Interaction;
 import dev.kaiwen.eventpulse.entity.Notification;
 import dev.kaiwen.eventpulse.entity.User;
 import dev.kaiwen.eventpulse.exception.BusinessException;
 import dev.kaiwen.eventpulse.exception.GlobalExceptionHandler;
 import dev.kaiwen.eventpulse.interceptor.JwtInterceptor;
 import dev.kaiwen.eventpulse.kafka.BookingConsumer;
-import dev.kaiwen.eventpulse.kafka.BookingProducer;
 import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
+import dev.kaiwen.eventpulse.repository.ConsumedEventRepository;
+import dev.kaiwen.eventpulse.repository.EventDailyMetricRepository;
+import dev.kaiwen.eventpulse.repository.InteractionRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
 import dev.kaiwen.eventpulse.repository.EventFavouriteRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
@@ -67,6 +70,7 @@ import dev.kaiwen.eventpulse.seed.DemoDataSeeder;
 import dev.kaiwen.eventpulse.service.AuthService;
 import dev.kaiwen.eventpulse.service.BookingService;
 import dev.kaiwen.eventpulse.service.EventService;
+import dev.kaiwen.eventpulse.service.InteractionService;
 import dev.kaiwen.eventpulse.service.JwtService;
 import dev.kaiwen.eventpulse.service.PlatformService;
 import dev.kaiwen.eventpulse.service.TicketService;
@@ -92,6 +96,12 @@ class UnitTest {
     OutboxWriter outbox;
     @Mock
     PlatformService platform;
+    @Mock
+    ConsumedEventRepository consumedEvents;
+    @Mock
+    InteractionRepository interactionRepo;
+    @Mock
+    EventDailyMetricRepository metricsRepo;
     @Mock
     PasswordEncoder passwordEncoder;
     @Mock
@@ -302,18 +312,25 @@ class UnitTest {
 
     @Test
     void consumerHandlerInterceptorSeeder() throws Exception {
-        BookingConsumer consumer = new BookingConsumer(notifications, new ObjectMapper());
-        consumer.onMessage("{\"type\":\"BOOKING_CREATED\",\"bookingId\":5}");
+        InteractionService interactionService = new InteractionService(interactionRepo, metricsRepo);
+        BookingConsumer consumer = new BookingConsumer(consumedEvents, notifications, interactionService, new ObjectMapper());
+        // 首次处理：写入 consumed_events 成功，创建通知，并写 BOOK interaction。
+        when(consumedEvents.tryInsert(eq("eventpulse"), anyString())).thenReturn(1);
+        consumer.onMessage("{\"type\":\"BOOKING_CREATED\",\"bookingId\":5,\"dedupKey\":\"k\",\"userId\":1,\"eventId\":2}");
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         verify(notifications).save(captor.capture());
         assertThat(captor.getValue().getBookingId()).isEqualTo(5L);
-        when(notifications.existsByDedupKey("dup")).thenReturn(true);
-        consumer.onMessage("{\"type\":\"BOOKING_CREATED\",\"bookingId\":5,\"dedupKey\":\"dup\"}");
-        consumer.onMessage("not-json");
-
-        BookingProducer producer = new BookingProducer(kafkaTemplate, new ObjectMapper());
-        producer.sendCancelled(booking(1L, 2L, 3L, 1, "CONFIRMED"));
-        verify(kafkaTemplate).send(anyString(), anyString(), anyString());
+        verify(interactionRepo).save(org.mockito.ArgumentMatchers.argThat(i -> "BOOK".equals(((Interaction) i).getType())));
+        // 重复投递：consumed_events 插入 0 行，直接结束，不重复通知。
+        when(consumedEvents.tryInsert(eq("eventpulse"), anyString())).thenReturn(0);
+        consumer.onMessage("{\"type\":\"BOOKING_CREATED\",\"bookingId\":5,\"dedupKey\":\"k\"}");
+        verify(notifications, org.mockito.Mockito.times(1)).save(any());
+        // EVENT_CANCELLED 只创建通知，不写 interaction。
+        when(consumedEvents.tryInsert(eq("eventpulse"), anyString())).thenReturn(1);
+        consumer.onMessage("{\"type\":\"EVENT_CANCELLED\",\"bookingId\":6,\"dedupKey\":\"e\",\"userId\":1,\"eventId\":2}");
+        verify(notifications, org.mockito.Mockito.times(2)).save(any(Notification.class));
+        // 无法解析的消息不再被静默吞掉。
+        assertThatThrownBy(() -> consumer.onMessage("not-json")).isInstanceOf(Exception.class);
 
         AppProperties props = new AppProperties();
         props.setSecretKey("test-secret-key-change-me-0123456789ab");
