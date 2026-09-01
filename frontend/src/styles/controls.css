@@ -25,15 +25,15 @@ button,
 }
 
 .btn-primary,
-button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle) {
+button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle) {
   background: var(--accent);
   border: none;
   color: #fff;
 }
 
 .btn-primary:hover,
-button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle):hover {
-  background: #ff6ba2;
+button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle):hover {
+  background: color-mix(in srgb, var(--accent) 85%, #ffffff);
 }
 
 .btn-primary:active,
@@ -60,7 +60,7 @@ button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-to
 .btn-ghost {
   background: transparent;
   color: var(--accent);
-  border: 1px solid rgba(255, 77, 141, 0.45);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .btn-ghost:hover {
@@ -71,11 +71,11 @@ button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-to
 .btn-danger {
   background: transparent;
   color: var(--red);
-  border: 1px solid rgba(255, 93, 108, 0.45);
+  border: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
 }
 
 .btn-danger:hover {
-  background: rgba(255, 93, 108, 0.12);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
   border-color: var(--red);
 }
 
@@ -170,14 +170,21 @@ textarea[aria-invalid='true'] {
 
 input::placeholder,
 textarea::placeholder {
-  color: #5d6475;
+  color: var(--placeholder);
 }
 
-/* Dark-scheme native pickers (date/time) instead of a white blob. */
+/* Native pickers (date/time) inherit the active scheme so the OS control
+   matches the page instead of dropping a white blob onto dark UI. */
 input[type='datetime-local'],
 input[type='date'],
 input[type='number'] {
   color-scheme: dark;
+}
+
+:root[data-theme='light'] input[type='datetime-local'],
+:root[data-theme='light'] input[type='date'],
+:root[data-theme='light'] input[type='number'] {
+  color-scheme: light;
 }
 
 label {
@@ -349,6 +356,35 @@ label {
   gap: var(--space-2);
 }
 
+/* ----------------------------------------------------------- theme toggle */
+
+/* A square icon button that sits in the top bar; rests on the bar's scrim so
+   only its border + muted glyph carry it. Overrides the default button padding
+   and the transition list (no transform on tap for a tiny control). */
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  flex: none;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.theme-toggle:hover {
+  color: var(--paper);
+  border-color: var(--line-strong);
+  background: var(--surface-3);
+}
+
+.theme-toggle .icon {
+  width: 18px;
+  height: 18px;
+}
+
 /* ------------------------------------------------------------------ modal */
 
 .modal-scrim {
@@ -358,7 +394,7 @@ label {
   display: grid;
   place-items: center;
   padding: var(--space-5);
-  background: rgba(4, 6, 12, 0.72);
+  background: var(--scrim-modal);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -441,7 +477,7 @@ label {
 }
 
 .toast-error {
-  border-color: rgba(255, 93, 108, 0.4);
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
 }
 
 .toast-close {

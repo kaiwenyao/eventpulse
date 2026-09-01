@@ -97,3 +97,18 @@ export const ImageIcon = ({ className }: IconProps) => (
     <path d="m2.6 11.6 3.2-3 3 2.6 2-1.8 2.6 2.2" />
   </Icon>
 )
+
+/** Shown when the active theme is dark — clicking switches to light. */
+export const SunIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <circle cx="8" cy="8" r="2.8" />
+    <path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.7 3.7l1.1 1.1M11.2 11.2l1.1 1.1M12.3 3.7l-1.1 1.1M4.8 11.2l-1.1 1.1" />
+  </Icon>
+)
+
+/** Shown when the active theme is light — clicking switches to dark. */
+export const MoonIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M12.6 9.4A5 5 0 0 1 6.6 3.4a5 5 0 1 0 6 6Z" />
+  </Icon>
+)

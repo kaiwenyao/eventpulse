@@ -92,7 +92,7 @@
   gap: var(--space-3);
   margin-top: var(--space-5);
   padding: var(--space-4) var(--space-5);
-  background: rgba(17, 20, 31, 0.92);
+  background: var(--scrim-sticky);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--line);

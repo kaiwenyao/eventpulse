@@ -113,6 +113,10 @@
     order: 3;
   }
 
+  .theme-toggle {
+    order: 3;
+  }
+
   .hide-sm {
     display: none;
   }
