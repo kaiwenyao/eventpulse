@@ -12,5 +12,7 @@ public interface EventFavouriteRepository extends JpaRepository<EventFavourite, 
 
     List<EventFavourite> findByUserIdOrderByCreatedAtDesc(Long userId);
 
+    long countByUserId(Long userId);
+
     void deleteByUserIdAndEventId(Long userId, Long eventId);
 }

@@ -15,6 +15,7 @@ import { EventsPage } from './pages/EventsPage'
 import { FavouritesPage } from './pages/FavouritesPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotificationsPage } from './pages/NotificationsPage'
+import { ProfilePage } from './pages/ProfilePage'
 import { EmptyState } from './ui/Badges'
 import { SkeletonGrid } from './ui/Skeleton'
 import { ToastProvider } from './ui/Toast'
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="/bookings/:id" element={requireUser(<BookingDetailPage />)} />
           <Route path="/favourites" element={requireUser(<FavouritesPage />)} />
           <Route path="/notifications" element={requireUser(<NotificationsPage />)} />
+          <Route path="/profile" element={requireUser(<ProfilePage />)} />
           <Route path="/organiser" element={requireUser(<OrganiserGate />)}>
             <Route index element={<OrganiserDashboardPage />} />
             <Route path="events" element={<OrganiserEventsPage />} />

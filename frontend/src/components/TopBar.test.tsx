@@ -34,6 +34,7 @@ describe('TopBar', () => {
     renderApp()
     await waitFor(() => expect(screen.getByRole('link', { name: '活动' })).toBeInTheDocument())
     expect(screen.queryByRole('link', { name: '我的预订' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '个人中心' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '登录 / 注册' })).toBeInTheDocument()
   })
 

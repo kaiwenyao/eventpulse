@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { to: '/bookings', label: '我的预订', end: false, auth: true },
   { to: '/favourites', label: '收藏', end: false, auth: true },
   { to: '/notifications', label: '消息', end: false, auth: true },
+  { to: '/profile', label: '个人中心', end: false, auth: true },
 ]
 
 function initials(name?: string, email?: string) {
@@ -61,9 +62,9 @@ export function TopBar() {
 
         {user ? (
           <span className="row user-box">
-            <span className="avatar" aria-hidden>
+            <NavLink to="/profile" className="avatar" aria-label="个人中心" title="个人中心">
               {initials(user.name, user.email)}
-            </span>
+            </NavLink>
             <span className="muted hide-sm">{user.email}</span>
             <button
               className="btn-secondary btn-sm"
