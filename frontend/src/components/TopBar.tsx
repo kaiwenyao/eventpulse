@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth'
+import { currentTheme, toggleTheme, type Theme } from '../theme'
+import { MoonIcon, SunIcon } from '../ui/Icons'
 
 const NAV_LINKS = [
   { to: '/', label: '活动', end: true, auth: false },
@@ -18,6 +20,7 @@ export function TopBar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [theme, setTheme] = useState<Theme>(() => currentTheme())
   const links = NAV_LINKS.filter((link) => !link.auth || user)
 
   return (
@@ -45,6 +48,16 @@ export function TopBar() {
           ))}
           {user?.role === 'ORGANISER' && <NavLink to="/organiser">工作台</NavLink>}
         </nav>
+
+        <button
+          type="button"
+          className="theme-toggle"
+          onClick={() => setTheme(toggleTheme())}
+          aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
+          title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
+        >
+          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+        </button>
 
         {user ? (
           <span className="row user-box">

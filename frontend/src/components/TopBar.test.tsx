@@ -71,4 +71,23 @@ describe('TopBar', () => {
     await userEvent.click(screen.getByRole('button', { name: '退出' }))
     await waitFor(() => expect(screen.getByRole('link', { name: '登录 / 注册' })).toBeInTheDocument())
   })
+
+  it('toggles the colour theme and flips its accessible label', async () => {
+    localStorage.clear()
+    document.documentElement.removeAttribute('data-theme')
+
+    apiMock.fn.mockResolvedValue([])
+    renderApp()
+    // No attribute → treated as dark, so the button offers the light switch.
+    const toggle = await screen.findByRole('button', { name: '切换到浅色主题' })
+    expect(document.documentElement.dataset.theme).toBeUndefined()
+
+    await userEvent.click(toggle)
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(localStorage.getItem('theme')).toBe('light')
+    expect(await screen.findByRole('button', { name: '切换到深色主题' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '切换到深色主题' }))
+    expect(document.documentElement.dataset.theme).toBe('dark')
+  })
 })

@@ -7,6 +7,8 @@
 --------------------------------------------------------------------------- */
 
 :root {
+  color-scheme: dark;
+
   --ink: #0a0c14;
   --surface: #11141f;
   --surface-2: #1a1f2e;
@@ -18,11 +20,22 @@
   --paper-dim: #c6cbd9;
   --muted: #8e96ac;
   --accent: #ff4d8d;
+  --accent-bright: #ff4d8d;
   --accent-soft: rgba(255, 77, 141, 0.12);
   --violet: #7c6cff;
   --green: #2dd4a7;
   --amber: #f5b040;
   --red: #ff5d6c;
+
+  /* Scrim / overlay surfaces derived from the dark ink — theme-specific so they
+     read translucent against their own background. */
+  --scrim-topbar: rgba(10, 12, 20, 0.82);
+  --scrim-footer: rgba(10, 12, 20, 0.6);
+  --scrim-modal: rgba(4, 6, 12, 0.72);
+  --scrim-sticky: rgba(17, 20, 31, 0.92);
+  --placeholder: #5d6475;
+  --hover-wash: rgba(255, 255, 255, 0.02);
+  --empty-wash: rgba(255, 255, 255, 0.015);
 
   --font-display: 'Space Grotesk', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
   --font-body: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
@@ -79,6 +92,10 @@ a:hover {
 
 ::selection {
   background: rgba(255, 77, 141, 0.35);
+}
+
+:root[data-theme='light'] ::selection {
+  background: rgba(214, 51, 108, 0.25);
 }
 
 /* Visible keyboard focus everywhere, per accessibility floor. */
@@ -165,4 +182,58 @@ p {
   stroke-width: 1.4;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* ===========================================================================
+   Light theme — "浅纸 + 深色粉紫". Same brand pulse (pink + violet aura) but
+   translated onto a cool paper background. Semantic colours (links, badges,
+   status) use the deepened accents so they clear WCAG AA on white; the bright
+   pink survives only as pure decoration (gradient titles, ambient glows).
+   =========================================================================== */
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --ink: #f4f5fa;
+  --surface: #ffffff;
+  --surface-2: #eef0f6;
+  --surface-3: #e7eaf3;
+  --surface-4: #dfe3ee;
+  --line: #e3e7f0;
+  --line-strong: #c5cfdf;
+
+  --paper: #20263c;
+  --paper-dim: #4c5660;
+  --muted: #6b7590;
+
+  --accent: #d6336c; /* readable deep pink — 4.6:1 on white */
+  --accent-bright: #ff4d8d; /* decoration only */
+  --accent-soft: rgba(214, 51, 108, 0.1);
+
+  --violet: #6d5df0; /* 4.5:1 */
+  --green: #0f766e; /* 4.5:1 */
+  --amber: #b45309; /* 5.9:1 */
+  --red: #be123c; /* 6.4:1 */
+
+  --scrim-topbar: rgba(255, 255, 255, 0.82);
+  --scrim-footer: rgba(255, 255, 255, 0.6);
+  --scrim-modal: rgba(18, 22, 44, 0.32);
+  --scrim-sticky: rgba(255, 255, 255, 0.92);
+  --placeholder: #8a93a8;
+  --hover-wash: rgba(20, 24, 48, 0.03);
+  --empty-wash: rgba(20, 24, 48, 0.02);
+
+  --shadow-sm: 0 1px 3px rgba(28, 32, 64, 0.06), 0 2px 8px rgba(28, 32, 64, 0.07);
+  --shadow: 0 6px 20px rgba(28, 32, 64, 0.1), 0 2px 6px rgba(28, 32, 64, 0.06);
+  --shadow-lg: 0 14px 40px rgba(28, 32, 64, 0.14);
+  --focus: 0 0 0 3px rgba(214, 51, 108, 0.32);
+}
+
+/* The ambient pink+violet aura carries over, softened so it reads as a wash on
+   paper rather than a glow. */
+:root[data-theme='light'] body {
+  background:
+    radial-gradient(1000px 480px at 85% -10%, rgba(109, 93, 240, 0.07), transparent 60%),
+    radial-gradient(800px 420px at -10% 15%, rgba(214, 51, 108, 0.06), transparent 60%),
+    var(--ink);
 }
