@@ -3,6 +3,7 @@ package dev.kaiwen.eventpulse;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -165,6 +166,21 @@ class CrudEnhancementTest {
         when(events.findByIdAndOrganiserId(8L, 2L)).thenReturn(Optional.empty());
         when(events.findById(8L)).thenReturn(Optional.of(event(8L, EventStatus.DRAFT, 99L)));
         assertThatThrownBy(() -> service.requireOwn(8L)).isInstanceOf(BusinessException.class);
+        when(events.findByIdAndOrganiserId(77L, 2L)).thenReturn(Optional.empty());
+        when(events.findById(77L)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.requireOwn(77L)).isInstanceOf(BusinessException.class);
+        Event archived = event(12L, EventStatus.ARCHIVED, 2L);
+        when(events.findByIdAndOrganiserId(12L, 2L)).thenReturn(Optional.of(archived));
+        assertThatThrownBy(() -> service.publish(12L)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.cancel(12L, new CancelEventRequest("x"))).isInstanceOf(BusinessException.class);
+        Event draftWithOrders = event(13L, EventStatus.DRAFT, 2L);
+        when(events.findByIdAndOrganiserId(13L, 2L)).thenReturn(Optional.of(draftWithOrders));
+        Booking existing = new Booking();
+        existing.setEventId(13L);
+        when(bookings.findByEventIdOrderByCreatedAtDesc(13L)).thenReturn(List.of(existing));
+        assertThatThrownBy(() -> service.delete(13L)).isInstanceOf(BusinessException.class);
+        assertThat(service.allowedActions(event(1L, EventStatus.ARCHIVED, 2L))).contains("view");
+        assertThat(service.allowedActions(event(1L, EventStatus.CANCELLED, 2L))).contains("archive");
         new OrganiserEventController(service).list(null, null, null, null, null, null);
     }
 
@@ -208,6 +224,9 @@ class CrudEnhancementTest {
         OutboxRelay relay = new OutboxRelay(outboxRepo, kafka);
         relay.publish();
         assertThat(relay.pending()).isEqualTo(1);
+        KafkaTemplate<String, String> failing = org.mockito.Mockito.mock(KafkaTemplate.class);
+        when(failing.send(anyString(), anyString(), anyString())).thenThrow(new RuntimeException("down"));
+        new OutboxRelay(outboxRepo, failing).publish();
 
         PlatformService platform = new PlatformService(
                 favourites, interactions, metrics, preferences, recs, notifications, events, bookings, eventService);
@@ -217,18 +236,37 @@ class CrudEnhancementTest {
         platform.favourite(20L);
         platform.unfavourite(20L);
         platform.interact(20L, "VIEW");
+        platform.interact(20L, "CLICK");
         assertThatThrownBy(() -> platform.interact(20L, "BOOK")).isInstanceOf(BusinessException.class);
-        when(events.findByStatusInOrderByStartsAtAsc(any())).thenReturn(List.of(event(20L, EventStatus.PUBLISHED, 2L)));
+        Event noGeo = event(21L, EventStatus.PUBLISHED, 2L);
+        noGeo.setLatitude(null);
+        noGeo.setLongitude(null);
+        when(events.findByStatusInOrderByStartsAtAsc(any())).thenReturn(List.of(event(20L, EventStatus.PUBLISHED, 2L), noGeo));
         assertThat(platform.nearby(31.2, 121.5, 50d)).isNotEmpty();
+        assertThat(platform.nearby(null, null, null)).isNotNull();
         when(recs.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        UserPreference pref = new UserPreference();
+        pref.setCategories("music");
+        pref.setCities("上海");
+        when(preferences.findById(2L)).thenReturn(Optional.of(pref));
+        when(interactions.findByUserIdOrderByCreatedAtDesc(2L)).thenReturn(List.of());
         assertThat(platform.recommend()).isNotNull();
         assertThat(platform.popular()).isNotEmpty();
         platform.advanceLifecycle();
         when(events.findByOrganiserIdOrderByStartsAtDesc(2L)).thenReturn(List.of(event(20L, EventStatus.PUBLISHED, 2L)));
+        platform.setOutboxRelay(relay);
         assertThat(platform.dashboard().get("eventCount")).isEqualTo(1);
         when(events.findByIdAndOrganiserId(20L, 2L)).thenReturn(Optional.of(event(20L, EventStatus.PUBLISHED, 2L)));
         when(metrics.findByEventIdAndMetricDateBetween(any(), any(), any())).thenReturn(List.of());
         assertThat(platform.analytics(20L, LocalDate.now().minusDays(1), LocalDate.now()).get("views")).isEqualTo(0);
+        assertThat(platform.analytics(null, null, null).get("views")).isEqualTo(0);
+        EventDailyMetric row = new EventDailyMetric();
+        row.setViews(4);
+        row.setClicks(2);
+        row.setBookings(1);
+        when(metrics.findByEventIdAndMetricDateBetween(any(), any(), any())).thenReturn(List.of(row));
+        assertThat(platform.analytics(20L, null, null).get("views")).isEqualTo(4);
+        assertThat(platform.isFavourite(20L)).isFalse();
         platform.savePreference("music", "上海", 31.2, 121.5, 10d);
         Notification n = new Notification(1L, "hi");
         n.setId(3L);
@@ -237,6 +275,11 @@ class CrudEnhancementTest {
         when(notifications.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(n));
         assertThat(platform.myNotifications()).hasSize(1);
         platform.markRead(3L);
+        Notification other = new Notification(2L, "no");
+        other.setId(4L);
+        other.setUserId(99L);
+        when(notifications.findById(4L)).thenReturn(Optional.of(other));
+        assertThatThrownBy(() -> platform.markRead(4L)).isInstanceOf(BusinessException.class);
         platform.subscribe(1L);
         platform.emit(1L, "ticket", "ok");
         when(favourites.findByUserIdOrderByCreatedAtDesc(2L)).thenReturn(List.of(new EventFavourite(2L, 20L)));
@@ -247,8 +290,12 @@ class CrudEnhancementTest {
         org.springframework.data.redis.core.ValueOperations<String, String> values =
                 org.mockito.Mockito.mock(org.springframework.data.redis.core.ValueOperations.class);
         when(redis.opsForValue()).thenReturn(values);
-        when(values.get("popular:ids")).thenReturn("20");
+        when(values.get("popular:ids")).thenReturn("not-a-number");
         platform.setRedis(redis);
+        assertThat(platform.popular()).isNotEmpty();
+        when(values.get("popular:ids")).thenReturn("");
+        assertThat(platform.popular()).isNotEmpty();
+        when(values.get("popular:ids")).thenReturn("20");
         assertThat(platform.popular()).isNotEmpty();
         PlatformController api = new PlatformController(platform);
         api.favourite(20L);
@@ -323,6 +370,9 @@ class CrudEnhancementTest {
             return asset;
         });
         MediaAsset uploaded = media.upload("封面.png", "image/png", new byte[] {1, 2, 3});
+        MediaAsset jpeg = media.upload(null, "image/jpeg", new byte[] {1, 2});
+        assertThat(jpeg.getContentType()).isEqualTo("image/jpeg");
+        media.upload("x.webp", "image/webp", new byte[] {1, 2, 3, 4});
         assertThat(uploaded.getPublicUrl()).contains("/api/media/images/5");
         uploaded.setStatus("ACTIVE");
         uploaded.setStorageKey(uploaded.getStorageKey());

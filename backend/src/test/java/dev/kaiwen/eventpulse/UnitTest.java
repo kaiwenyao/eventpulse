@@ -126,9 +126,17 @@ class UnitTest {
         props.setSecretKey("k".repeat(32));
         props.setTokenTtlMs(1000);
         props.setCorsOrigins("http://localhost:3000,http://localhost:5173");
+        props.setMediaDir("data/media");
+        props.setRedisEnabled(false);
+        props.setRedisHost("localhost");
+        props.setRedisPort(6379);
         assertThat(props.getSecretKey()).hasSize(32);
         assertThat(props.getTokenTtlMs()).isEqualTo(1000);
         assertThat(props.corsOriginArray()).contains("http://localhost:3000");
+        assertThat(props.getMediaDir()).isEqualTo("data/media");
+        assertThat(props.isRedisEnabled()).isFalse();
+        assertThat(props.getRedisHost()).isEqualTo("localhost");
+        assertThat(props.getRedisPort()).isEqualTo(6379);
     }
 
     @Test
@@ -183,6 +191,8 @@ class UnitTest {
                 0, 99999, true, "price", true).getTotal()).isEqualTo(1);
         assertThat(service.search(null, null, null, null, null, null, null, false, "sold", true).getTotal()).isEqualTo(2);
         assertThat(service.search(null, null, null, null, null, null, null, null, "updatedAt", false).getTotal()).isEqualTo(2);
+        assertThat(service.search(null, null, null, null, null, null, null, null, "startsAt", false, 0, 1).getRecords()).hasSize(1);
+        assertThat(service.search(null, null, null, null, null, null, null, null, "startsAt", false, 9, 1).getRecords()).isEmpty();
 
         when(events.findById(1L)).thenReturn(Optional.of(published));
         assertThat(service.get(1L).remaining()).isEqualTo(10);
@@ -282,6 +292,8 @@ class UnitTest {
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         verify(notifications).save(captor.capture());
         assertThat(captor.getValue().getBookingId()).isEqualTo(5L);
+        when(notifications.existsByDedupKey("dup")).thenReturn(true);
+        consumer.onMessage("{\"type\":\"BOOKING_CREATED\",\"bookingId\":5,\"dedupKey\":\"dup\"}");
         consumer.onMessage("not-json");
 
         BookingProducer producer = new BookingProducer(kafkaTemplate, new ObjectMapper());
@@ -307,6 +319,9 @@ class UnitTest {
         authed.addHeader("Authorization", "Bearer " + new JwtService(props).createToken(1L, "USER"));
         assertThat(interceptor.preHandle(authed, new MockHttpServletResponse(), new Object())).isTrue();
         interceptor.afterCompletion(authed, res, new Object(), null);
+        MockHttpServletRequest queryTok = new MockHttpServletRequest("GET", "/api/bookings/1/events");
+        queryTok.setParameter("access_token", new JwtService(props).createToken(1L, "USER"));
+        assertThat(interceptor.preHandle(queryTok, new MockHttpServletResponse(), new Object())).isTrue();
         MockHttpServletRequest bad = new MockHttpServletRequest("GET", "/api/bookings");
         bad.addHeader("Authorization", "Bearer bad");
         assertThat(interceptor.preHandle(bad, new MockHttpServletResponse(), new Object())).isFalse();
@@ -445,6 +460,9 @@ class UnitTest {
         assertThat(bookingsApi.list().getData()).hasSize(1);
         assertThat(bookingsApi.get(4L).getData().id()).isEqualTo(4L);
         assertThat(bookingsApi.cancel(4L).getData().status()).isEqualTo("CANCELLED");
+        when(ticketService.forBooking(4L)).thenReturn(List.of());
+        mine.setStatus("CONFIRMED");
+        assertThat(bookingsApi.tickets(4L)).isNotNull();
 
         NotificationController notes = new NotificationController(platform);
         when(platform.myNotifications()).thenReturn(List.of());

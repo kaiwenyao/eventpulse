@@ -122,7 +122,7 @@ describe('organiser and user crud pages', () => {
 
     renderApp('/organiser/analytics')
     await waitFor(() => expect(screen.getByRole('heading', { name: '数据分析' })).toBeInTheDocument())
-    expect(screen.getByText(/浏览 3/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText(/浏览 3/)).toBeInTheDocument(), { timeout: 4000 })
   })
 
   it('covers favourites, nearby, recommend and booking confirm', async () => {
