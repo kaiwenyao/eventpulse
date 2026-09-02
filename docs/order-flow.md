@@ -51,6 +51,14 @@ Outbox 在稍后把消息发送给通知、统计等功能
 
 免费活动的总价是 0，依然会照常生成订单和电子票，只是不减少余额。
 
+对应的实现只有一行，先把 `int` 转成更安全的 `long` 再相乘：
+
+```java
+long paidCents = Math.multiplyExact(
+        (long) event.getPriceCents(),
+        request.quantity());
+```
+
 ### 3. 扣除余额，并避免“花超了”
 
 系统不会先读出余额、再在程序里慢慢计算后保存，因为两次下单同时发生时，可能都以为余额够用。
@@ -62,11 +70,38 @@ Outbox 在稍后把消息发送给通知、统计等功能
 
 因此，即使用户很快地点了两次按钮，或同时在两个页面下单，也不会把钱包扣成负数。
 
+下面这段就是“余额够才扣”的核心。它不是先把余额拿到程序里判断，而是直接让数据库完成判断和扣款：
+
+```sql
+UPDATE users
+SET wallet_cents = wallet_cents - :amount
+WHERE id = :userId
+  AND wallet_cents >= :amount;
+```
+
+如果这条操作影响了 1 个用户，表示扣款成功；影响 0 个用户，就说明余额不够，流程会立刻停止：
+
+```java
+if (users.debitWalletIfEnough(userId, paidCents) == 0) {
+    throw BusinessException.conflict("余额不足");
+}
+```
+
 ### 4. 占用活动名额
 
 扣款通过后，系统才会把活动的已售数量加上本次购买的张数。
 
 这一步同样会再次确认容量。原因很简单：可能有另一位用户在同一瞬间抢走了最后几张票。如果这时名额不足，整次下单都会作废，刚才的扣款也会自动还原。
+
+库存更新也是“有条件才成功”：
+
+```sql
+UPDATE events
+SET sold = sold + :qty
+WHERE id = :id
+  AND status = 'PUBLISHED'
+  AND sold + :qty <= capacity;
+```
 
 ### 5. 保存订单与电子票
 
@@ -78,6 +113,20 @@ Outbox 在稍后把消息发送给通知、统计等功能
 
 “实际支付金额”是订单的价格快照。即使主办方日后修改活动价格，老订单的消费金额和退款金额都不会跟着改变。
 
+订单保存时会把刚刚算出的金额一起写进去：
+
+```java
+Booking booking = new Booking();
+booking.setUserId(userId);
+booking.setEventId(event.getId());
+booking.setQuantity(request.quantity());
+booking.setPaidCents(paidCents); // 将本次实付金额固定在订单上
+booking.setStatus("CONFIRMED");
+bookings.save(booking);
+
+ticketService.issue(booking.getId(), event.getId(), request.quantity());
+```
+
 ### 6. 写入 Outbox：给后续功能留一张待办
 
 订单完成后，系统还会在数据库里写入一条“预订已创建”的待办消息，这个待办就是 **Outbox**。
@@ -85,6 +134,20 @@ Outbox 在稍后把消息发送给通知、统计等功能
 它并不是立刻弹给用户的通知，而是一张可靠的内部待办：之后由专门的发送程序读取它，再把消息送给通知、数据统计等功能。
 
 这样做的好处是：即使消息服务当时临时不可用，订单也不会丢失；消息会留在 Outbox 中，等服务恢复后再发送。
+
+写入待办时，系统会同时保存消息类型、唯一编号和内容。这里的唯一编号能帮助后续功能识别重复消息：
+
+```java
+outbox.write(
+        KafkaTopics.BOOKING_EVENTS,
+        "BOOKING_CREATED",
+        "BOOKING_CREATED:" + booking.getId(),
+        Map.of(
+                "userId", userId,
+                "eventId", event.getId(),
+                "bookingId", booking.getId(),
+                "quantity", request.quantity()));
+```
 
 ## 为什么这些步骤要放在同一个事务里
 
@@ -94,6 +157,16 @@ Outbox 在稍后把消息发送给通知、统计等功能
 - 中间任一步失败，就按下“撤销”，前面已经做过的修改一起恢复。
 
 在本项目中，下列内容处在同一个总开关内：扣钱包余额、占用库存、保存订单、生成电子票、写入 Outbox。
+
+代码里的 `@Transactional` 就是在声明这个“总开关”。它包住的是整段下单方法，而不是只包住扣款：
+
+```java
+@Transactional
+public BookingVo create(CreateBookingRequest request) {
+    // 扣余额 → 占名额 → 保存订单和电子票 → 写 Outbox
+    // 任一步抛出错误，前面的修改都会一起撤销
+}
+```
 
 | 发生的问题 | 最终结果 |
 | --- | --- |
@@ -115,6 +188,20 @@ Outbox 在稍后把消息发送给通知、统计等功能
 5. 写入一条“订单已取消”的 Outbox 待办。
 
 主办方取消整个活动时，对每一张仍有效的订单做同样的退款处理。系统会确保同一张订单只能退款一次，因此重复点击取消不会得到两次退款。
+
+这里先用“只有仍在已确认状态才能改为已取消”的方式领取退款资格；领取失败就表示这张订单已经被别人取消过：
+
+```sql
+UPDATE bookings
+SET status = 'CANCELLED', cancelled_at = now()
+WHERE id = :id AND status = 'CONFIRMED';
+```
+
+领取成功后，才会退回订单原本记录的实付金额：
+
+```java
+users.creditWallet(booking.getUserId(), booking.getPaidCents());
+```
 
 ## Outbox 消息后来去了哪里
 
