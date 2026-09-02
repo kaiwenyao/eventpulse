@@ -33,12 +33,27 @@ curl -s http://localhost:8080/actuator/health
 
 `SECRET_KEY` 用于 JWT 签名，`DB_PASSWORD` 是 Postgres 密码；demo 可直接用 `.env.example` 默认值。
 
-`demo` profile 启动时播种：
+`demo` profile 启动时播种一整套可以直接点的演示数据：8 个账号、19 个活动
+（覆盖四个分类、六座城市和全部六种状态）、18 笔订单与对应电子票、收藏、
+行为流水、每日统计和站内消息。种子内容集中在
+`backend/src/main/java/dev/kaiwen/eventpulse/seed/DemoCatalog.java`，
+改 demo 数据只改这一个文件。
 
-| 角色 | 邮箱 | 密码 |
-| --- | --- | --- |
-| 普通用户 | `user@eventpulse.dev` | `User123456` |
-| 主办方 | `organiser@eventpulse.dev` | `Organiser123456` |
+活动时间都是相对启动时刻算的，所以「未开始 / 进行中 / 已结束」永远是自洽的；
+统计曲线由活动 ID 推导，不用随机数，每次播种得到的数字一致。
+
+| 角色 | 邮箱 | 密码 | 说明 |
+| --- | --- | --- | --- |
+| 普通用户 | `user@eventpulse.dev` | `User123456` | 有订单、电子票、收藏和消息 |
+| 主办方 | `organiser@eventpulse.dev` | `Organiser123456` | 拥有大部分活动，含草稿与已归档 |
+| 主办方 | `studio@eventpulse.dev` | `Organiser123456` | 声浪现场，含一个已取消的音乐节 |
+| 主办方 | `guild@eventpulse.dev` | `Organiser123456` | 城市漫游者 |
+| 普通用户 | `lin@eventpulse.dev` | `User123456` | 林可可 |
+| 普通用户 | `zhao@eventpulse.dev` | `User123456` | 赵一鸣 |
+| 普通用户 | `chen@eventpulse.dev` | `User123456` | 陈思远 |
+| 普通用户 | `wang@eventpulse.dev` | `User123456` | 王雨桐 |
+
+主办方账号之间的活动互相隔离，可以用来验证越权访问被正确拦截。
 
 ```bash
 make logs        # 跟随 backend 日志

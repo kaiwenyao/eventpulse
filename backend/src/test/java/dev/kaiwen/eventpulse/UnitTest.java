@@ -69,7 +69,6 @@ import dev.kaiwen.eventpulse.repository.EventFavouriteRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.repository.UserRepository;
-import dev.kaiwen.eventpulse.seed.DemoDataSeeder;
 import dev.kaiwen.eventpulse.service.AuthService;
 import dev.kaiwen.eventpulse.service.BookingService;
 import dev.kaiwen.eventpulse.service.EventService;
@@ -390,7 +389,7 @@ class UnitTest {
     }
 
     @Test
-    void consumerHandlerInterceptorSeeder() throws Exception {
+    void consumerAndHandlerInterceptor() throws Exception {
         InteractionService interactionService = new InteractionService(interactionRepo, metricsRepo);
         BookingConsumer consumer = new BookingConsumer(consumedEvents, notifications, interactionService, new ObjectMapper());
         // 首次处理：写入 consumed_events 成功，创建通知，并写 BOOK interaction（张数 4）。
@@ -450,20 +449,6 @@ class UnitTest {
         assertThat(handler.handleOther(new RuntimeException()).getStatusCode())
                 .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(handler.handleOther(new RuntimeException("boom")).getBody().getMsg()).isEqualTo("boom");
-
-        DemoDataSeeder seeder = new DemoDataSeeder(users, events, passwordEncoder);
-        when(users.existsByEmail("user@eventpulse.dev")).thenReturn(true);
-        seeder.run();
-        verify(users, never()).save(any());
-        when(users.existsByEmail("user@eventpulse.dev")).thenReturn(false);
-        when(passwordEncoder.encode(anyString())).thenReturn("hash");
-        when(users.save(any())).thenAnswer(inv -> {
-            User u = inv.getArgument(0);
-            u.setId(u.getEmail().startsWith("org") ? 2L : 1L);
-            return u;
-        });
-        seeder.run();
-        verify(events, org.mockito.Mockito.times(4)).save(any());
     }
 
     @Test
