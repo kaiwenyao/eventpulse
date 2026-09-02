@@ -119,6 +119,11 @@ public class OutboxRelay {
         }
     }
 
+    /** claimed_by 列宽 100：token = workerId + ":" + 36 位 UUID，workerId 必须不超 63 字符。 */
+    static final int MAX_WORKER_ID_LENGTH = 63;
+    /** workerId 里主机名部分的截断长度：Jenkins/K8s 等环境的主机名可能是 64 位完整容器 ID。 */
+    static final int MAX_HOSTNAME_LENGTH = 40;
+
     private static String workerId() {
         String host;
         try {
@@ -127,6 +132,12 @@ public class OutboxRelay {
         catch (Exception e) {
             host = "unknown";
         }
-        return host + "-" + UUID.randomUUID().toString().substring(0, 8);
+        return workerIdFor(host);
+    }
+
+    /** 供测试验证长度上限：CI 的 Docker agent 主机名是 64 位完整容器 ID，曾撑爆 claimed_by。 */
+    static String workerIdFor(String hostname) {
+        String safeHost = hostname.length() <= MAX_HOSTNAME_LENGTH ? hostname : hostname.substring(0, MAX_HOSTNAME_LENGTH);
+        return safeHost + "-" + UUID.randomUUID().toString().substring(0, 8);
     }
 }

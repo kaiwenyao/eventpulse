@@ -208,4 +208,14 @@ class OutboxRelayStatusTest {
         assertThat(token.getValue()).isNotBlank();
         verify(outbox, never()).findByClaimedByOrderByIdAsc(anyString());
     }
+
+    @Test
+    void claimTokenFitsClaimedByColumnEvenWithLongContainerHostname() {
+        // CI 的 Jenkins Docker agent 主机名是 64 位完整容器 ID，曾把 token 撑到
+        // 110 字符、超出 claimed_by VARCHAR(100)，导致每轮领取都失败。
+        String workerId = OutboxRelay.workerIdFor("a".repeat(64));
+        String token = workerId + ":" + java.util.UUID.randomUUID();
+        assertThat(workerId).hasSize(OutboxRelay.MAX_HOSTNAME_LENGTH + 1 + 8);
+        assertThat(token.length()).isLessThanOrEqualTo(100);
+    }
 }
