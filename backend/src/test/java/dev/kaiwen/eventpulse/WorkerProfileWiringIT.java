@@ -14,7 +14,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * worker Profile 装配检查：Kafka consumer、Outbox relay、生命周期任务、
  * SSE 提醒发布都在；业务 Controller、SSE 连接管理、Seeder 都不在。
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = "spring.profiles.active=worker")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
+        "spring.profiles.active=worker",
+        // 纯装配检查，relay 不需要真跑。上下文测完会留在 JVM 级缓存里，若 relay
+        // 按默认 1s 轮询共享的 SharedPostgres，会在 WorkerBackgroundTasksIT 断言
+        // outbox 行状态的间隙抢领消息（claimed_by 忽而非空），造成概率性失败。
+        "eventpulse.outbox.poll-ms=3600000"})
 @Testcontainers(disabledWithoutDocker = true)
 class WorkerProfileWiringIT {
 
