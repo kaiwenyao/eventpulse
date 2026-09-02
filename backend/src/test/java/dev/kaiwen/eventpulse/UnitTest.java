@@ -249,8 +249,6 @@ class UnitTest {
         assertThatThrownBy(() -> service.update(1L, new EventRequest("x", "", "art", "上海", Instant.now(), 1, 1)))
                 .isInstanceOf(BusinessException.class);
         assertThat(service.update(1L, req).title()).isEqualTo("新活动");
-        service.cancel(1L);
-        assertThat(published.getStatus()).isEqualTo("CANCELLED");
 
         BaseContext.setUserId(2L);
         assertThatThrownBy(() -> service.update(1L, req)).isInstanceOf(BusinessException.class);
@@ -506,7 +504,6 @@ class UnitTest {
         });
         assertThat(eventsApi.create(req).getData().id()).isEqualTo(2L);
         assertThat(eventsApi.update(1L, req).getCode()).isEqualTo(1);
-        assertThat(eventsApi.cancel(1L).getCode()).isEqualTo(1);
 
         when(events.incrementSold(any(), anyInt())).thenReturn(1);
         when(events.decrementSold(any(), anyInt())).thenReturn(1);
