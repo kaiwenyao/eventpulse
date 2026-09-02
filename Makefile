@@ -1,8 +1,17 @@
-.PHONY: up down down-v logs ps infra up-infra seed up-runtime up-distributed test-distributed test test-frontend test-all smoke clean testcontainers-cleanup psql
+.PHONY: up down stop down-v logs ps infra up-infra seed up-runtime up-distributed test-distributed test test-frontend test-all smoke clean testcontainers-cleanup psql
+
+# 实例数。api 与 worker 默认各 2 个：这个项目要验证的就是多实例行为
+# （SSE 跨实例送达、Outbox 领取租约、Kafka 分区再均衡、Nginx 轮询），
+# 单实例一条都跑不出来。docker-compose.yml 里的 deploy.replicas 是同一个值，
+# 所以直接 `docker compose up -d` 也是 2 + 2。
+# 临时改规模：make up API=3 WORKER=1
+API ?= 2
+WORKER ?= 2
 
 # 完整栈：先等基础设施健康，seeder 播种完成后自动启动 api/worker/frontend。
+# 默认 2 个 api + 2 个 worker。
 up:
-	docker compose up -d --build
+	docker compose up -d --build --scale api=$(API) --scale worker=$(WORKER)
 
 # 基础设施 only：Postgres / Redis / Kafka。
 infra up-infra:
@@ -14,23 +23,28 @@ seed:
 
 # 常驻服务：api + worker + frontend（compose 会自动先跑完 seeder 再起它们）。
 up-runtime:
-	docker compose up -d api worker frontend
+	docker compose up -d --scale api=$(API) --scale worker=$(WORKER) api worker frontend
 
-# 分布式验证：2 个 api + 2 个 worker。多 Worker 依赖 Outbox 领取机制
-# （claimed_until 租约 + 数据库条件更新），已就绪。
-up-distributed:
-	docker compose up -d --scale api=2 --scale worker=2
+# 保留的旧名字：up 现在默认就是多实例，这里等价于 make up。
+up-distributed: up
 
-# 双实例冒烟：起 2 api + 2 worker，跑一遍端到端 API 用例。
-test-distributed: up-distributed
+# 多实例冒烟：起 2 api + 2 worker，跑一遍端到端 API 用例。
+test-distributed: up
 	docker compose up -d --wait frontend
 	bash scripts/smoke-test.sh
 
+# 停掉本项目全部容器（含 --scale 起的额外实例，以及服务定义变更后残留的
+# 孤儿容器）并删除数据卷 —— 数据会被清空。
+# 下次 make up 会重新跑 Flyway 迁移并重新 seed。只想停容器、保留数据用 make stop。
 down:
-	docker compose down
+	docker compose down -v --remove-orphans
 
-down-v:
-	docker compose down -v
+# 停掉全部容器但保留数据卷（演示数据、账号、订单都还在）。
+stop:
+	docker compose down --remove-orphans
+
+# 保留的旧名字：down 现在已经会删数据卷。
+down-v: down
 
 logs:
 	docker compose logs -f api worker

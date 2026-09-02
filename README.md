@@ -20,10 +20,19 @@
 
 ```bash
 cp .env.example .env
-make down-v                  # 停栈并删数据卷
+make down                    # 停掉全部容器并删数据卷（从干净状态开始）
 make testcontainers-cleanup  # 清掉 Testcontainers 残留容器
-make up                      # docker compose up -d --build
-make ps                      # postgres / redis / kafka / seeder / api / worker / frontend
+make up                      # 构建并启动，默认 2 个 api + 2 个 worker
+make ps                      # postgres / redis / kafka / seeder / api ×2 / worker ×2 / frontend
+```
+
+`make up` 默认就是多实例（`API=2 WORKER=2`）：这个项目要验证的正是分布式行为，
+单实例跑不出 SSE 跨实例送达、Outbox 多 Worker 领取、Kafka 分区再均衡这些路径。
+副本数同时写在 `docker-compose.yml` 的 `deploy.replicas`，所以直接
+`docker compose up -d` 也是 2 + 2。临时改规模：
+
+```bash
+make up API=3 WORKER=1       # 3 个 api + 1 个 worker
 ```
 
 启动顺序：PostgreSQL / Redis / Kafka 健康 → `seeder` 播种并成功退出 →
@@ -52,10 +61,13 @@ curl -s http://localhost:3000/actuator/health
 ```bash
 make up-infra         # 只启动 PostgreSQL / Redis / Kafka
 make seed             # 只运行 seeder，退出码透传
-make up-runtime       # 启动 api / worker / frontend
-make up-distributed   # 2 个 api + 2 个 worker（Outbox 领取租约 + 心跳续租，不重不丢）
-make test-distributed # up-distributed + 端到端冒烟
+make up-runtime       # 启动 api / worker / frontend（同样默认各 2 个实例）
+make up-distributed   # 等价于 make up，保留的旧名字
+make test-distributed # 起多实例 + 端到端冒烟
 ```
+
+多 Worker 依赖 Outbox 领取机制（`claimed_until` 租约 + 心跳续租 + 数据库条件
+更新），不重不丢；api 多实例靠 Redis 广播做 SSE 跨实例送达。
 
 ### 多实例行为一览
 
@@ -104,9 +116,14 @@ make test-distributed # up-distributed + 端到端冒烟
 
 ```bash
 make logs        # 跟随 api / worker 日志
-make down        # 停容器，保留数据卷
-make down-v      # 停容器并删数据卷；下次 make up 会重新 seed
+make stop        # 停掉全部容器，保留数据卷（演示数据、账号、订单都还在）
+make down        # 停掉全部容器并删数据卷；下次 make up 会重跑迁移并重新 seed
 ```
+
+`make down` 会清数据：它用 `docker compose down -v --remove-orphans`，
+连 `--scale` 起的额外实例和改过服务定义后残留的孤儿容器一起停掉，
+并删除 `pgdata` 卷。想保留数据只停容器，用 `make stop`。
+（`make down-v` 保留为 `make down` 的旧名字。）
 
 ## Kubernetes 部署
 
@@ -142,7 +159,7 @@ kubectl apply -f deploy/k8s/api-deployment.yml -f deploy/k8s/api-service.yml \
 本机需要 JDK 21、Maven、Node.js。同样先清残留，再只起基础设施：
 
 ```bash
-make down-v
+make down
 make testcontainers-cleanup
 make up-infra    # 只启动 postgres / redis / kafka
 ```
@@ -213,9 +230,10 @@ make test-all                # 上面两层
 整栈冒烟（需要本机 `curl` 和 `python3`）：
 
 ```bash
-make up                       # 或 make up-distributed 起双实例
+make up                       # 默认 2 个 api + 2 个 worker
 make smoke                    # 默认打 http://localhost:3000（前端反代）
-# BASE_URL=http://localhost:8080 bash scripts/smoke-test.sh 可指向单实例
+# api 不再固定绑定宿主机端口（多实例会冲突），统一从前端 Nginx 进；
+# 要直连某个实例：docker compose exec api curl -s localhost:8080/actuator/health
 ```
 
 全部 PASS 会打印 `SMOKE TEST: ALL GREEN`。

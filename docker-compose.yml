@@ -112,6 +112,10 @@ services:
         condition: service_healthy
       seeder:
         condition: service_completed_successfully
+    # 默认就起 2 个实例：这个项目的重点是分布式行为，单实例跑不出
+    # SSE 跨实例送达、Nginx 轮询这些路径。--scale api=N 可临时覆盖。
+    deploy:
+      replicas: 2
     # api 是唯一同时在 edge 与 backplane 上的服务：frontend 只能看到它，
     # worker/seeder 不在 edge，所以 Nginx 即使用到回收后的旧 IP 也打不到 worker。
     networks:
@@ -130,6 +134,9 @@ services:
   worker:
     <<: *backend-common
     command: ["--spring.profiles.active=worker"]
+    # 默认 2 个实例：验证 Outbox 领取租约与 Kafka 分区再均衡。--scale worker=N 可覆盖。
+    deploy:
+      replicas: 2
     depends_on:
       postgres:
         condition: service_healthy
