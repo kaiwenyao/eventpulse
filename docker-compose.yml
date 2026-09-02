@@ -7,6 +7,9 @@
 
 x-backend-common: &backend-common
   image: eventpulse/backend:0.1.0
+  # 默认只接内部网络；api 单独覆盖成 [backplane, edge]（见下面的 api 服务）。
+  networks:
+    - backplane
   environment:
     DB_URL: jdbc:postgresql://postgres:5432/eventpulse
     DB_USER: eventpulse
@@ -23,6 +26,8 @@ x-backend-common: &backend-common
 services:
   postgres:
     image: postgres:18-alpine
+    networks:
+      - backplane
     environment:
       POSTGRES_DB: eventpulse
       POSTGRES_USER: eventpulse
@@ -41,6 +46,8 @@ services:
 
   redis:
     image: redis:7-alpine
+    networks:
+      - backplane
     ports:
       - "6379:6379"
     healthcheck:
@@ -51,6 +58,8 @@ services:
 
   kafka:
     image: apache/kafka:4.3.1
+    networks:
+      - backplane
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -103,6 +112,11 @@ services:
         condition: service_healthy
       seeder:
         condition: service_completed_successfully
+    # api 是唯一同时在 edge 与 backplane 上的服务：frontend 只能看到它，
+    # worker/seeder 不在 edge，所以 Nginx 即使用到回收后的旧 IP 也打不到 worker。
+    networks:
+      - backplane
+      - edge
     # 不固定绑定宿主机端口：第二个 API 实例才起得来，统一入口由前端 Nginx 提供。
     expose:
       - "8080"
@@ -139,6 +153,8 @@ services:
       context: .
       dockerfile: deploy/frontend/Dockerfile
     image: eventpulse/frontend:0.1.0
+    networks:
+      - edge
     depends_on:
       api:
         condition: service_healthy
@@ -149,6 +165,15 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+
+networks:
+  # 对外入口网段：只有 frontend 和 api。Docker 会把停掉的容器 IP 回收给别的
+  # 服务，Nginx 的 DNS 缓存窗口内可能用到已被回收的地址；把 worker/seeder
+  # 挡在这个网络之外，最坏情况也只是打到某个 api 或连不上（502），
+  # 不会被只有 Actuator 的 worker 冒充成 API 返回 "No static resource"。
+  edge:
+  # 内部网段：应用三角色 + Postgres / Redis / Kafka。
+  backplane:
 
 volumes:
   pgdata:
