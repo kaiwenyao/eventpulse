@@ -36,6 +36,22 @@ class ScriptedChatModel(BaseChatModel):
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
+class RecordingChatModel(ScriptedChatModel):
+    """记录每次调用收到的完整消息列表（用于断言历史角色映射）。"""
+
+    received: list[list[BaseMessage]] = []
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        self.received.append(list(messages))
+        return super()._generate(messages, stop, run_manager, **kwargs)
+
+
 class ExplodingChatModel(BaseChatModel):
     """模拟 LLM 超时 / 服务端错误。"""
 

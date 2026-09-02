@@ -1,6 +1,7 @@
 package dev.kaiwen.eventpulse.interceptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +41,19 @@ class InternalServiceInterceptorTest {
         MockHttpServletResponse response2 = new MockHttpServletResponse();
         assertThat(interceptor.preHandle(request, response2, new Object())).isFalse();
         assertThat(response2.getStatus()).isEqualTo(401);
+
+        // 空 header 也必须拒绝：否则凭证被配成空串时 "" == "" 恒真，直接放行。
+        request.addHeader(InternalServiceInterceptor.INTERNAL_TOKEN_HEADER, "");
+        MockHttpServletResponse response3 = new MockHttpServletResponse();
+        assertThat(interceptor.preHandle(request, response3, new Object())).isFalse();
+        assertThat(response3.getStatus()).isEqualTo(401);
+    }
+
+    @Test
+    void blankInternalTokenFailsAtStartup() {
+        properties.getAi().setInternalToken("");
+        InternalServiceInterceptor misconfigured = new InternalServiceInterceptor(properties, new JwtService(properties));
+        assertThatThrownBy(misconfigured::validateConfiguration).isInstanceOf(IllegalStateException.class);
     }
 
     @Test

@@ -58,7 +58,11 @@ def require_service_auth(
     """服务间凭证：Spring Boot → 本服务的固定 Bearer token（常量时间比较）。"""
     settings = get_settings()
     provided = credentials.credentials if credentials else ""
-    if not secrets.compare_digest(provided, settings.service_token):
+    # 服务凭证配成空串时绝不放行（否则 "" 与 "" 的常量时间比较恒真，直接 fail-open）；
+    # encode 让非 ASCII 的伪造 header 也得到 401，而不是 TypeError 500。
+    if not settings.service_token.strip() or not secrets.compare_digest(
+        provided.encode("utf-8"), settings.service_token.encode("utf-8")
+    ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid service token")
 
 

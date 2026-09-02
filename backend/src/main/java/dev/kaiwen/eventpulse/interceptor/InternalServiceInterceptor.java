@@ -3,6 +3,8 @@ package dev.kaiwen.eventpulse.interceptor;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -12,6 +14,7 @@ import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.service.JwtService;
 
 import io.jsonwebtoken.Claims;
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -29,6 +32,8 @@ import jakarta.servlet.http.HttpServletResponse;
 @Component
 public class InternalServiceInterceptor implements HandlerInterceptor {
 
+    private static final Logger log = LoggerFactory.getLogger(InternalServiceInterceptor.class);
+
     public static final String INTERNAL_TOKEN_HEADER = "X-Internal-Token";
     public static final String USER_CONTEXT_HEADER = "X-User-Context";
     public static final String REQUEST_ID_HEADER = "X-Request-Id";
@@ -41,13 +46,33 @@ public class InternalServiceInterceptor implements HandlerInterceptor {
         this.jwtService = jwtService;
     }
 
+    /**
+     * 服务间凭证是 /internal/ai-tools/**（可携带签名上下文冒充任意用户）的唯一
+     * 防线：配置成空串说明部署失误，启动即失败，而不是靠运行时的空值拒绝兜底；
+     * 仍是仓库公开的 dev 默认值时给出醒目告警（本地开发允许，共享部署必须覆盖）。
+     */
+    @PostConstruct
+    void validateConfiguration() {
+        String token = properties.getAi().getInternalToken();
+        if (token == null || token.isBlank()) {
+            throw new IllegalStateException(
+                    "eventpulse.ai.internal-token is blank: /internal/ai-tools/** would be unauthenticated");
+        }
+        if (AppProperties.Ai.DEV_DEFAULT_INTERNAL_TOKEN.equals(token)) {
+            log.warn("eventpulse.ai.internal-token is still the public dev default; "
+                    + "set AI_INTERNAL_TOKEN before any shared deployment");
+        }
+    }
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws Exception {
         BaseContext.clear();
         String expected = properties.getAi().getInternalToken();
         String provided = request.getHeader(INTERNAL_TOKEN_HEADER);
-        if (provided == null || !MessageDigest.isEqual(
+        // 空串 header 也必须拒绝：否则凭证被配成空串时 "" 与 "" 的常量时间
+        // 比较恒真，直接 fail-open。
+        if (provided == null || provided.isBlank() || !MessageDigest.isEqual(
                 expected.getBytes(StandardCharsets.UTF_8), provided.getBytes(StandardCharsets.UTF_8))) {
             return unauthorized(response);
         }

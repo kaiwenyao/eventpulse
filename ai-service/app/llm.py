@@ -21,7 +21,10 @@ def build_chat_model(settings: Any) -> BaseChatModel:
         "model": settings.llm_model,
         "api_key": settings.llm_api_key,
         "timeout": settings.llm_timeout_seconds,
-        "max_retries": 1,
+        # 单次调用必须被 timeout 硬性约束，重试交给上层按降级处理：
+        # max_retries=1 时一次调用最坏 60s，整轮死线 agent_total_budget_seconds
+        # 就压不住 Spring 的 90s 读超时了。
+        "max_retries": 0,
         "temperature": 0.7,
         "max_tokens": settings.llm_max_output_tokens,
     }

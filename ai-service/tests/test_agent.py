@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.agent import AgentExecutionError, parse_discovery_answer, run_discovery_agent
 from app.tools import ToolLedger, build_tools
@@ -11,7 +11,7 @@ from app.backend_client import BackendClient
 from app.schemas import DiscoveryChatRequest, HistoryMessage, DiscoveryUser
 
 from conftest import FakeBackend, make_settings
-from fake_model import scripted_model, tool_call_message
+from fake_model import RecordingChatModel, scripted_model, tool_call_message
 
 
 def chat_request(**overrides) -> DiscoveryChatRequest:
@@ -142,6 +142,33 @@ class TestRunDiscoveryAgent:
         )
         with pytest.raises(AgentExecutionError):
             run_discovery_agent(model, make_settings(), chat_request(), client)
+
+    def test_history_roles_are_preserved_for_the_model(self):
+        client = backend_returning(events_payload([1]))
+        model = RecordingChatModel(script=[AIMessage(content=answer_json("好的", []))])
+        request = chat_request(
+            history=[
+                HistoryMessage(role="user", content="上周末有什么活动"),
+                HistoryMessage(role="assistant", content="上周有两场技术活动"),
+            ]
+        )
+        run_discovery_agent(model, make_settings(), request, client)
+        first_call = model.received[0]
+        # 消息列表以 system prompt 开头；之后上一轮的 user 提问与 assistant
+        # 回答必须以各自的角色进入：全部当 HumanMessage 会让模型把自己的
+        # 回答当成新指令。
+        assert isinstance(first_call[0], SystemMessage)
+        assert isinstance(first_call[1], HumanMessage)
+        assert isinstance(first_call[2], AIMessage)
+        assert isinstance(first_call[3], HumanMessage)
+        assert first_call[2].content == "上周有两场技术活动"
+
+    def test_total_time_budget_fails_the_round(self):
+        client = backend_returning(events_payload([1]))
+        settings = make_settings(agent_total_budget_seconds=0)
+        model = scripted_model(AIMessage(content=answer_json("来不及了", [])))
+        with pytest.raises(AgentExecutionError):
+            run_discovery_agent(model, settings, chat_request(), client)
 
     def test_guest_has_no_personal_tools(self):
         client = backend_returning(events_payload([1]))

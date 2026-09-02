@@ -31,7 +31,13 @@ class Settings(BaseSettings):
 
     # ---- Agent / 输入限制 ----
     agent_max_tool_calls: int = 6
+    # 工具级预算：只约束工具调用（软停止），不约束 LLM 调用。
     agent_time_budget_seconds: float = 25.0
+    # 整轮（含所有 LLM 调用）的墙上时钟死线。单次 LLM 调用最长 30s
+    # （llm_timeout_seconds，且 max_retries=0）：最坏 45 + 30 + 6 ≈ 81s，
+    # 仍低于 Spring 侧 AI_READ_TIMEOUT 的 90s，让 Spring 能拿到真实结果或
+    # 明确降级，而不是在 Python 还在跑时就先超时。
+    agent_total_budget_seconds: float = 45.0
     max_history_messages: int = 8
     max_input_chars: int = 2000
     max_tool_results: int = 20

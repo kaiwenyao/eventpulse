@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import BaseTool
@@ -24,6 +25,26 @@ from .tools import ToolLedger, ToolLimitExceeded, build_tools
 
 class AgentExecutionError(Exception):
     """Agent 整体失败（超时 / 工具失败 / 次数超限）：返回明确降级提示。"""
+
+
+class AgentBudgetExceeded(Exception):
+    """整轮墙上时钟预算耗尽（覆盖所有 LLM 调用；工具级软停止由 ToolLedger 负责）。"""
+
+
+class _DeadlineGuard(BaseCallbackHandler):
+    """每次 LLM 调用开始前检查整体死线。
+
+    LangGraph 无法在图执行中途打断，只能在下一个节点入口抛错止损：
+    否则 Spring 读超时已把 503 返回给用户后，Python 进程还会继续
+    烧完剩余步数的 token。raise_error 默认 True，异常会向上传播。
+    """
+
+    def __init__(self, deadline: float) -> None:
+        self.deadline = deadline
+
+    def on_chat_model_start(self, serialized: Any, messages: Any, **kwargs: Any) -> None:
+        if time.monotonic() >= self.deadline:
+            raise AgentBudgetExceeded("agent total time budget exceeded")
 
 
 class DiscoveryAnswer(BaseModel):
@@ -67,16 +88,20 @@ def parse_discovery_answer(text: str, allowed_event_ids: set[int], max_events: i
     return DiscoveryAnswer(answer=answer.strip()[:2000], events=events, follow_up_questions=follow_ups)
 
 
-def _invoke_agent(agent, history, request, *, recursion_limit):
+def _invoke_agent(agent, history, request, *, recursion_limit, deadline):
     """执行一次 Agent；空回复（如 reasoning 模型思考耗尽输出预算）时重试一次。
 
     空响应重试对用户不可见：仍走同样的工具与预算约束，第二次仍然空就
-    交给上层按降级处理，绝不编造内容。
+    交给上层按降级处理，绝不编造内容。每次尝试前与每次 LLM 调用开始
+    （_DeadlineGuard）都检查整体死线。
     """
+    guard = _DeadlineGuard(deadline=deadline)
     for attempt in range(2):
+        if time.monotonic() >= deadline:
+            raise AgentBudgetExceeded("agent total time budget exceeded")
         result = agent.invoke(
             {"messages": [*history, HumanMessage(content=request.message)]},
-            config={"recursion_limit": recursion_limit},
+            config={"recursion_limit": recursion_limit, "callbacks": [guard]},
         )
         messages = result.get("messages", [])
         final = messages[-1] if messages else None
@@ -107,17 +132,28 @@ def run_discovery_agent(
         + discovery_context(request.now_iso, request.time_zone)
     )
     agent = create_agent(model, tools=tools, system_prompt=system)
+    deadline = time.monotonic() + settings.agent_total_budget_seconds
 
     # Spring 可能传 null 内容：归一化成空串，避免 HumanMessage(content=None)。
-    history = [HumanMessage(content=m.content or "", name=m.role) for m in request.history]
+    # assistant 行必须还原成 AIMessage：全部当 user 输入会让模型把上一轮
+    # 自己的回答当成新指令，多轮上下文断裂。
+    history = [
+        AIMessage(content=m.content or "")
+        if m.role == "assistant"
+        else HumanMessage(content=m.content or "")
+        for m in request.history
+    ]
     start = time.monotonic()
     try:
         result = _invoke_agent(
             agent, history, request,
             recursion_limit=settings.agent_max_tool_calls * 3 + 10,
+            deadline=deadline,
         )
     except ToolLimitExceeded as exc:
         raise AgentExecutionError(str(exc)) from exc
+    except AgentBudgetExceeded as exc:
+        raise AgentExecutionError("agent total time budget exceeded") from exc
     except Exception as exc:  # 网络 / 模型 / 工具异常
         raise AgentExecutionError(f"{type(exc).__name__}") from exc
 

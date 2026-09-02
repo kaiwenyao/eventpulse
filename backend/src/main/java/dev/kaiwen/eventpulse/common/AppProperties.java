@@ -25,13 +25,17 @@ public class AppProperties {
      */
     public static class Ai {
 
+        /** 仓库内公开的 dev 默认凭证：仅限本地开发，共享部署必须覆盖，启动时会告警。 */
+        public static final String DEV_DEFAULT_SERVICE_TOKEN = "dev-ai-service-token";
+        public static final String DEV_DEFAULT_INTERNAL_TOKEN = "dev-ai-internal-token";
+
         /** 总开关：关闭或 Python 服务不可用时，AI 接口返回明确降级提示，普通业务不受影响。 */
         private boolean enabled = true;
         private String serviceUrl = "http://localhost:8090";
         /** Spring Boot → Python AI 服务的服务间凭证。 */
-        private String serviceToken = "dev-ai-service-token";
+        private String serviceToken = DEV_DEFAULT_SERVICE_TOKEN;
         /** Python AI 服务 → Spring Boot /internal/ai-tools/** 的服务间凭证。 */
-        private String internalToken = "dev-ai-internal-token";
+        private String internalToken = DEV_DEFAULT_INTERNAL_TOKEN;
         private int connectTimeoutMs = 2000;
         private int readTimeoutMs = 90000;
         /** 用户 / IP 级限流（次/分钟），避免成本失控。 */
