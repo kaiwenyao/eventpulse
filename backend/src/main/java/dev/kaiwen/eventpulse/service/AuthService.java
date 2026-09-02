@@ -24,6 +24,8 @@ import dev.kaiwen.eventpulse.repository.UserRepository;
 @Service
 public class AuthService {
 
+    private static final long MAX_WALLET_CENTS = 10_000_000_000L;
+
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -98,13 +100,10 @@ public class AuthService {
 
     @Transactional
     public ProfileVo recharge(Long userId, WalletRechargeRequest request) {
-        User user = requireUser(userId);
-        long next = Math.addExact(user.getWalletCents(), request.amountCents());
-        if (next > 10_000_000_000L) {
+        requireUser(userId);
+        if (users.rechargeWalletWithinLimit(userId, request.amountCents(), MAX_WALLET_CENTS) == 0) {
             throw new BusinessException("余额超出上限");
         }
-        user.setWalletCents(next);
-        users.save(user);
         return profile(userId);
     }
 

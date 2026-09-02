@@ -87,6 +87,21 @@ if (users.debitWalletIfEnough(userId, paidCents) == 0) {
 }
 ```
 
+### 充值也遵循同一条规则
+
+充值是另一笔独立操作，不属于某一次下单事务；但它也不能先读余额、在程序里相加后把旧余额写回。否则它可能覆盖刚刚完成的扣款或退款。
+
+因此，充值同样通过一条“余额还没到上限才加钱”的原子操作完成：
+
+```sql
+UPDATE users
+SET wallet_cents = wallet_cents + :amount
+WHERE id = :userId
+  AND wallet_cents <= :maxBalance - :amount;
+```
+
+这表示“在当前余额上加钱”，而不是“把余额改成我之前算好的某个数”。无论充值、下单扣款还是退款先后到达，它们都会以数据库中最新的余额继续计算，因此不会互相覆盖。
+
 ### 4. 占用活动名额
 
 扣款通过后，系统才会把活动的已售数量加上本次购买的张数。

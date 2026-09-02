@@ -29,6 +29,19 @@ public interface UserRepository extends JpaRepository<User, Long> {
             """, nativeQuery = true)
     int debitWalletIfEnough(@Param("userId") Long userId, @Param("amount") long amount);
 
+    /** Atomically adds funds without letting the balance exceed the configured cap. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+            UPDATE users
+            SET wallet_cents = wallet_cents + :amount
+            WHERE id = :userId
+              AND wallet_cents <= :maxBalance - :amount
+            """, nativeQuery = true)
+    int rechargeWalletWithinLimit(
+            @Param("userId") Long userId,
+            @Param("amount") long amount,
+            @Param("maxBalance") long maxBalance);
+
     /** Refunds an already-recorded payment amount. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """

@@ -152,6 +152,60 @@ class BookingConcurrencyIT {
     }
 
     @Test
+    void concurrentWalletRechargesRespectBalanceCap() throws Exception {
+        Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration").load().migrate();
+        long userId;
+        try (Connection connection = DriverManager.getConnection(
+                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())) {
+            connection.createStatement().execute("""
+                    INSERT INTO users (email, password, name, role, wallet_cents)
+                    VALUES ('wallet-recharge@t.dev', 'x', 'Recharge', 'USER', 1000)
+                    """);
+            try (ResultSet rs = connection.createStatement().executeQuery(
+                    "SELECT id FROM users WHERE email = 'wallet-recharge@t.dev'")) {
+                assertThat(rs.next()).isTrue();
+                userId = rs.getLong(1);
+            }
+        }
+
+        AtomicInteger accepted = new AtomicInteger();
+        ExecutorService pool = Executors.newFixedThreadPool(20);
+        List<Callable<Integer>> jobs = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            jobs.add(() -> {
+                try (Connection connection = DriverManager.getConnection(
+                        postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                        PreparedStatement recharge = connection.prepareStatement("""
+                                UPDATE users
+                                SET wallet_cents = wallet_cents + 100
+                                WHERE id = ? AND wallet_cents <= 2000 - 100
+                                """)) {
+                    recharge.setLong(1, userId);
+                    int rows = recharge.executeUpdate();
+                    if (rows == 1) {
+                        accepted.incrementAndGet();
+                    }
+                    return rows;
+                }
+            });
+        }
+        for (Future<Integer> future : pool.invokeAll(jobs)) {
+            future.get();
+        }
+        pool.shutdown();
+
+        try (Connection connection = DriverManager.getConnection(
+                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                ResultSet rs = connection.createStatement().executeQuery(
+                        "SELECT wallet_cents FROM users WHERE id = " + userId)) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getLong(1)).isEqualTo(2000);
+        }
+        assertThat(accepted.get()).isEqualTo(10);
+    }
+
+    @Test
     void concurrentMetricIncrementsNeverLoseUpdates() throws Exception {
         Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
                 .locations("classpath:db/migration").load().migrate();

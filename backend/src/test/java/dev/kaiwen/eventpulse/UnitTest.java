@@ -203,6 +203,10 @@ class UnitTest {
         assertThat(auth.profile(2L).favouriteCount()).isEqualTo(2);
         assertThat(auth.profile(2L).notificationCount()).isEqualTo(3);
         WalletRechargeRequest recharge = new WalletRechargeRequest(50000);
+        when(users.rechargeWalletWithinLimit(2L, 50000L, 10_000_000_000L)).thenAnswer(inv -> {
+            stored.setWalletCents(stored.getWalletCents() + inv.getArgument(1, Long.class));
+            return 1;
+        });
         assertThat(auth.recharge(2L, recharge).walletCents()).isEqualTo(50000);
         assertThat(stored.getWalletCents()).isEqualTo(50000);
     }
