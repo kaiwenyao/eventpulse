@@ -47,13 +47,15 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 
 /**
  * 订阅订单事件直到 abort。重连成功后退避时间重置；
- * 每次重连成功后调用方应重新拉取 REST 数据，补上断线期间的变化。
+ * 每次建连成功（含首次与重连）都会调用 onOpen：提醒是 Redis 广播、不留底，
+ * 断线窗口内发生的变化必须由调用方重新拉取 REST 数据补上。
  */
 export async function streamBookingEvents(
   bookingId: number,
   onReminder: (reminder: BookingReminder) => void,
   signal: AbortSignal,
   initialBackoffMs: number = INITIAL_BACKOFF_MS,
+  onOpen?: () => void,
 ): Promise<void> {
   let backoff = initialBackoffMs
   while (!signal.aborted) {
@@ -65,8 +67,14 @@ export async function streamBookingEvents(
       if (!response.ok || !response.body) {
         throw new Error(`SSE connection failed (${response.status})`)
       }
-      // 连接建立成功：退避重置，由调用方决定是否补偿 REST 数据。
+      // 连接建立成功：退避重置，并让调用方补偿拉取 REST 数据。
       backoff = initialBackoffMs
+      // 回调异常只代表刷新失败，不应断开 SSE 订阅。
+      try {
+        onOpen?.()
+      } catch {
+        // ignore
+      }
       const reader = response.body.getReader()
       // 页面关闭时主动断开：即使 fetch 实现没有把 abort 传进流，也取消读取。
       const onAbort = () => {

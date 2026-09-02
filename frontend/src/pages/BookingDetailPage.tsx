@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, useParams } from 'react-router-dom'
 import { api, ApiError, formatTime } from '../api'
-import { streamBookingEvents } from '../lib/sse'
+import { streamBookingEvents, INITIAL_BACKOFF_MS } from '../lib/sse'
 import { BookingVo, TicketVo } from '../types'
 import { BookingStatusBadge, EmptyState, TicketStatusBadge } from '../ui/Badges'
 import { SkeletonCard } from '../ui/Skeleton'
@@ -45,8 +45,9 @@ export function BookingDetailPage() {
   useEffect(() => {
     if (!id) return
     const bookingId = Number(id)
-    // 先用 REST 取最新状态，再订阅 SSE；提醒到达后重新走 REST 刷新，
-    // 断线重连成功后的第一次提醒同样会把断线期间的变化补回来。
+    // 先用 REST 取最新状态，再订阅 SSE；提醒到达后重新走 REST 刷新。
+    // 提醒是 Redis 广播、不留底：断线（或初始 load 与建连之间的空隙）期间
+    // 发生的变化不会再有提醒，因此每次建连成功（含重连）都主动拉一次 REST 补偿。
     const load = () => {
       api<BookingVo>('GET', `/api/bookings/${bookingId}`)
         .then((data) => setBooking(data))
@@ -57,7 +58,7 @@ export function BookingDetailPage() {
     }
     load()
     const controller = new AbortController()
-    void streamBookingEvents(bookingId, load, controller.signal)
+    void streamBookingEvents(bookingId, load, controller.signal, INITIAL_BACKOFF_MS, load)
     return () => controller.abort()
   }, [id, t])
 

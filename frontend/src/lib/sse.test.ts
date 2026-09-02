@@ -101,4 +101,29 @@ describe('streamBookingEvents()', () => {
     controller.abort()
     await expect(done).resolves.toBeUndefined()
   })
+
+  it('calls onOpen on every successful connection, initial and reconnect', async () => {
+    vi.useFakeTimers()
+    try {
+      const closed = sseResponse([], false) // 服务端关流：触发自动重连
+      const alive = sseResponse([REMINDER_FRAME])
+      const fetchMock = vi.fn().mockResolvedValueOnce(closed).mockResolvedValue(alive)
+      vi.stubGlobal('fetch', fetchMock)
+      let opens = 0
+      const controller = new AbortController()
+      const done = streamBookingEvents(7, () => {}, controller.signal, 100, () => {
+        opens += 1
+      })
+      // 首次建连成功即回调（覆盖初始 load 与建连之间的空隙）。
+      await vi.waitFor(() => expect(opens).toBe(1))
+      // 断流后等待退避（100ms）再重连，重连成功后再次回调。
+      await vi.advanceTimersByTimeAsync(120)
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+      await vi.waitFor(() => expect(opens).toBe(2))
+      controller.abort()
+      await expect(done).resolves.toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
