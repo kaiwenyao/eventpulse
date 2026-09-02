@@ -192,6 +192,8 @@ Authorization 头、指数退避自动重连），收到提醒后重新拉取 RE
 | 测试 | 覆盖 |
 | --- | --- |
 | `OutboxClaimIT` | 双 Worker 并发领取不重复、同键保序、租约到期接手、隔离不阻塞 |
+| `KafkaOutboxE2EIT` | 真实 Kafka：Outbox → Relay → Consumer → 通知落库，同键保序，topic 分区数 |
+| `KafkaPartitionIT` | topic 按配置建 3 分区、同组双 Worker 分摊分区且都消费、同键同分区有序 |
 | `SseReminderDeliveryIT` | 真实 Redis：发布 → 广播 → 订阅 → 本机连接，重放去重 |
 | `*ProfileWiringIT` | api / worker / seeder 三个 Profile 各自装配了什么、排除了什么 |
 | `JwtInterceptorAsyncTest` | SSE 异步请求的 ThreadLocal 清理、线程复用不串身份 |

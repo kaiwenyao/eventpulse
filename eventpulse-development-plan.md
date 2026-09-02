@@ -2,11 +2,11 @@
 
 > 本文由 `eventpulse-detailed-project-plan.md`（技术架构与分层基线）与 `eventpulse-crud-enhancement-plan.md`（运营闭环与 CRUD 丰富）合并而成，是唯一的开发计划来源。原两份文档已被本文取代，历史版本可在 git 中查阅。
 >
-> Kaiwen Yao · 合并日期 2026-09-01
+> Kaiwen Yao · 合并日期 2026-09-01 · AI 方向修订 2026-09-02
 
-Spring Boot 4 · Kafka · PostgreSQL（PostGIS + pgvector）· Redis · Python ML。分层对齐 firmament：`Controller → Service → Repository`。统一 `Result` 信封，JWT 拦截器鉴权。目标架构对齐四层图：Discovery / Organiser Console → Spring Boot 模块 → Kafka / Postgres / Redis → Ranking Model + Outbox + Metrics。
+Spring Boot 4 · Kafka · PostgreSQL（PostGIS）· Redis · Python AI Service（FastAPI + LangChain）· 外部 LLM。分层对齐 firmament：`Controller → Service → Repository`。统一 `Result` 信封，JWT 拦截器鉴权。AI 作为被业务调用的独立服务：主办方用它完善活动文案，用户用它通过受控工具查找真实活动。
 
-不引入真实支付、钱包、超卖锁协议。推荐只做预测与解释，不当交易或库存的事实源。
+本项目不训练模型、不做微调、不生成 embedding、不使用 pgvector，也不建设机器学习排序流水线。LLM 不能直接执行任意 SQL，不能自动发布活动，不能修改库存、订单或票据。
 
 ## 目录
 
@@ -21,7 +21,7 @@ Spring Boot 4 · Kafka · PostgreSQL（PostGIS + pgvector）· Redis · Python M
 9. [HTTP API（完整清单）](#9-http-api完整清单)
 10. [票据与核销](#10-票据与核销)
 11. [Kafka 与 Outbox](#11-kafka-与-outbox)
-12. [ML 预测 / Ranking Model](#12-ml-预测--ranking-model)
+12. [AI 服务 / LangChain Agent](#12-ai-服务--langchain-agent)
 13. [运营分析与可观测性](#13-运营分析与可观测性)
 14. [前端](#14-前端)
 15. [实施路线](#15-实施路线)
@@ -38,7 +38,7 @@ Spring Boot 4 · Kafka · PostgreSQL（PostGIS + pgvector）· Redis · Python M
 
 EventPulse 用最少的代码同时讲清两件事：
 
-- **技术主线**：HTTP CRUD、JWT 鉴权、独占库存、Outbox 可靠消息、SSE 实时、ML 排序。
+- **技术主线**：HTTP CRUD、JWT 鉴权、独占库存、Outbox 可靠消息、SSE 实时、LLM 工具调用。
 - **业务主线**：一条完整的主办方到参与者运营闭环。
 
 ```text
@@ -54,7 +54,7 @@ EventPulse 用最少的代码同时讲清两件事：
 3. **库存**：`Inventory` 独占 `sold` / 余票，预订只调它，靠数据库条件更新防超卖。
 4. **消息**：同一事务写 Outbox，relay 发 Kafka，消费者写通知，按 `dedup_key` 幂等。
 5. **实时**：预订与票据状态用 SSE 推，REST 仍是事实源。
-6. **ML 预测**：Ranking Model 给活动打分；离线时间切分评估，报告标注 SYNTHETIC。
+6. **AI 助手**：Spring Boot 调用独立 Python AI 服务；文案助手返回可审核草稿，活动发现 Agent 通过受控工具查询真实数据。
 
 ### 1.3 成功门槛
 
@@ -67,7 +67,8 @@ EventPulse 用最少的代码同时讲清两件事：
 | 票据核销 | 每张票独立二维码；重复核销被拒；撤销核销可恢复 | Service 单测 + E2E |
 | 消息 | 预订 / 取消后消息中心出现通知；杀进程重放 Outbox 仍能发出；重复消费不产生重复通知 | smoke + Outbox 单测 |
 | 实时 | 已打开的预订 SSE 在状态变化后收到 `booking-status` | 单测 / 手工 |
-| 推荐效果 | V1 相对热门基线有离线对照，且没有未来泄漏 | `ml/` NDCG@10、Recall@10、coverage、diversity、bootstrap CI |
+| AI 文案 | 能根据活动草稿生成标题、摘要、详细描述和入场须知；主办方确认后才能写入 | 固定示例评测 + API 集成测试 |
+| AI 找活动 | Agent 正确选择查询工具，只推荐数据库实际返回且仍公开的活动 | 工具调用测试 + “不编造活动”测试 |
 | 运营分析 | 主办方能看到浏览、点击、预订、售票率与转化漏斗 | 分析接口测试 + 看板页 |
 | 质量 | 后端 JaCoCo 行覆盖率 ≥ 90%；前端 Vitest ≥ 80%；CI 在 `main` 全绿 | `mvn verify`、Vitest、`uv run pytest` |
 
@@ -77,7 +78,9 @@ EventPulse 用最少的代码同时讲清两件事：
 - 复杂票种、座位图、动态定价。
 - 多级组织、团队成员、精细化企业权限。
 - 分布式锁协议、完整 Saga 编排器、生产级运维。
-- 宣称合成数据代表真实商业效果。
+- 训练模型、微调模型、embedding、向量数据库和机器学习推荐排序。
+- 允许 AI 绕过 Spring Boot 权限直接读写数据库。
+- 让 AI 自动发布活动、下单、退款、核销或修改库存。
 
 活动取消后如果已存在订单，系统只记录取消状态并通知参与者；退款标记为线下处理，不宣称已自动退款。
 
@@ -89,13 +92,13 @@ EventPulse 用最少的代码同时讲清两件事：
 React Discovery App / Organiser Console
         │  REST + SSE
         ▼
-Spring Boot ─ Catalogue · Recommendation · Booking · Inventory · Ticketing · Notification · Media · Analytics
-        │
+Spring Boot ─ Catalogue · Booking · Inventory · Ticketing · Notification · Analytics · AI Gateway
+        │                         │
+        │                         └── HTTP ──> Python AI Service ──> LLM API
+        │                                        │
+        │                                        └── 受控工具 ──> Spring Boot 内部查询接口
         ▼
-Kafka · PostgreSQL + PostGIS + pgvector · Redis
-        │
-        ▼
-Ranking Model · Outbox · Metrics Dashboard
+Kafka · PostgreSQL + PostGIS · Redis · Outbox · Metrics
 ```
 
 | 图中盒子 | 计划落地 | 对照本文件 |
@@ -108,15 +111,15 @@ Ranking Model · Outbox · Metrics Dashboard
 | Inventory | 独占 `capacity` / `sold`；预订不得直接改 `events.sold` | §4.3 |
 | Booking | 创建 / 查询 / 取消；调 Inventory；写 Outbox | §9.4 |
 | Ticketing | 按数量生成独立票据、二维码、逐票核销与撤销 | §10 |
-| Recommendation | 在线排序，调 Ranking Model | §9.8、§12 |
+| AI Gateway | 鉴权、限流、调用 Python AI 服务、校验返回结果 | §9.8、§12 |
+| Python AI Service | FastAPI + LangChain；文案生成与活动发现 Agent | §12 |
+| LLM API | 外部大语言模型，只在运行时调用，不在项目中训练 | §12 |
 | Notification | Kafka 消费后写 `notifications`，供消息中心查询 | §9.6、§11 |
 | Media | 受控图片上传、封面引用与生命周期 | §9.9 |
 | Analytics | 活动漏斗、日聚合、主办方看板 | §13 |
 | Kafka | topic `booking-events` | §11 |
-| PostgreSQL + PostGIS | 活动 `geography` 点；附近 `ST_DWithin`，半径上限 50 km | §5、§9.2 |
-| pgvector | `events.embedding vector(64)`，余弦 `<=>` | §5、§12 |
+| PostgreSQL + PostGIS | 保存业务数据；附近活动按经纬度查询 | §5、§9.2 |
 | Redis | 热门活动 / 热门计数缓存，TTL 60s | §4.5 |
-| Ranking Model | V0 热门 + V1 hash embedding；`ml/` 离线评估 | §12 |
 | Outbox | 与业务同一事务插入 `outbox`；`OutboxRelay` 再发 Kafka（教学版，不做 gap/DLT） | §11 |
 | Metrics Dashboard | Actuator Prometheus + `/api/meta/metrics` + 前端看板页 | §13 |
 
@@ -130,10 +133,10 @@ Ranking Model · Outbox · Metrics Dashboard
 
 | 角色 | 可执行操作 |
 | --- | --- |
-| 访客 | 浏览、搜索、筛选活动，查看活动详情，看 V0 热门推荐 |
-| `USER` | 访客能力，以及收藏、预订、取消自己的预订、查看订单与票据、消息中心、偏好、为你推荐 |
-| `ORGANISER` | 创建和管理自己的活动，查看自己活动的订单、参与者、核销与运营数据 |
-| 推荐系统 | Ranking Model + `/api/recommendations`，只输出排序与理由 |
+| 访客 | 浏览、搜索、筛选活动，查看活动详情，使用公开的 AI 活动发现助手 |
+| `USER` | 访客能力，以及收藏、预订、取消自己的预订、查看订单与票据、消息中心、偏好、使用个性化 AI 活动发现助手 |
+| `ORGANISER` | 创建和管理自己的活动，查看自己活动的订单、参与者、核销与运营数据，使用 AI 完善活动文案 |
+| AI 助手 | 根据当前用户权限调用受控工具；只生成建议，不直接修改业务事实 |
 
 注册接口不接受 `role`，一律写成 `USER`。演示主办方由 `demo` profile 播种。
 
@@ -152,7 +155,7 @@ Ranking Model · Outbox · Metrics Dashboard
 
 1. 注册 / 登录，拿到 JWT。
 2. （可选）写入兴趣类别、常驻城市、可选坐标。
-3. Discovery 浏览列表、附近或「为你推荐」；点进详情上报 `VIEW` / `CLICK`。
+3. Discovery 浏览列表、附近活动，或用自然语言让 AI 助手查找合适的活动；点进详情上报 `VIEW` / `CLICK`。
 4. 预订：Booking → Inventory 扣减 → 生成票据 → 同事务写 Outbox → relay 发 Kafka → 通知 + `BOOK` 互动；SSE 推 `CONFIRMED`。
 5. 取消同理，发 `BOOKING_CANCELLED`、记 `CANCEL`、对应票据失效。
 
@@ -160,7 +163,7 @@ Ranking Model · Outbox · Metrics Dashboard
 
 | 路径 | 表面 | 页面 | 鉴权 |
 | --- | --- | --- | --- |
-| `/` | Discovery | 搜索 + 筛选 + 附近 + 列表 + 推荐分区 | 公开 |
+| `/` | Discovery | 搜索 + 筛选 + 附近 + 列表 + AI 活动助手入口 | 公开 |
 | `/events/:id` | Discovery | 活动详情 / 收藏 / 预订 | 浏览公开，预订需登录 |
 | `/login` | Discovery | 登录 / 注册 | 公开 |
 | `/preferences` | Discovery | 兴趣类别、城市、坐标 | 登录 |
@@ -193,7 +196,7 @@ Ranking Model · Outbox · Metrics Dashboard
 ```text
 Controller  → REST / SSE；返回 Result<T>；不写业务规则
 Service     → 业务模块（见 §4.2）
-Repository  → Spring Data JPA / JdbcTemplate（PostGIS、pgvector SQL）
+Repository  → Spring Data JPA / JdbcTemplate（普通查询与 PostGIS）
 Entity      → 表行；不直接作为 HTTP 响应
 dto         → *Request 入参，*Vo 出参（Java record，不单独建 vo 包）
 domain      → 状态常量与状态机（EventStatus、TicketStatus 等）
@@ -201,7 +204,7 @@ Interceptor → JWT；公开路径白名单；可选 token 的接口要解析但
 outbox      → 与业务同一事务写入；OutboxRelay 轮询发 Kafka
 kafka       → Consumer 写 notifications 和 BOOK/CANCEL 互动
 redis       → 热门缓存
-ml/         → 离线评估，与后端共用同一套 hash embedding
+ai-service/ → FastAPI + LangChain；调用外部 LLM，并通过受控工具读取业务信息
 ```
 
 ### 4.1 文件组织
@@ -212,11 +215,12 @@ ml/         → 离线评估，与后端共用同一套 hash embedding
 
 | 模块 | 职责 | 禁止 |
 | --- | --- | --- |
-| Catalogue | 列表、详情、附近、主办方活动 CRUD 与生命周期、写 embedding | 改 `sold`；做推荐打分 |
+| Catalogue | 列表、详情、附近、主办方活动 CRUD 与生命周期 | 改 `sold`；执行 AI 工具编排 |
 | Inventory | `reserve(eventId, qty)` / `release(eventId, qty)`；读 `remaining` | 发 Kafka；改订单状态 |
 | Booking | 创建 / 取消 / 查询；调 Inventory 与 Ticketing；写 Outbox | 直接 `event.setSold` |
 | Ticketing | 生成票据、核销、撤销核销、票据状态汇总 | 改 `sold`；改订单数量 |
-| Recommendation | 召回、打分、冻结 cursor；读 Redis 热门 | 改库存或订单 |
+| AI Gateway | 调用 Python AI 服务、传递用户上下文、限流、超时和返回校验 | 让 AI 绕过权限或直接写业务表 |
+| AI Service | 文案生成、活动发现 Agent、工具选择和结构化输出 | 直接访问任意 SQL；自动发布、下单或核销 |
 | Notification | 消费 Kafka、落 `notifications`、供消息中心查询 | 改预订 |
 | Media | 图片上传、类型与大小校验、所有权校验、软删除 | 越权删除他人资源 |
 | Analytics | 漏斗、日聚合、主办方看板 | 写业务事实表 |
@@ -259,18 +263,18 @@ Redis 挂了必须回源 PostgreSQL，推荐和列表不能 500。Compose 加 `r
 
 ## 5 数据模型
 
-业务表见 `backend/src/main/resources/db/migration/`。Flyway 只加列 / 加表，不改已有列含义。Postgres 镜像需带 **PostGIS** 与 **pgvector**。
+业务表见 `backend/src/main/resources/db/migration/`。Flyway 只加列 / 加表，不改已有列含义。PostgreSQL 的地理位置查询可以使用 **PostGIS**；AI 功能不要求任何向量扩展。
 
 ### 5.1 核心业务表（V1）
 
 | 表 | 关键字段 |
 | --- | --- |
 | users | email UNIQUE, password (BCrypt), name, role (`USER` / `ORGANISER`), **wallet_cents**（站内钱包余额，分） |
-| events | title, description, category, city, starts_at, price_cents, capacity, sold, organiser_id, status, created_at, **location geography(Point,4326)**, **embedding vector(64)** |
+| events | title, description, category, city, starts_at, price_cents, capacity, sold, organiser_id, status, created_at, **location geography(Point,4326)** |
 | bookings | user_id, event_id, quantity, status (`CONFIRMED` / `CANCELLED`), created_at |
 | notifications | booking_id, message, created_at |
 
-类别：`music` / `tech` / `sports` / `art` / `food`。`location` 可空，有坐标才进附近检索；`embedding` 在 create/update 时由 `EmbeddingService` 写入。
+类别：`music` / `tech` / `sports` / `art` / `food`。`location` 可空，有坐标才进入附近活动查询。
 
 ### 5.2 运营字段扩展（V2）
 
@@ -303,7 +307,9 @@ Redis 挂了必须回源 PostgreSQL，推荐和列表不能 500。Compose 加 `r
 | media_assets | owner_id, storage_key, public_url, content_type, size_bytes, status, created_at, deleted_at | 封面与媒体生命周期 |
 | user_preferences | user_id PK, categories `TEXT[]`, city, lat, lng | 显式兴趣；坐标供 nearby |
 | interactions | user_id NULL, event_id, type, position, occurred_at | point-in-time 行为 |
-| recommendation_requests | user_id NULL, section, model_version, feature_version, candidate_ids JSON, query_as_of, expires_at | 冻结候选、稳定翻页、解释推荐 |
+| ai_conversations | id, user_id NULL, kind, created_at, updated_at | 可选保存 AI 活动助手的多轮会话 |
+| ai_messages | id, conversation_id, role, content, created_at | 保存有限长度的会话历史，不保存模型内部思考过程 |
+| ai_requests | request_id, user_id NULL, feature, provider, model_name, status, latency_ms, input_tokens, output_tokens, created_at | 记录调用结果、耗时和成本，不保存密钥 |
 | outbox | topic, payload JSON, created_at, published_at | 与业务同事务；relay 发出后填 published_at |
 | event_daily_metrics | event_id, day, views, clicks, saves, bookings, sold, cancels, check_ins | 工作台与趋势查询 |
 
@@ -315,8 +321,9 @@ Redis 挂了必须回源 PostgreSQL，推荐和列表不能 500。Compose 加 `r
 
 ### 5.4 不变量
 
-- Recommendation 不得改 `sold` / `bookings.status`。
-- 特征不得使用 `queryAsOf` 之后的互动。
+- AI 工具不得修改 `sold`、`bookings.status` 或票据状态。
+- AI 推荐的活动 ID 必须来自本次工具查询结果。
+- AI 生成的活动文案必须由主办方确认后，才能通过普通活动编辑接口保存。
 - 容量不能小于已售票数。
 - 只有 Inventory 改 `events.sold`。
 
@@ -331,10 +338,10 @@ Redis 挂了必须回源 PostgreSQL，推荐和列表不能 500。Compose 加 `r
 - 所有 `OPTIONS`
 - `POST /api/auth/login`、`POST /api/auth/register`
 - `GET /api/events`、`GET /api/events/{数字id}`、`GET /api/events/nearby`
-- `GET /api/recommendations`
+- `POST /api/ai/discovery/chat`（可选 JWT）
 - `GET /actuator/health`、`GET /actuator/prometheus`
 
-`GET /api/recommendations` 可选 JWT：有 token 则个性化，没有则 V0，不要 401。公开路径若带 `Bearer` 仍应 parse。
+`POST /api/ai/discovery/chat` 可选 JWT：未登录可以按公开条件找活动；已登录时可以在用户明确同意后读取其偏好。公开路径如果带 `Bearer`，仍然要解析用户身份。
 
 其余无 token → HTTP 401，`{"code":0,"msg":"未登录或 token 无效"}`。
 
@@ -343,7 +350,7 @@ Redis 挂了必须回源 PostgreSQL，推荐和列表不能 500。Compose 加 `r
 ### 6.1 数据安全
 
 - DTO 不返回密码。
-- 日志不打印 JWT、密码、参与者敏感信息、embedding 全文。
+- 日志不打印 JWT、LLM API Key、完整用户提示词、完整模型回复和参与者敏感信息。
 - 导出参与者数据前再次验证活动所有权。
 - 媒体上传校验类型、大小与资源所有权；被活动引用的媒体不能被他人删除。
 
@@ -428,7 +435,7 @@ CANCELLED → ARCHIVED
 | `CANCELLED` | 只读，可查看取消原因和订单影响 |
 | `ARCHIVED` | 只读 |
 
-通用限制：容量不得小于已售票数；修改时间或地点且已有订单时，向主办方展示影响人数并通知参与者；`PUT` 带版本号做乐观锁；重要修改写 `event_audit_logs`；坐标或文本变更时重算 `location` 与 `embedding`。
+通用限制：容量不得小于已售票数；修改时间或地点且已有订单时，向主办方展示影响人数并通知参与者；`PUT` 带版本号做乐观锁；重要修改写 `event_audit_logs`；坐标变更时更新 `location`。AI 生成的文案仍然通过相同的 `PUT` 接口和业务校验保存。
 
 ### 8.6 删除、取消与归档
 
@@ -613,40 +620,86 @@ GET  /api/organiser/tickets/{code}
 | PUT | `/api/preferences` | JWT | `{categories, city, lat, lng}`；categories 为约定子集，可空；lat/lng 成对可选 |
 | POST | `/api/interactions` | JWT | 批量上报，1–50 条，`type` 仅 `VIEW` / `CLICK` / `SAVE` / `UNSAVE`，可带 `requestId` 与 `position`；返回 `{"accepted": n}`；未知 `eventId` 忽略；禁止客户端传 `BOOK` / `CANCEL` |
 
-### 9.8 推荐 `/api/recommendations`
+### 9.8 AI 助手 `/api/ai`
 
-`GET /api/recommendations`，可选 JWT。
+浏览器只调用 Spring Boot。Spring Boot 负责 JWT、角色和资源所有权校验，然后通过内部网络调用 Python AI 服务。浏览器不能直接访问 Python 服务，也不能拿到 LLM API Key。
 
-| 参数 | 默认 | 说明 |
-| --- | --- | --- |
-| section | `for-you` | `for-you` 个性化；`popular` 热门（可读 Redis）；`nearby` 用偏好坐标，否则 city，再否则 popular |
-| limit | 10 | 1–50 |
-| cursor | 空 | 冻结候选翻页 |
+#### 主办方完善活动文案
+
+```http
+POST /api/ai/organiser/improve-event
+Authorization: Bearer <jwt>
+```
+
+请求可以来自尚未保存的表单，也可以携带主办方自己的活动 ID：
 
 ```json
 {
-  "requestId": "3f2a0000-0000-4000-8000-000000000001",
-  "modelVersion": "v1-hash-embedding",
-  "featureVersion": "f1-pref-pop-interact",
-  "queryAsOf": "2026-08-31T22:00:00Z",
-  "nextCursor": "eyJhbGciOiJIUzI1NiJ9",
-  "items": [
-    {
-      "eventId": 1,
-      "title": "城市脉搏 · 独立摇滚之夜",
-      "category": "music",
-      "city": "上海",
-      "startsAt": "2026-09-14T12:00:00Z",
-      "priceCents": 18000,
-      "remaining": 298,
-      "score": 7.42,
-      "reasons": ["MATCHES_PREFERENCE", "EMBEDDING_MATCH", "POPULAR"]
-    }
-  ]
+  "eventId": 12,
+  "title": "周末爵士夜",
+  "summary": "爵士演出",
+  "description": "三支乐队",
+  "category": "music",
+  "city": "上海",
+  "venueName": "声空间",
+  "audience": "喜欢现场音乐的年轻人",
+  "tone": "轻松、有现场感"
 }
 ```
 
-只召回 `PUBLISHED` 且 `startsAt > queryAsOf`。首次请求冻结 `candidate_ids`。过期 cursor → `"推荐结果已过期，请重新刷新"`。访客 `v0-popularity`，登录且向量可用 `v1-hash-embedding`。`reasons` 必须对得上特征。
+AI 服务返回固定结构，不直接保存活动：
+
+```json
+{
+  "requestId": "01J...",
+  "suggestion": {
+    "title": "周末爵士夜：在城市里听见即兴",
+    "summary": "三支爵士乐队带来一晚现场演出。",
+    "description": "...",
+    "attendanceNotes": "建议提前 30 分钟到场。"
+  },
+  "warnings": []
+}
+```
+
+主办方在页面中逐项查看差异，可以选择“应用全部”或只应用某几个字段。应用建议只改变前端表单；最终保存和发布仍然调用普通活动接口，并再次经过版本、权限和状态校验。
+
+#### 用户用自然语言找活动
+
+```http
+POST /api/ai/discovery/chat
+Authorization: Bearer <optional-jwt>
+```
+
+请求：
+
+```json
+{
+  "conversationId": null,
+  "message": "帮我找这个周六在上海、预算 200 元以内的音乐活动"
+}
+```
+
+返回：
+
+```json
+{
+  "requestId": "01J...",
+  "conversationId": "01J...",
+  "answer": "我找到两场符合时间、地点和预算的活动。",
+  "events": [
+    {
+      "eventId": 1,
+      "reason": "周六晚开始，位于上海，票价 180 元"
+    }
+  ],
+  "followUpQuestions": []
+}
+```
+
+`events[].eventId` 必须来自 Agent 本次调用活动搜索工具得到的结果。Spring Boot 收到 Python 返回值后，还要重新读取这些活动，过滤已经取消、结束、下架或无权限展示的数据，再返回完整 `EventVo`。
+
+原有 `GET /api/recommendations` 不再规划为机器学习接口。迁移期间可以保留为普通热门活动列表，前端新的 AI 入口使用 `/api/ai/discovery/chat`。
 
 ### 9.9 媒体 `/api/media/images`
 
@@ -750,55 +803,297 @@ Consumer group `eventpulse`：
 
 ---
 
-## 12 ML 预测 / Ranking Model
+## 12 AI 服务 / LangChain Agent
 
-预测：时刻 `t` 给可售活动打分，近似 P(用户会 CLICK/BOOK)。在线排序；离线用时间切分后的互动当标签。`remaining` 只展示，下单仍走 Inventory。
+### 12.1 定位
 
-### 12.1 特征（point-in-time）
+AI 是 EventPulse 调用的一项外部能力，不是项目内部训练出来的模型。
 
-| 特征 | 来源 | 截止 |
+本项目只做：
+
+- 调用外部 LLM API。
+- 为 LLM 准备清晰的提示词和业务上下文。
+- 让 Agent 在允许的工具中选择并查询活动。
+- 校验 LLM 的结构化返回结果。
+- 记录耗时、错误、token 用量和用户反馈。
+
+本项目不做：
+
+- 模型训练或微调。
+- embedding 生成。
+- 向量数据库或向量检索。
+- 点击率预测和机器学习排序。
+- 让 LLM 直接连接数据库或执行任意 SQL。
+
+### 12.2 为什么使用独立 Python 服务
+
+新增独立目录：
+
+```text
+ai-service/
+├── app/
+│   ├── main.py
+│   ├── api/                 HTTP 路由
+│   ├── agents/              活动发现 Agent
+│   ├── chains/              活动文案生成流程
+│   ├── tools/               Agent 可调用的受控工具
+│   ├── clients/             Spring Boot 和 LLM 客户端
+│   ├── schemas/             Pydantic 请求与返回结构
+│   └── config.py
+├── tests/
+├── pyproject.toml
+├── uv.lock
+└── Dockerfile
+```
+
+建议使用：
+
+- FastAPI：提供内部 HTTP API。
+- LangChain：创建 Agent、定义工具、调用 LLM。
+- Pydantic：限制请求、工具参数和返回格式。
+- httpx：调用 Spring Boot 内部工具接口。
+- pytest：测试提示词、工具调用、权限和降级行为。
+
+Python AI 服务使用自己的镜像，与 Spring Boot 镜像分开发布。它本身不保存会话到进程内存，因此以后也可以增加多个副本。
+
+### 12.3 调用关系
+
+```text
+浏览器
+   │
+   ▼
+Spring Boot /api/ai/**
+   │  1. JWT、角色、资源所有权、限流
+   │  2. 生成 requestId 和可信用户上下文
+   ▼
+Python AI Service
+   │
+   ├── 调用外部 LLM
+   │
+   └── Agent 需要业务数据时调用受控工具
+                    │
+                    ▼
+        Spring Boot /internal/ai-tools/**
+                    │
+                    ▼
+               PostgreSQL
+```
+
+Python 服务不直接持有数据库账号。所有活动查询都回到 Spring Boot，由现有 Service 和 Repository 执行。这样权限、活动状态和查询限制只有一套规则。
+
+浏览器也不直接调用 Python 服务。LLM API Key 只存在于 Python 服务的 Secret 中。
+
+### 12.4 哪些功能使用 Agent
+
+不是每个 LLM 功能都需要 Agent。
+
+#### 活动文案助手：不用 Agent
+
+文案完善只有一个明确任务：根据主办方提供的活动资料生成更完整的文案。它不需要自己决定调用哪些工具，使用普通 LLM 调用和结构化输出更简单、稳定。
+
+固定返回结构：
+
+```text
+title
+summary
+description
+attendanceNotes
+warnings
+```
+
+主办方必须在界面中审核和选择，AI 不能自动保存或发布。
+
+#### 活动发现助手：使用 Agent
+
+用户的问题可能包含城市、日期、预算、类别、同行人、距离等不同条件。Agent 需要先理解问题，再选择合适的查询工具，可以连续调用多个工具，最后根据真实结果回答。
+
+例如：
+
+```text
+用户：这个周六在上海有什么适合两个人、每人 200 元以内的音乐活动？
+       │
+       ▼
+Agent 提取条件
+       │
+       ▼
+调用 search_published_events(...)
+       │
+       ▼
+必要时调用 get_event_details(eventId)
+       │
+       ▼
+只根据工具返回的活动组织回答
+```
+
+第一版使用 LangChain `create_agent` 和少量静态工具，不先建设复杂的 LangGraph 工作流。以后只有在确实需要暂停、人工批准或恢复长任务时，再引入更复杂的图流程。
+
+### 12.5 Agent 工具清单
+
+第一版工具全部只读：
+
+| 工具 | 用途 | 限制 |
 | --- | --- | --- |
-| 类别 / 城市匹配 | `user_preferences` × `events` | `queryAsOf` |
-| 距离 | PostGIS `ST_Distance`（有坐标时） | `queryAsOf` |
-| 热门度 | Redis `popular:counts`，回源 interactions 或 `sold` | `< queryAsOf` |
-| 文本 embedding | `events.embedding <=> userPrefVector` | 活动写入时固化 |
-| 近期互动 | 过去 90 天 VIEW/CLICK/BOOK | `< queryAsOf` |
+| `search_published_events` | 按关键词、城市、类别、日期、价格查询活动 | 只返回公开活动；最多 20 条 |
+| `get_event_details` | 查看某个活动的时间、地点、价格、余票和说明 | 不返回内部备注和敏感信息 |
+| `find_nearby_events` | 按坐标和半径查找附近活动 | 半径上限沿用公开 API 规则 |
+| `get_popular_events` | 查询当前热门活动 | Redis 不可用时由 Spring Boot 回源数据库 |
+| `get_my_preferences` | 读取当前登录用户主动保存的偏好 | 必须登录，只能读取本人 |
+| `get_my_recent_categories` | 汇总当前用户近期感兴趣的活动类别 | 必须登录，只返回类别摘要，不返回完整历史 |
 
-禁止用 `t` 之后的行为解释 `t` 的排序。
+不提供以下工具：
 
-### 12.2 在线模型
+- 任意 SQL 工具。
+- 创建、修改、发布或取消活动。
+- 创建订单、退款或核销票据。
+- 查看其他用户资料。
+- 执行系统命令或访问任意网址。
 
-**V0 `v0-popularity`**：
+每个工具都必须定义明确的参数结构、最大结果数量和超时时间。Spring Boot 内部接口仍要检查身份和权限，不能因为调用来自 Python 服务就完全信任参数。
 
-```text
-score = 1.0 * popularCount + 2.0 * categoryMatch + 1.0 * cityMatch
+### 12.6 Spring Boot 内部工具接口
+
+计划新增只允许内网访问的接口：
+
+```http
+POST /internal/ai-tools/events/search
+GET  /internal/ai-tools/events/{id}
+POST /internal/ai-tools/events/nearby
+GET  /internal/ai-tools/events/popular
+GET  /internal/ai-tools/users/me/preferences
+GET  /internal/ai-tools/users/me/recent-categories
 ```
 
-**V1 `v1-hash-embedding`**：
+这些接口使用服务间凭证，不使用浏览器 JWT 直接互调。Spring Boot 在调用 Python 服务时生成短期、签名的用户上下文；Python 调用工具时原样带回，Spring Boot 再确认 userId、role 和允许范围。
+
+内部工具接口不通过公网 Ingress 暴露。每次工具调用都携带同一个 requestId，方便将一次用户请求、一次 LLM 调用和若干工具调用串起来排查。
+
+### 12.7 结构化输出与结果校验
+
+LLM 不直接返回一段无法检查的自由文本。Python 使用 Pydantic 定义返回结构，并让 LangChain 返回经过校验的数据。
+
+活动发现结果至少包含：
 
 ```text
-score = V0
-      + 4.0 * (1 - cosineDistance)
-      + 1.5 * recentPositiveInteract
-      + 1.0 * nearbyBoost
+answer
+eventIds
+reasons
+followUpQuestions
 ```
 
-`nearbyBoost`：`section=nearby` 或距离 < 10 km 为 1，否则 0。`reasons` 只在贡献 > 0 时输出 `POPULAR` / `MATCHES_PREFERENCE` / `NEARBY` / `EMBEDDING_MATCH` / `RECENT_INTERACT`。
+Python 返回后，Spring Boot 再执行一次最终校验：
 
-### 12.3 Hash embedding + pgvector
+1. eventId 是否来自本次工具结果。
+2. 活动现在是否仍然允许公开展示。
+3. 是否超过返回数量上限。
+4. reason 是否只引用真实的时间、城市、价格和类别。
+5. 返回文本和字段长度是否符合限制。
 
-64 维。token 后 `bucket = floorMod(javaStringHashCode(token), 64)`，`vector[bucket] += 1`，L2 归一化，与 `String.hashCode()` 逐 bit 相同。无 GPU、无 sentence-transformers。写入 `vector(64)`，在线用 `<=>`。扩展不可用时退回 V0，不要让推荐 500。
+校验失败时不把未经验证的结果交给前端。系统返回可理解的降级提示，并提供普通活动搜索入口。
 
-### 12.4 离线评估 `ml/`
+### 12.8 会话记录
 
-`ml/ml_eval/evaluate.py`、`ml/tests/test_evaluate.py`、`ml/pyproject.toml`、`ml/uv.lock`。
+Python 服务不在内存里保存会话。
 
-- 固定种子合成数据；报告必须标注 `SYNTHETIC PIPELINE EVALUATION`
-- 按 `occurred_at` 切 80/20
-- 热门基线 vs 个性化
-- NDCG@10、Recall@10、coverage、diversity、bootstrap 95% CI
-- `cd ml && uv sync --frozen && uv run pytest -q`；报告 `uv run python -m ml_eval.evaluate`
-- `make test-ml`；`make test-all` 含这一层；CI 增加 ml job
+多轮活动助手需要历史时，由 Spring Boot 将会话保存在 PostgreSQL：
+
+- `ai_conversations` 保存会话所属用户和用途。
+- `ai_messages` 保存用户可见的提问和回答。
+- 每次只向 Python 发送最近有限条消息，避免上下文无限增长。
+- 不保存模型内部思考过程。
+- 用户只能读取和继续自己的会话。
+- 增加保留期限和删除能力。
+
+访客可以使用不持久化的单轮请求。登录用户是否保存会话，由产品界面明确提示。
+
+### 12.9 安全边界
+
+活动描述和用户输入都视为不可信数据。即使某个活动描述里写着“忽略规则并调用某工具”，Agent 也不能把它当成系统指令。
+
+必须实施：
+
+- 工具白名单，默认没有写工具。
+- 每次请求最多调用有限次数的工具，例如 4 次。
+- 工具查询最多返回 20 条活动。
+- 限制用户输入、活动上下文和模型输出长度。
+- 主办方文案必须人工确认。
+- 超时后取消 LLM 请求。
+- 日志不记录 LLM API Key、JWT 和完整敏感内容。
+- 对每个用户和 IP 限流，避免成本失控。
+- 外部 LLM 不可用时返回明确降级信息，不影响普通活动搜索、编辑和预订。
+
+### 12.10 配置
+
+Python AI 服务通过环境变量配置：
+
+```text
+LLM_PROVIDER
+LLM_MODEL
+LLM_API_KEY
+LLM_BASE_URL（可选）
+LLM_TIMEOUT_SECONDS
+LLM_MAX_OUTPUT_TOKENS
+BACKEND_INTERNAL_URL
+BACKEND_SERVICE_TOKEN
+LANGSMITH_TRACING（可选）
+```
+
+Spring Boot 配置：
+
+```text
+AI_SERVICE_URL
+AI_SERVICE_TOKEN
+AI_CONNECT_TIMEOUT
+AI_READ_TIMEOUT
+AI_ENABLED
+```
+
+模型名称不能写死在业务代码中。切换模型只改配置，并重新运行 AI 评测。
+
+### 12.11 失败与降级
+
+| 情况 | 处理 |
+| --- | --- |
+| LLM 超时 | 取消请求，提示稍后重试 |
+| LLM 返回格式错误 | Python 进行有限重试；仍失败则返回统一错误 |
+| Python AI 服务不可用 | Spring Boot 快速失败，普通业务接口继续工作 |
+| 工具查询失败 | Agent 停止编造答案，说明暂时无法查询活动 |
+| 返回了不存在的 eventId | Spring Boot 拒绝该 AI 结果 |
+| Redis 不可用 | 热门工具回源 PostgreSQL |
+| 达到用户限额 | 返回 429 和明确提示 |
+
+文案生成请求不自动重试写操作，因为它本身没有写业务数据。活动搜索工具都是只读操作，可以做一次短重试。
+
+### 12.12 可观测性与成本
+
+至少记录以下指标：
+
+- AI 请求数量、成功率和失败率。
+- LLM 响应时间。
+- 工具调用次数、工具名称和失败率。
+- 输入和输出 token 数量。
+- 按功能区分文案助手与活动发现助手。
+- 结构化输出校验失败次数。
+- 用户主动采用文案建议的比例。
+
+日志使用 requestId 串联 Spring Boot 和 Python，但默认不记录完整提示词与完整回复。LangSmith 可以用于开发期查看 Agent 的工具选择和调用轨迹，但不是系统运行的必要依赖。
+
+### 12.13 AI 评测，不是模型训练
+
+虽然项目不训练模型，LLM 输出仍然具有不确定性，因此需要测试 AI 应用本身。
+
+建立一组人工编写的小型测试集：
+
+- “上海、周六、音乐、200 元以内”是否调用正确搜索工具并传入正确条件。
+- 没有匹配活动时是否明确说明没有结果，而不是编造活动。
+- 工具只返回活动 1 和 2 时，最终答案是否只引用 1 和 2。
+- 未登录用户是否无法调用个人偏好工具。
+- 普通用户是否无法使用主办方文案接口。
+- 文案助手是否返回所有必填字段并遵守长度限制。
+- 恶意活动描述是否无法改变 Agent 工具权限。
+
+CI 使用假的 LLM 响应测试固定逻辑，避免网络、费用和模型波动导致 CI 不稳定。连接真实 LLM 的评测作为手动或定时任务运行，用于比较提示词和模型版本，不产生任何训练步骤。
+
+LangChain 当前的 Agent API 支持将普通 Python 函数定义为工具，并支持按 Pydantic schema 返回结构化结果；本计划以这些能力为基础。参考：[LangChain Agents](https://docs.langchain.com/oss/python/langchain/agents)、[Structured output](https://docs.langchain.com/oss/python/langchain/structured-output)。
 
 ---
 
@@ -813,13 +1108,13 @@ score = V0
 
 ### 13.2 可观测性
 
-Micrometer 计数：`bookings.created`、`bookings.cancelled`、`recommendations.served`、`tickets.checked_in`、`outbox.pending`（gauge）。
+Micrometer 计数：`bookings.created`、`bookings.cancelled`、`ai.requests`、`ai.failures`、`ai.tool.calls`、`tickets.checked_in`、`outbox.pending`（gauge）。
 
 `/actuator/prometheus` 给 scrape；`/api/meta/metrics` + 前端看板页就是图中的 Metrics Dashboard。本练习不强制上 Grafana。
 
-监控至少能观察：预订、取消、推荐、Outbox 堆积、缓存回源、核销失败。
+监控至少能观察：预订、取消、AI 请求量与耗时、工具失败、Outbox 堆积、缓存回源和核销失败。
 
-日志禁止打印 JWT、密码、embedding 全文、参与者敏感信息。
+日志禁止打印 JWT、密码、LLM API Key、完整提示词、完整模型回复和参与者敏感信息。
 
 ---
 
@@ -827,9 +1122,9 @@ Micrometer 计数：`bookings.created`、`bookings.cancelled`、`recommendations
 
 两个表面，一个 SPA。
 
-**Discovery App**：活动列表与组合筛选、附近、详情、收藏、登录、预订（自选数量、提交前展示汇总）、订单确认与详情、逐票二维码、消息中心、偏好、为你推荐。打开某条预订时挂 `EventSource` 到 `/api/bookings/{id}/events`（带 Authorization 的 fetch polyfill 或 cookie 方案二选一；**禁止**把 JWT 拼进 URL）。断线后 REST 再拉一次。
+**Discovery App**：活动列表与组合筛选、附近、详情、收藏、登录、预订（自选数量、提交前展示汇总）、订单确认与详情、逐票二维码、消息中心、偏好、AI 活动发现助手。打开某条预订时挂 `EventSource` 到 `/api/bookings/{id}/events`（带 Authorization 的 fetch polyfill 或 cookie 方案二选一；**禁止**把 JWT 拼进 URL）。断线后 REST 再拉一次。
 
-**Organiser Console**：工作台、活动管理列表、全字段表单、活动运营详情（生命周期轨道 + 随状态变化的操作区）、参与者与核销、分析看板。
+**Organiser Console**：工作台、活动管理列表、全字段表单、AI 文案助手、活动运营详情（生命周期轨道 + 随状态变化的操作区）、参与者与核销、分析看板。
 
 活动详情页的生命周期轨道：
 
@@ -840,13 +1135,15 @@ Micrometer 计数：`bookings.created`、`bookings.cancelled`、`recommendations
 
 草稿显示「继续编辑、预览、发布」，已发布显示「查看订单、取消活动」，已结束显示「查看数据、归档」。
 
-ML 交互：
+AI 交互：
 
-1. 首页「为你推荐」：`GET /api/recommendations?section=for-you&limit=8`，展示 reasons 文案。
-2. 详情上报 `VIEW`；从推荐位进入带 `CLICK` + `position`。
-3. `/preferences` 保存后刷新推荐。
+1. 首页提供“告诉我你想参加什么活动”的自然语言入口，调用 `POST /api/ai/discovery/chat`。
+2. AI 返回的活动使用普通活动卡片展示，点击后仍进入真实活动详情页。
+3. AI 正在处理、超时、达到限额和暂时不可用时，都显示明确状态，并保留普通搜索入口。
+4. 主办方编辑活动时可以点击“AI 完善文案”，在差异预览中选择要采用的字段。
+5. AI 建议只更新当前表单，不自动保存，更不能自动发布。
 
-未登录推荐走 V0。前端统一读 `Result.data`。删除草稿和取消活动使用不同的确认文案；有订单的活动取消前展示影响人数。
+前端统一读取 `Result.data`。删除草稿和取消活动使用不同的确认文案；有订单的活动取消前展示影响人数。
 
 响应式要求：桌面端、平板端、移动端布局可用，支持键盘操作和清晰的焦点状态。
 
@@ -863,11 +1160,11 @@ ML 交互：
 | 3 | 先直发 Kafka 打通通知页（随后由 Outbox 替换直发） | 预订后消息页出现文案 |
 | 4 | React Discovery + Organiser、Docker Compose、JaCoCo 90%、CI | `make up` + `make test-all` + Actions 绿 |
 | 5 | 抽出 Inventory；Outbox + Relay 替换直发 | 杀 backend 再起来，未发的 outbox 会补发 |
-| 6 | ML 表 + pgvector embedding + `GET /api/recommendations` V0/V1 | 登录 reasons 含兴趣/向量；扩展缺失时 V0 |
-| 7 | preferences / interactions、Kafka 写 BOOK/CANCEL、前端推荐区、`ml/`、CI ml job | `uv run pytest` 绿；冒烟含推荐 |
+| 6 | 新建 Python AI 服务；打通 Spring Boot → FastAPI → LLM；实现主办方文案助手 | 主办方得到结构化建议，确认前不会写数据库 |
+| 7 | LangChain 活动发现 Agent、只读活动工具、前端 AI 对话入口、AI 评测 | Agent 只返回数据库真实活动；`uv run pytest` 通过 |
 | 8 | PostGIS 附近、Redis 热门缓存、SSE、漏斗、Metrics Dashboard | 附近按距离；Redis 停仍能列表；SSE 收到状态；`/metrics` 有数字 |
 
-第 1–4 周不改预订事务语义；第 5 周才把「发 Kafka」挪进 Outbox；第 6–7 周才动推荐；第 8 周补齐图上剩余盒子。
+第 1–4 周不改预订事务语义；第 5 周才把「发 Kafka」挪进 Outbox；第 6–7 周接入 LLM 与 Agent；第 8 周补齐图上剩余盒子。
 
 ### 15.2 阶段 1：主办方活动 CRUD
 
@@ -895,7 +1192,7 @@ ML 交互：
 
 ### 15.6 阶段 5：智能化、实时性与可靠性
 
-范围：推荐与附近活动；Outbox 消息可靠性与消费者幂等；SSE 实时状态；Redis 热门缓存与回源；媒体上传与生命周期；更完整的指标与审计。
+范围：AI 文案助手与活动发现 Agent；附近活动；Outbox 消息可靠性与消费者幂等；SSE 实时状态；Redis 热门缓存与回源；媒体上传与生命周期；更完整的指标与审计。
 
 阶段 5 完成后进行全链路容量验证、安全检查、无障碍检查和发布验收。阶段 0–5 全部完成才构成本规划定义的最终版本。
 
@@ -905,7 +1202,7 @@ ML 交互：
 
 ### 16.1 后端
 
-单元与集成测试覆盖：`Result` 信封 / JWT 拦截器 / Inventory 条件更新 / 乐观锁冲突 / Outbox relay / SSE 所有权 / 推荐打分 / embedding 哈希。JaCoCo 排除启动类，行覆盖率 ≥ 90%。
+单元与集成测试覆盖：`Result` 信封 / JWT 拦截器 / Inventory 条件更新 / 乐观锁冲突 / Outbox relay / SSE 所有权 / AI Gateway 权限 / Python 服务超时和返回校验。JaCoCo 排除启动类，行覆盖率 ≥ 90%。
 
 必须覆盖的业务断言：
 
@@ -931,20 +1228,22 @@ Vitest 覆盖率 ≥ 80%，覆盖：
 - 删除草稿与取消活动的不同确认文案。
 - 有订单的活动取消前展示影响人数。
 - API 失败时展示可操作的错误状态。
+- AI 活动助手的加载、超时、空结果和普通搜索降级状态。
+- 主办方可以逐字段采用 AI 文案，未确认时不会保存。
 
 Playwright 覆盖主办方发布、用户预订、逐票核销、活动取消与通知流程。
 
-### 16.3 ML
+### 16.3 Python AI 服务
 
-`uv run pytest`；lockfile 用 `--frozen`。
+`uv run pytest`；lockfile 使用 `--frozen`。CI 默认使用假的 LLM 和假的 Spring Boot 工具响应，检查工具选择、参数、结构化输出、权限和错误处理，不调用收费的真实模型。
 
 ### 16.4 冒烟与 CI
 
-冒烟：预订 → 消息；登录后 `GET /api/recommendations` 含 `modelVersion`；`GET /api/meta/metrics` 200；媒体上传、SSE、Outbox 关键链路可达。
+冒烟：预订 → 消息；AI 文案接口返回结构化建议；AI 活动助手返回数据库真实 eventId；`GET /api/meta/metrics` 200；媒体上传、SSE、Outbox 关键链路可达。
 
-CI：gitleaks、`mvn verify`、frontend lint + coverage + build + e2e、ml pytest。
+CI：gitleaks、`mvn verify`、frontend lint + coverage + build + e2e、`ai-service` pytest。
 
-Compose：`postgres`（PostGIS + pgvector）、`redis`、`kafka`、`backend`、`frontend`。
+Compose：`postgres`（PostGIS）、`redis`、Kafka 集群、`backend-api`、`backend-worker`、`ai-service`、`frontend`。
 
 ### 16.5 端到端验收场景
 
@@ -954,7 +1253,7 @@ Compose：`postgres`（PostGIS + pgvector）、`redis`、`kafka`、`backend`、`
 主办方创建并编辑活动
 → 上传封面并保存草稿
 → 预览后发布
-→ 用户通过搜索、附近或推荐发现活动
+→ 用户通过搜索、附近或 AI 活动助手发现真实活动
 → 用户收藏并预订多张票
 → 系统原子扣减库存、生成独立票据并可靠发送通知
 → 主办方查看订单、导出参与者并逐张核销二维码
@@ -982,6 +1281,7 @@ Compose：`postgres`（PostGIS + pgvector）、`redis`、`kafka`、`backend`、`
 ### 17.1 主办方运营
 
 - 完整活动工作台、活动列表、详情、预览和全字段表单。
+- AI 根据草稿完善标题、摘要、详细描述和入场须知；主办方逐项确认后再保存。
 - `DRAFT` / `PUBLISHED` / `ONGOING` / `FINISHED` / `CANCELLED` / `ARCHIVED` 全生命周期。
 - 新建、查询、编辑、复制、发布、取消、归档和删除草稿。
 - 活动封面上传、替换、删除和资源所有权校验。
@@ -991,7 +1291,8 @@ Compose：`postgres`（PostGIS + pgvector）、`redis`、`kafka`、`backend`、`
 
 ### 17.2 参与者体验
 
-- 活动搜索、组合筛选、排序、分页、附近活动和个性化推荐。
+- 活动搜索、组合筛选、排序、分页、附近活动和自然语言 AI 活动发现助手。
+- AI 助手只推荐数据库真实存在并且当前仍公开的活动。
 - 收藏、取消收藏、互动记录和偏好管理。
 - 自主选择预订数量、库存确认、订单确认和订单详情。
 - 每张票独立展示二维码与当前核销状态。
@@ -1007,6 +1308,8 @@ Compose：`postgres`（PostGIS + pgvector）、`redis`、`kafka`、`backend`、`
 - Outbox 保证订单、活动通知和 Kafka 消息最终可达。
 - 消费者幂等处理，避免重复通知和重复互动记录。
 - Redis 缓存失败时能够回源 PostgreSQL。
+- Python AI 服务或外部 LLM 不可用时，普通搜索、活动编辑、预订和票据功能继续工作。
+- AI 不能绕过权限直接读写业务数据，所有工具调用由 Spring Boot 再次校验。
 - 401 / 403 / 404 / 409 / 500 错误语义明确。
 - 活动及票据敏感操作具有审计记录。
 - 日志、导出、媒体上传和二维码密钥满足安全约束。
@@ -1016,17 +1319,20 @@ Compose：`postgres`（PostGIS + pgvector）、`redis`、`kafka`、`backend`、`
 - 后端单元测试、Repository 集成测试和并发库存测试通过，JaCoCo ≥ 90%。
 - 前端组件测试、权限路由测试和表单状态测试通过，Vitest ≥ 80%。
 - Playwright 覆盖主办方发布、用户预订、逐票核销、活动取消和通知流程。
+- Python AI 服务测试覆盖文案结构、Agent 工具选择、不编造活动、权限和超时降级。
 - Smoke Test 覆盖数据库、Kafka、Redis、Outbox、SSE 和媒体上传关键链路。
 - 桌面端、平板端和移动端布局可用，支持键盘操作和清晰的焦点状态；内容不满一屏时页脚仍贴底（flex column shell）。
-- 监控可以观察预订、取消、推荐、Outbox 堆积、缓存回源和核销失败。
+- 监控可以观察预订、取消、AI 请求与工具调用、Outbox 堆积、缓存回源和核销失败。
 
 ---
 
 ## 18 诚实边界
 
-单节点 Kafka / Redis。演示账号。Outbox 保证最终发出，不保证恰好一次业务副作用（消费者要能重复写通知——用 `dedup_key` 去重即可）。SSE 会断，REST 才是事实。推荐是合成评估，不是点击率承诺。附近依赖主办方填写坐标。钱包充值仍为演示数据，不接入真实支付渠道；但预订会在一个事务内按订单金额扣除 `users.wallet_cents`，用户取消订单或主办方取消活动时按订单实付金额自动退款。
+Kafka 使用三节点学习集群，PostgreSQL 和 Redis 保持单节点。演示账号。Outbox 保证最终发出，不承诺 Kafka 中绝不出现重复记录，消费者仍用 `dedup_key` 保证业务幂等。SSE 会断，REST 才是事实。附近查询依赖主办方填写坐标。钱包充值仍为演示数据，不接入真实支付渠道。
 
-这是练习项目：把架构图上的盒子用能讲清的实现跑通，并让主办方到参与者的运营闭环真的能走完，而不是生产订票或生产推荐系统。
+AI 能力来自运行时调用外部 LLM。项目不拥有或训练基础模型，不把 AI 回复当成业务事实，也不承诺每次回复完全相同。活动发现 Agent 只通过受控工具读取真实活动；文案建议必须由主办方确认。
+
+这是练习项目：把架构图上的盒子用能讲清的实现跑通，并让主办方到参与者的运营闭环真的能走完，而不是生产订票平台或自主决策系统。
 
 ---
 
@@ -1041,9 +1347,9 @@ Compose：`postgres`（PostGIS + pgvector）、`redis`、`kafka`、`backend`、`
 | `/api/organiser/events` 全套（含 publish / cancel / archive / duplicate） | 已落地 |
 | 主办方订单、参与者、CSV、票据核销与撤销 | 已落地（`OrganiserOpsController`、`TicketService`） |
 | 媒体上传 `/api/media/images` | 已落地 |
-| 收藏、互动、附近、推荐、SSE、主办方分析 | 已落地（`PlatformController`） |
+| 收藏、互动、附近、规则式推荐、SSE、主办方分析 | 已落地（`PlatformController`）；规则式推荐不作为最终 AI 方案 |
 | HTTP 状态语义（401/403/404/409） | 已落地（`BusinessException` 携带状态 + `GlobalExceptionHandler`） |
 | 前端 Discovery + Organiser Console 路由 | 已落地，除 `/preferences` 与 `/metrics` 页面 |
 | `GET /api/preferences` | **未落地**，当前只有 `POST /api/preferences` |
 | `/api/meta/metrics` 与前端 `/metrics` 看板 | **未落地** |
-| `ml/` 离线评估与 `make test-ml`、CI ml job | **未落地** |
+| Python AI Service、LangChain Agent、文案助手和受控查询工具 | **未落地** |
