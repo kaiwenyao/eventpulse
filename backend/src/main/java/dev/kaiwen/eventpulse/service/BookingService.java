@@ -14,6 +14,7 @@ import dev.kaiwen.eventpulse.dto.BookingDtos.CreateBookingRequest;
 import dev.kaiwen.eventpulse.entity.Booking;
 import dev.kaiwen.eventpulse.entity.Event;
 import dev.kaiwen.eventpulse.exception.BusinessException;
+import dev.kaiwen.eventpulse.outbox.KafkaTopics;
 import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
@@ -71,7 +72,7 @@ public class BookingService {
         booking.setCreatedAt(Instant.now());
         bookings.save(booking);
         ticketService.issue(booking.getId(), event.getId(), request.quantity());
-        outbox.write("booking-events", "BOOKING_CREATED", "BOOKING_CREATED:" + booking.getId(),
+        outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CREATED", "BOOKING_CREATED:" + booking.getId(),
                 Map.of(
                         "type", "BOOKING_CREATED",
                         "userId", userId,
@@ -112,7 +113,7 @@ public class BookingService {
         booking.setStatus("CANCELLED");
         booking.setCancelledAt(Instant.now());
         ticketService.cancelForBooking(booking.getId());
-        outbox.write("booking-events", "BOOKING_CANCELLED", "BOOKING_CANCELLED:" + booking.getId(),
+        outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CANCELLED", "BOOKING_CANCELLED:" + booking.getId(),
                 Map.of(
                         "type", "BOOKING_CANCELLED",
                         "userId", booking.getUserId(),

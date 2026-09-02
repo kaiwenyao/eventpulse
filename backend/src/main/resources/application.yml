@@ -28,11 +28,21 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 5000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
     consumer:
       group-id: eventpulse
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
+  task:
+    scheduling:
+      pool:
+        size: 2
 
 server:
   port: 8080
@@ -58,6 +68,8 @@ eventpulse:
   redis-enabled: ${REDIS_ENABLED:false}
   redis-host: ${REDIS_HOST:localhost}
   redis-port: ${REDIS_PORT:6379}
+  outbox:
+    future-wait-seconds: 12
 
 ---
 spring:

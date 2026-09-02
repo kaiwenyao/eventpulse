@@ -49,6 +49,7 @@ import dev.kaiwen.eventpulse.entity.User;
 import dev.kaiwen.eventpulse.entity.UserPreference;
 import dev.kaiwen.eventpulse.exception.BusinessException;
 import dev.kaiwen.eventpulse.outbox.OutboxRelay;
+import dev.kaiwen.eventpulse.outbox.OutboxStatusService;
 import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.EventAuditLogRepository;
@@ -65,6 +66,7 @@ import dev.kaiwen.eventpulse.repository.UserPreferenceRepository;
 import dev.kaiwen.eventpulse.repository.UserRepository;
 import dev.kaiwen.eventpulse.service.BookingService;
 import dev.kaiwen.eventpulse.service.EventService;
+import dev.kaiwen.eventpulse.service.InteractionService;
 import dev.kaiwen.eventpulse.service.MediaService;
 import dev.kaiwen.eventpulse.service.OrganiserEventService;
 import dev.kaiwen.eventpulse.service.PlatformService;
@@ -219,20 +221,23 @@ class CrudEnhancementTest {
         pending.setDedupKey("k1");
         pending.setPayload("{}");
         pending.setEventType("BOOKING_CREATED");
-        when(outboxRepo.findTop50ByPublishedAtIsNullOrderByIdAsc()).thenReturn(List.of(pending));
-        when(outboxRepo.countByPublishedAtIsNull()).thenReturn(1L);
-        OutboxRelay relay = new OutboxRelay(outboxRepo, kafka);
+        OutboxStatusService status = new OutboxStatusService(outboxRepo);
+        when(outboxRepo.findTop50ByPublishedAtIsNullAndFailedAtIsNullOrderByIdAsc()).thenReturn(List.of(pending));
+        when(outboxRepo.countByPublishedAtIsNullAndFailedAtIsNull()).thenReturn(1L);
+        when(outboxRepo.countByFailedAtIsNotNull()).thenReturn(0L);
+        OutboxRelay relay = new OutboxRelay(outboxRepo, kafka, status, 12L);
         relay.publish();
         assertThat(relay.pending()).isEqualTo(1);
+        assertThat(relay.failed()).isZero();
         KafkaTemplate<String, String> failing = org.mockito.Mockito.mock(KafkaTemplate.class);
         when(failing.send(anyString(), anyString(), anyString())).thenThrow(new RuntimeException("down"));
-        new OutboxRelay(outboxRepo, failing).publish();
+        new OutboxRelay(outboxRepo, failing, status, 12L).publish();
 
         PlatformService platform = new PlatformService(
-                favourites, interactions, metrics, preferences, recs, notifications, events, bookings, eventService);
+                favourites, interactions, metrics, preferences, recs, notifications, events, bookings, eventService,
+                new InteractionService(interactions, metrics));
         when(events.findById(20L)).thenReturn(Optional.of(event(20L, EventStatus.PUBLISHED, 2L)));
         when(favourites.existsByUserIdAndEventId(2L, 20L)).thenReturn(false);
-        when(metrics.findById(any())).thenReturn(Optional.empty());
         platform.favourite(20L);
         platform.unfavourite(20L);
         platform.interact(20L, "VIEW");

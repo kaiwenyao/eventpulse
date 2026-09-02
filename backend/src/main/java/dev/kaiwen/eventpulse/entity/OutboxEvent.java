@@ -35,6 +35,15 @@ public class OutboxEvent {
     @Column(name = "published_at")
     private Instant publishedAt;
 
+    @Column(name = "publish_attempts", nullable = false)
+    private int publishAttempts;
+
+    @Column(name = "last_error", length = 1000)
+    private String lastError;
+
+    @Column(name = "failed_at")
+    private Instant failedAt;
+
     public Long getId() {
         return id;
     }
@@ -89,5 +98,29 @@ public class OutboxEvent {
 
     public void setPublishedAt(Instant publishedAt) {
         this.publishedAt = publishedAt;
+    }
+
+    public int getPublishAttempts() {
+        return publishAttempts;
+    }
+
+    public void setPublishAttempts(int publishAttempts) {
+        this.publishAttempts = publishAttempts;
+    }
+
+    public String getLastError() {
+        return lastError;
+    }
+
+    public void setLastError(String lastError) {
+        this.lastError = lastError;
+    }
+
+    public Instant getFailedAt() {
+        return failedAt;
+    }
+
+    public void setFailedAt(Instant failedAt) {
+        this.failedAt = failedAt;
     }
 }

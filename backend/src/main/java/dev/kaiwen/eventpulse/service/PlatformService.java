@@ -27,7 +27,6 @@ import dev.kaiwen.eventpulse.dto.EventDtos.EventVo;
 import dev.kaiwen.eventpulse.entity.Event;
 import dev.kaiwen.eventpulse.entity.EventDailyMetric;
 import dev.kaiwen.eventpulse.entity.EventFavourite;
-import dev.kaiwen.eventpulse.entity.Interaction;
 import dev.kaiwen.eventpulse.entity.Notification;
 import dev.kaiwen.eventpulse.entity.RecommendationRequest;
 import dev.kaiwen.eventpulse.entity.UserPreference;
@@ -54,6 +53,7 @@ public class PlatformService {
     private final EventRepository events;
     private final BookingRepository bookings;
     private final EventService eventService;
+    private final InteractionService interactionService;
     private final ConcurrentHashMap<String, CacheEntry> popularCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, SseEmitter> sse = new ConcurrentHashMap<>();
     private long cacheFallbacks;
@@ -69,7 +69,8 @@ public class PlatformService {
             NotificationRepository notifications,
             EventRepository events,
             BookingRepository bookings,
-            EventService eventService) {
+            EventService eventService,
+            InteractionService interactionService) {
         this.favourites = favourites;
         this.interactions = interactions;
         this.metrics = metrics;
@@ -79,6 +80,7 @@ public class PlatformService {
         this.events = events;
         this.bookings = bookings;
         this.eventService = eventService;
+        this.interactionService = interactionService;
     }
 
     @Autowired(required = false)
@@ -97,7 +99,7 @@ public class PlatformService {
         eventService.require(eventId);
         if (!favourites.existsByUserIdAndEventId(userId, eventId)) {
             favourites.save(new EventFavourite(userId, eventId));
-            record(userId, eventId, "SAVE");
+            interactionService.record(userId, eventId, "SAVE");
         }
     }
 
@@ -105,7 +107,7 @@ public class PlatformService {
     public void unfavourite(Long eventId) {
         Long userId = requireUser();
         favourites.deleteByUserIdAndEventId(userId, eventId);
-        record(userId, eventId, "UNSAVE");
+        interactionService.record(userId, eventId, "UNSAVE");
     }
 
     public boolean isFavourite(Long eventId) {
@@ -120,7 +122,7 @@ public class PlatformService {
             throw new BusinessException("客户端只能提交浏览、点击和收藏类行为");
         }
         eventService.require(eventId);
-        record(userId, eventId, type);
+        interactionService.record(userId, eventId, type);
     }
 
     public List<EventVo> nearby(Double lat, Double lng, Double radiusKm) {
@@ -231,6 +233,8 @@ public class PlatformService {
                 "sellThrough", capacity == 0 ? 0d : sold * 100.0 / capacity,
                 "lowStock", mine.stream().filter(e -> e.remaining() > 0 && e.remaining() <= 5).map(Event::getTitle).toList(),
                 "outboxPending", outboxRelay == null ? 0L : outboxRelay.pending(),
+                "outboxFailed", outboxRelay == null ? 0L : outboxRelay.failed(),
+                "oldestPendingAgeSeconds", outboxRelay == null ? null : outboxRelay.oldestPendingAgeSeconds(),
                 "cacheFallbacks", cacheFallbacks);
     }
 
@@ -349,33 +353,6 @@ public class PlatformService {
                     .filter(i -> event.getId().equals(i.getEventId())).count();
         }
         return score;
-    }
-
-    private void record(Long userId, Long eventId, String type) {
-        Interaction interaction = new Interaction();
-        interaction.setUserId(userId);
-        interaction.setEventId(eventId);
-        interaction.setType(type);
-        interaction.setCreatedAt(Instant.now());
-        interactions.save(interaction);
-        EventDailyMetric metric = metrics.findById(new EventDailyMetric.Key(eventId, LocalDate.now()))
-                .orElseGet(() -> {
-                    EventDailyMetric created = new EventDailyMetric();
-                    created.setEventId(eventId);
-                    created.setMetricDate(LocalDate.now());
-                    return created;
-                });
-        switch (type) {
-            case "VIEW" -> metric.setViews(metric.getViews() + 1);
-            case "CLICK" -> metric.setClicks(metric.getClicks() + 1);
-            case "SAVE" -> metric.setSaves(metric.getSaves() + 1);
-            case "UNSAVE" -> metric.setUnsaves(metric.getUnsaves() + 1);
-            case "BOOK" -> metric.setBookings(metric.getBookings() + 1);
-            case "CANCEL" -> metric.setCancels(metric.getCancels() + 1);
-            default -> {
-            }
-        }
-        metrics.save(metric);
     }
 
     private static Long requireUser() {

@@ -17,6 +17,7 @@ data/
 .idea/
 .vscode/
 .DS_Store
+*.iml
 
 # Playwright e2e
 frontend/test-results/
