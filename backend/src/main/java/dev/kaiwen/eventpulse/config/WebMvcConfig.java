@@ -7,20 +7,26 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
 import dev.kaiwen.eventpulse.interceptor.JwtInterceptor;
+import dev.kaiwen.eventpulse.interceptor.RequestLoggingInterceptor;
 
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
     private final JwtInterceptor jwtInterceptor;
+    private final RequestLoggingInterceptor requestLoggingInterceptor;
     private final AppProperties properties;
 
-    public WebMvcConfig(JwtInterceptor jwtInterceptor, AppProperties properties) {
+    public WebMvcConfig(JwtInterceptor jwtInterceptor, RequestLoggingInterceptor requestLoggingInterceptor,
+            AppProperties properties) {
         this.jwtInterceptor = jwtInterceptor;
+        this.requestLoggingInterceptor = requestLoggingInterceptor;
         this.properties = properties;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // 请求日志先于 JWT：未登录的 401 也会留下进入/结束记录。
+        registry.addInterceptor(requestLoggingInterceptor).addPathPatterns("/api/**");
         registry.addInterceptor(jwtInterceptor).addPathPatterns("/api/**");
     }
 
