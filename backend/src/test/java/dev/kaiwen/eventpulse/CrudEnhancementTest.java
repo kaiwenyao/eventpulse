@@ -205,11 +205,13 @@ class CrudEnhancementTest {
         Ticket issued = ticketService.issue(10L, 20L, 1).getFirst();
         String code = ticketService.reveal(issued);
         when(tickets.findByTicketCodeHash(TicketCodes.hash(code))).thenReturn(Optional.of(issued));
+        when(tickets.findByTicketCodeHashForUpdate(TicketCodes.hash(code))).thenReturn(Optional.of(issued));
         when(events.findByIdAndOrganiserId(20L, 2L)).thenReturn(Optional.of(event(20L, EventStatus.PUBLISHED, 2L)));
         assertThat(ticketService.checkIn(code, "manual").getStatus()).isEqualTo(TicketStatus.CHECKED_IN);
         assertThatThrownBy(() -> ticketService.checkIn(code, "manual")).isInstanceOf(BusinessException.class);
         when(tickets.findById(1L)).thenReturn(Optional.of(issued));
         assertThat(ticketService.undoCheckIn(1L, "误核").getStatus()).isEqualTo(TicketStatus.VALID);
+        when(tickets.findByBookingIdForUpdate(10L)).thenReturn(List.of(issued));
         ticketService.cancelForBooking(10L);
         assertThat(ticketService.toView(issued, true).code()).isEqualTo(code);
 

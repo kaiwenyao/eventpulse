@@ -116,9 +116,13 @@ public class BookingService {
     public BookingVo cancel(Long id) {
         Booking booking = requireOwn(id);
         Event event = eventService.require(booking.getEventId());
-        // Keep the activity -> booking -> wallet order used when an organiser cancels an event.
-        if (events.decrementSold(event.getId(), booking.getQuantity()) == 0) {
-            throw BusinessException.conflict("订单库存状态异常，请稍后重试");
+        // Keep the activity -> ticket -> booking -> wallet order used when an organiser cancels an event.
+        if (events.decrementSoldForCustomerCancellation(event.getId(), booking.getQuantity()) == 0) {
+            throw BusinessException.conflict("活动已开始或当前状态不能取消");
+        }
+        List<dev.kaiwen.eventpulse.entity.Ticket> lockedTickets = ticketService.lockForBooking(booking.getId());
+        if (lockedTickets.stream().anyMatch(ticket -> TicketStatus.CHECKED_IN.equals(ticket.getStatus()))) {
+            throw BusinessException.conflict("已有电子票完成核销，不能退款");
         }
         if (bookings.cancelConfirmed(booking.getId()) == 0) {
             throw new BusinessException("订单已取消");
@@ -126,7 +130,7 @@ public class BookingService {
         booking.setStatus("CANCELLED");
         booking.setCancelledAt(Instant.now());
         users.creditWallet(booking.getUserId(), booking.getPaidCents());
-        ticketService.cancelForBooking(booking.getId());
+        ticketService.cancelLocked(lockedTickets);
         outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CANCELLED", "BOOKING_CANCELLED:" + booking.getId(),
                 Map.of(
                         "type", "BOOKING_CANCELLED",

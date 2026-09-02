@@ -221,8 +221,8 @@ public BookingVo create(CreateBookingRequest request) {
 
 ```text
 下单：       活动名额 → 钱包扣款
-用户取消：   活动名额 → 订单状态 → 钱包退款
-取消活动：   活动状态 → 订单状态 → 钱包退款
+用户取消：   活动名额 → 电子票 → 订单状态 → 钱包退款
+取消活动：   活动状态 → 电子票 → 订单状态 → 钱包退款
 ```
 
 这样，同一时间下单与取消活动时，大家都会先处理活动，再处理钱包，不会出现“一边拿着钱包等活动、另一边拿着活动等钱包”的循环等待。
@@ -238,13 +238,22 @@ public BookingVo create(CreateBookingRequest request) {
 
 ## 订单取消与退款
 
-用户取消一个已确认订单时，系统会：
+用户主动取消并退款不是在任何时刻都可用。系统只允许同时满足以下条件的订单退款：
 
-1. 先归还活动名额；
-2. 确认这张订单还没有取消过，并将其标为已取消；
-3. 按订单保存的实际支付金额退回钱包；
-4. 让相关电子票失效；
-5. 写入一条“订单已取消”的 Outbox 待办。
+- 订单仍是 `CONFIRMED`；
+- 活动仍是 `PUBLISHED`，并且尚未开始；
+- 订单里的电子票没有任何一张已经核销入场（`CHECKED_IN`）。
+
+活动开始后、活动已取消后，或任何一张票已经入场后，用户不能自行退款。主办方取消活动走独立的取消活动流程，由该流程统一处理退款。
+
+用户取消一个符合条件的订单时，系统会：
+
+1. 原子地归还活动名额，同时确认活动尚未开始、状态仍允许用户取消；
+2. 锁住这张订单的所有电子票，并确认没有已经核销的票；
+3. 确认这张订单还没有取消过，并将其标为已取消；
+4. 按订单保存的实际支付金额退回钱包；
+5. 让相关电子票失效；
+6. 写入一条“订单已取消”的 Outbox 待办。
 
 主办方取消整个活动时，对每一张仍有效的订单做同样的退款处理。系统会确保同一张订单只能退款一次，因此重复点击取消不会得到两次退款。
 
@@ -261,6 +270,15 @@ WHERE id = :id AND status = 'CONFIRMED';
 ```java
 users.creditWallet(booking.getUserId(), booking.getPaidCents());
 ```
+
+电子票的锁也很重要。取消订单和现场核销都要先锁住同一张票：
+
+```text
+核销先完成：用户取消时会看到 CHECKED_IN，拒绝退款
+取消先完成：核销时会看到 CANCELLED，拒绝入场
+```
+
+因此不会发生“先退款，后凭同一张票入场”的情况。若任一资格检查失败，前面暂时归还的活动名额也会随事务回滚。
 
 ## Outbox 消息后来去了哪里
 
@@ -283,5 +301,6 @@ Outbox 待办
 - 下单与用户取消订单：[BookingService.java](../backend/src/main/java/dev/kaiwen/eventpulse/service/BookingService.java)
 - 安全扣款与退款的余额操作：[UserRepository.java](../backend/src/main/java/dev/kaiwen/eventpulse/repository/UserRepository.java)
 - 防止重复退款的订单取消操作：[BookingRepository.java](../backend/src/main/java/dev/kaiwen/eventpulse/repository/BookingRepository.java)
+- 协调取消与核销的电子票锁：[TicketRepository.java](../backend/src/main/java/dev/kaiwen/eventpulse/repository/TicketRepository.java)
 - 写入待办消息：[OutboxWriter.java](../backend/src/main/java/dev/kaiwen/eventpulse/outbox/OutboxWriter.java)
 - 订单实付金额字段：[V7__booking_wallet_payments.sql](../backend/src/main/resources/db/migration/V7__booking_wallet_payments.sql)

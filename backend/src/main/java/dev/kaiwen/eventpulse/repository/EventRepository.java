@@ -42,7 +42,10 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     @Query(value = """
             UPDATE events
             SET sold = sold - :qty, updated_at = now()
-            WHERE id = :id AND sold >= :qty
+            WHERE id = :id
+              AND status = 'PUBLISHED'
+              AND starts_at > now()
+              AND sold >= :qty
             """, nativeQuery = true)
-    int decrementSold(@Param("id") Long id, @Param("qty") int qty);
+    int decrementSoldForCustomerCancellation(@Param("id") Long id, @Param("qty") int qty);
 }

@@ -62,7 +62,7 @@ public class TicketService {
 
     @Transactional
     public Ticket checkIn(String code, String source) {
-        Ticket ticket = lookup(code);
+        Ticket ticket = lockForCheckIn(code);
         if (TicketStatus.CHECKED_IN.equals(ticket.getStatus())) {
             throw BusinessException.conflict("该票已于 " + ticket.getCheckedInAt() + " 核销");
         }
@@ -95,11 +95,31 @@ public class TicketService {
     }
 
     public void cancelForBooking(Long bookingId) {
-        tickets.findByBookingIdOrderByIdAsc(bookingId).forEach(ticket -> {
+        cancelLocked(lockForBooking(bookingId));
+    }
+
+    /**
+     * Locks the tickets before a cancellation decision.  Check-in uses the same locking rule,
+     * so a ticket cannot be checked in while its order is being refunded.
+     */
+    public List<Ticket> lockForBooking(Long bookingId) {
+        return tickets.findByBookingIdForUpdate(bookingId);
+    }
+
+    public void cancelLocked(List<Ticket> lockedTickets) {
+        lockedTickets.forEach(ticket -> {
             if (TicketStatus.VALID.equals(ticket.getStatus()) || TicketStatus.CHECKED_IN.equals(ticket.getStatus())) {
                 ticket.setStatus(TicketStatus.CANCELLED);
             }
         });
+    }
+
+    private Ticket lockForCheckIn(String code) {
+        EventService.requireOrganiser();
+        Ticket ticket = tickets.findByTicketCodeHashForUpdate(TicketCodes.hash(code))
+                .orElseThrow(() -> BusinessException.notFound("票据不存在"));
+        organiserEvents.requireOwn(ticket.getEventId());
+        return ticket;
     }
 
     public record TicketView(Long id, Long bookingId, Long eventId, String code, String status,
