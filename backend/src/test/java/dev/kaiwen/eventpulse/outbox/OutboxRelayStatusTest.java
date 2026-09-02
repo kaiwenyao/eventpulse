@@ -78,7 +78,26 @@ class OutboxRelayStatusTest {
         // message_key 作为 Kafka key：同一订单的消息进同一 partition 并保序。
         verify(kafka).send("booking-events", "booking:1", "{}");
         verify(status).markPublished(1L);
-        verify(status, never()).releaseClaim(anyString(), any());
+        // 发送前续租，出口释放本批剩余租约（这里已全部处理完，释放 0 行）。
+        verify(status).renewClaim(anyString(), any(Instant.class));
+        verify(status).releaseAllClaims(anyString());
+    }
+
+    @Test
+    void renewsLeaseBeforeEverySendSoBatchNeverOutlivesClaim() {
+        OutboxEvent first = event(1L, "booking-events", "booking:1", "{}");
+        OutboxEvent second = event(2L, "booking-events", "booking:2", "{}");
+        claimReturns(first, second);
+        when(kafka.send(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        new OutboxRelay(outbox, kafka, status, 12L, 50, 60).publish();
+        // 每条发送前都给整批续租：批处理再慢，租约也不会在批中途过期，
+        // 其他 Worker 只会在本 Worker 崩溃后接管。
+        verify(status, org.mockito.Mockito.times(2)).renewClaim(anyString(), any(Instant.class));
+        // 续租发生在发送之前，发送期间的租约必须仍然有效。
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(status, kafka);
+        inOrder.verify(status).renewClaim(anyString(), any(Instant.class));
+        inOrder.verify(kafka).send(anyString(), anyString(), anyString());
     }
 
     @Test
@@ -101,8 +120,8 @@ class OutboxRelayStatusTest {
         when(status.recordPublishFailure(eq(2L), any())).thenReturn(FailureAction.RETRY_LATER);
         new OutboxRelay(outbox, kafka, status, 12L, 50, 60).publish();
         verify(status, never()).markPublished(any(Long.class));
-        // 释放租约，让其他 Worker 可以立刻接手，而不是等租约到期。
-        verify(status).releaseClaim(anyString(), eq(2L));
+        // 出口批量释放：这条和批内其他未发送消息的租约都立即归还。
+        verify(status).releaseAllClaims(anyString());
     }
 
     @Test
@@ -149,9 +168,9 @@ class OutboxRelayStatusTest {
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(status.recordPublishFailure(eq(1L), any())).thenReturn(FailureAction.QUARANTINED);
         new OutboxRelay(outbox, kafka, status, 12L, 50, 60).publish();
-        // 隔离的消息释放租约；同轮继续发送后面的消息。
-        verify(status).releaseClaim(anyString(), eq(1L));
+        // 隔离的消息随出口批量释放；同轮继续发送后面的消息。
         verify(status).markPublished(2L);
+        verify(status).releaseAllClaims(anyString());
     }
 
     @Test
@@ -165,7 +184,8 @@ class OutboxRelayStatusTest {
         new OutboxRelay(outbox, kafka, status, 12L, 50, 60).publish();
         verify(kafka, never()).send(eq("booking-events"), eq("booking:2"), anyString());
         verify(status, never()).markPublished(any(Long.class));
-        verify(status).releaseClaim(anyString(), eq(1L));
+        // 临时故障提前结束本轮，剩余租约在出口统一归还。
+        verify(status).releaseAllClaims(anyString());
     }
 
     @Test
@@ -179,8 +199,9 @@ class OutboxRelayStatusTest {
         new OutboxRelay(outbox, kafka, status, 12L, 50, 60).publish();
         verify(status, never()).recordPublishFailure(any(Long.class), any());
         verify(status).markPublished(4L);
-        // 租约留给下一轮（或到期后其他 Worker 接手），消息不会被标记为失败。
-        verify(status, never()).releaseClaim(anyString(), any());
+        // 不能当成发送失败、更不能隔离；早退时剩余租约统一归还，
+        // 下一轮立即重发（Kafka 已收过一次，消费端 consumed_events 去重兜底）。
+        verify(status).releaseAllClaims(anyString());
     }
 
     @Test

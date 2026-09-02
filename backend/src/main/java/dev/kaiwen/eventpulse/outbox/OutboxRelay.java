@@ -19,12 +19,15 @@ import dev.kaiwen.eventpulse.repository.OutboxRepository;
 
 /**
  * 把 Outbox 里待发送的消息发给 Kafka，并且：
- * 1. 先用一条原子 UPDATE 领取一批消息（多 Worker 不会同时处理同一条）；
- * 2. 等 Kafka 明确确认成功后才标记 published_at（不提前宣布成功）；
- * 3. Kafka 发送失败与数据库标记失败分开处理，数据库失败不会被误记成发送失败；
- * 4. 明确是消息本身问题的坏消息隔离（failed_at）后继续处理后面的消息；
- * 5. 明确的临时故障（如 Kafka 不可用）释放租约并结束本轮，下一轮从同一条继续，保持顺序；
- * 6. Worker 意外退出后领取租约（claimed_until）到期，其他 Worker 可以接手，不会永久卡住。
+ * 1. 先用一条原子 UPDATE 领取一批消息（多 Worker 不会同时领取同一条）；
+ * 2. 每条发送前给整批续租：只要 Worker 活着，租约就不会在批中途过期，
+ *    同一条消息不会被两个 Worker 同时处理；Worker 崩溃后停止续租，
+ *    claim-seconds 内其他 Worker 接手，重发由消费端 consumed_events 去重兜底；
+ * 3. 等 Kafka 明确确认成功后才标记 published_at（不提前宣布成功）；
+ * 4. Kafka 发送失败与数据库标记失败分开处理，数据库失败不会被误记成发送失败；
+ * 5. 明确是消息本身问题的坏消息隔离（failed_at）后继续处理后面的消息；
+ * 6. 明确的临时故障（如 Kafka 不可用）结束本轮；无论哪条路径退出，都在出口
+ *    释放本批剩余租约，其余消息立即可以被重新领取，不会因一次抖动停摆一个租约周期。
  */
 @Component
 @Profile("worker")
@@ -88,26 +91,28 @@ public class OutboxRelay {
             // message_key 决定 partition：同一订单的消息按顺序进同一分区。
             String key = event.getMessageKey() == null ? event.getDedupKey() : event.getMessageKey();
             try {
+                // 发送前给整批续租：批处理再慢，只要 Worker 活着租约就不会中途
+                // 过期，其他 Worker 没有接管理由；崩溃后停止续租才会被接手。
+                outboxStatus.renewClaim(token, Instant.now().plusSeconds(claimSeconds));
                 kafkaTemplate.send(event.getTopic(), key, event.getPayload())
                         .get(futureWaitSeconds, TimeUnit.SECONDS);
             }
             catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("Outbox relay 被中断，提前结束本轮 id={}", event.getId());
-                return;
+                break;
             }
             catch (Exception sendFailure) {
                 FailureAction action = outboxStatus.recordPublishFailure(event.getId(), sendFailure);
-                outboxStatus.releaseClaim(token, event.getId());
                 if (action == FailureAction.QUARANTINED) {
                     log.warn("Outbox 消息已隔离 id={} type={} error={}",
                             event.getId(), event.getEventType(), sendFailure.toString());
                     // 这条消息本身有问题。本轮继续处理后面的消息。
                     continue;
                 }
-                // Kafka 暂时不可用等临时故障：本轮结束，下一轮仍从这条开始。
+                // Kafka 暂时不可用等临时故障：本轮结束，下一轮仍从这条开始（保持顺序）。
                 log.warn("Outbox 发送失败，本轮暂停 id={} type={}", event.getId(), event.getEventType(), sendFailure);
-                return;
+                break;
             }
 
             try {
@@ -118,8 +123,19 @@ public class OutboxRelay {
                 // Kafka 已经收到了，只是数据库暂时没标上。
                 // 下一轮可能再发一次，由 Consumer 的 consumed_events 去重兜底。
                 log.error("Kafka 已确认，但 Outbox 标记失败 id={}", event.getId(), databaseFailure);
-                return;
+                break;
             }
+        }
+
+        // 本轮结束（正常跑完或任何早退路径）统一释放剩余租约：没发出去的消息
+        // 立即可被任意 Worker 重新领取，而不是干等 claimed_until 到期——一次
+        // Kafka 抖动不应让中继停摆一整个租约周期。已发布/已隔离的行不受影响。
+        try {
+            outboxStatus.releaseAllClaims(token);
+        }
+        catch (RuntimeException databaseFailure) {
+            // 释放失败只影响接管速度：租约到期后其他 Worker 仍会接手。
+            log.warn("Outbox 释放剩余租约失败 token={}", token, databaseFailure);
         }
     }
 

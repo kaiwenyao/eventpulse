@@ -56,10 +56,16 @@ public class OutboxStatusService {
         return outbox.claimBatch(token, until, now, batch);
     }
 
-    /** 释放一条消息的领取，让其他 Worker 可以立刻接手。 */
+    /** 发送前给整批续租：Worker 活着租约就不过期，多 Worker 不会重复处理同一条。 */
     @Transactional
-    public void releaseClaim(String token, Long id) {
-        outbox.releaseClaim(token, id);
+    public void renewClaim(String token, Instant until) {
+        outbox.renewClaim(token, until);
+    }
+
+    /** 一轮结束时释放本批剩余租约，其余消息立即可以被任意 Worker 重新领取。 */
+    @Transactional
+    public void releaseAllClaims(String token) {
+        outbox.releaseAllClaims(token);
     }
 
     /**

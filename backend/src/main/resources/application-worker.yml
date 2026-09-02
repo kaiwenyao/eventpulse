@@ -13,7 +13,8 @@ eventpulse:
     future-wait-seconds: ${OUTBOX_FUTURE_WAIT_SECONDS:12}
     # 每轮领取并发送的最大条数。
     batch-size: ${OUTBOX_BATCH_SIZE:50}
-    # 领取租约时长：Worker 意外退出后，其他 Worker 等这么久就能接手。
+    # 领取租约时长：每条发送前会自动续租，正常处理中租约不会过期；
+    # 这个值实际是 Worker 崩溃后其他 Worker 的接管延迟。
     claim-seconds: ${OUTBOX_CLAIM_SECONDS:60}
   lifecycle:
     fixed-delay-ms: ${LIFECYCLE_FIXED_DELAY_MS:60000}

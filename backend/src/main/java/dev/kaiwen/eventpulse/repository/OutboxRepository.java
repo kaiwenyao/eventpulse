@@ -58,8 +58,25 @@ public interface OutboxRepository extends JpaRepository<OutboxEvent, Long> {
     List<OutboxEvent> findByClaimedByOrderByIdAsc(String claimedBy);
 
     /**
-     * 释放一条消息的领取（发送失败后让其他 Worker 可以立刻接手，而不是等租约到期）。
-     * 只释放仍归本 token 所有的行。
+     * 批内心跳：把仍归本 token 所有、尚未发送的行的租约整体续到 until。
+     * Relay 每条发送前调用一次——只要 Worker 活着，租约就不会在批中途过期，
+     * 其他 Worker 也就没有接管的理由；Worker 崩溃后停止续租，
+     * claim-seconds 内其他 Worker 自然接手。
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update OutboxEvent o
+               set o.claimedUntil = :until
+             where o.claimedBy = :token
+               and o.publishedAt is null
+               and o.failedAt is null
+            """)
+    int renewClaim(@Param("token") String token, @Param("until") Instant until);
+
+    /**
+     * 一轮结束时释放本 token 的全部剩余租约（提前退出时其余消息不用等
+     * claimed_until 到期，立即可以被任意 Worker 重新领取）。已发布的行
+     * 已被 markPublished 清掉领取，隔离行不会再次领取，这里一并跳过。
      */
     @Modifying(clearAutomatically = true)
     @Query("""
@@ -67,9 +84,10 @@ public interface OutboxRepository extends JpaRepository<OutboxEvent, Long> {
                set o.claimedBy = null,
                    o.claimedUntil = null
              where o.claimedBy = :token
-               and o.id = :id
+               and o.publishedAt is null
+               and o.failedAt is null
             """)
-    int releaseClaim(@Param("token") String token, @Param("id") Long id);
+    int releaseAllClaims(@Param("token") String token);
 
     /**
      * Kafka 明确确认成功后，用一条带条件的 UPDATE 打标记，同时清掉领取信息。

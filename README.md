@@ -53,7 +53,7 @@ curl -s http://localhost:3000/actuator/health
 make up-infra         # 只启动 PostgreSQL / Redis / Kafka
 make seed             # 只运行 seeder，退出码透传
 make up-runtime       # 启动 api / worker / frontend
-make up-distributed   # 2 个 api + 2 个 worker（Outbox 领取机制保证不重复处理）
+make up-distributed   # 2 个 api + 2 个 worker（Outbox 领取租约 + 心跳续租，不重不丢）
 make test-distributed # up-distributed + 端到端冒烟
 ```
 
@@ -69,9 +69,13 @@ make test-distributed # up-distributed + 端到端冒烟
   SSE 订阅走 `Authorization: Bearer` 头并校验订单所有权；同一订单允许多个
   标签页连接，心跳 25s，api 停机时主动关闭连接让浏览器立刻重连其他实例。
 - **多 Worker 安全**：Outbox 用一条带 `FOR UPDATE SKIP LOCKED` 的原子 UPDATE
-  领取（`claimed_by` / `claimed_until` 租约），Worker 崩溃后租约到期其他 Worker
-  接手；同一订单的消息用 `message_key` 进同一 Kafka partition 保序，消费端
-  `consumed_events` 幂等表继续兜底。活动生命周期是两条数据库条件更新，
+  领取（`claimed_by` / `claimed_until` 租约），每条发送前给整批续租——Worker
+  活着租约就不会在批中途过期，一条消息不会被两个 Worker 同时处理；Worker
+  崩溃后停止续租，租约到期其他 Worker 接手，重发由消费端 `consumed_events`
+  幂等表兜底。一轮结束（含提前退出）统一归还剩余租约，一次 Kafka 抖动不会
+  让中继停摆一个租约周期。同一订单的消息用 `message_key` 进同一 Kafka
+  partition 保序。活动生命周期是两条数据库条件更新，多 Worker 并发执行只会
+  更新 0 行，没有乐观锁冲突。活动生命周期是两条数据库条件更新，
   多 Worker 并发执行只会更新 0 行，没有乐观锁冲突。
 - **Seeder 幂等**：`seed_runs` 表记录完成的版本（与播种同一事务），
   Kubernetes Job 重试或人工重跑不会产生重复数据。
