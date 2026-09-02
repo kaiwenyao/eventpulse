@@ -60,7 +60,11 @@ public class OutboxRelay {
         this.workerId = workerId();
     }
 
-    @Scheduled(fixedDelay = 1000)
+    /**
+     * 轮询间隔可配置：测试上下文里把间隔调大即可禁用后台轮询，
+     * 让直接调用 {@link #publish()} 的测试不被调度器抢跑（见 WorkerBackgroundTasksIT）。
+     */
+    @Scheduled(fixedDelayString = "${eventpulse.outbox.poll-ms:1000}")
     public void publish() {
         // 每轮一个一次性 token：领取后按 token 取回本批消息，不会取回其他 Worker 的。
         String token = workerId + ":" + UUID.randomUUID();

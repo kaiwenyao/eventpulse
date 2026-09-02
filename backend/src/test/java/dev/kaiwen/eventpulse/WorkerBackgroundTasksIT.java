@@ -31,7 +31,12 @@ import dev.kaiwen.eventpulse.worker.EventLifecycleWorker;
  *   这里的 Bean 都是 Spring 代理，能暴露「无事务」这类接线错误；
  * - 活动生命周期的条件更新推进 PUBLISHED → ONGOING → FINISHED。
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = "spring.profiles.active=worker")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
+        "spring.profiles.active=worker",
+        // 后台调度循环调大到一小时：测试直接调 relay.publish()，若每秒的后台
+        // 轮询同时运行，会在「断言读取」的瞬间抢先领取同一条消息（claimed_by
+        // 非空），把测试变成概率性失败。
+        "eventpulse.outbox.poll-ms=3600000"})
 @Testcontainers(disabledWithoutDocker = true)
 class WorkerBackgroundTasksIT {
 
