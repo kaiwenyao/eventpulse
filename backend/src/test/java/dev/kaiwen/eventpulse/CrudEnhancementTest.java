@@ -70,6 +70,9 @@ import dev.kaiwen.eventpulse.service.InteractionService;
 import dev.kaiwen.eventpulse.service.MediaService;
 import dev.kaiwen.eventpulse.service.OrganiserEventService;
 import dev.kaiwen.eventpulse.service.PlatformService;
+import dev.kaiwen.eventpulse.service.PopularCache;
+import dev.kaiwen.eventpulse.sse.SseConnectionRegistry;
+import dev.kaiwen.eventpulse.sse.SseSubscriptionService;
 import dev.kaiwen.eventpulse.service.TicketCodes;
 import dev.kaiwen.eventpulse.service.TicketService;
 
@@ -114,7 +117,8 @@ class CrudEnhancementTest {
         EventService eventService = new EventService(events);
         OutboxWriter writer = new OutboxWriter(outboxRepo, new ObjectMapper());
         OrganiserEventService service = new OrganiserEventService(
-                events, bookings, tickets, audits, eventService, users, writer, new ObjectMapper());
+                events, bookings, tickets, audits, eventService, users, writer, new ObjectMapper(),
+                new PopularCache());
         assertThatThrownBy(() -> service.list(null, null, null, null, null, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
@@ -193,7 +197,7 @@ class CrudEnhancementTest {
         EventService eventService = new EventService(events);
         OrganiserEventService organiser = new OrganiserEventService(
                 events, bookings, tickets, audits, eventService, users, new OutboxWriter(outboxRepo, new ObjectMapper()),
-                new ObjectMapper());
+                new ObjectMapper(), new PopularCache());
         TicketService ticketService = new TicketService(tickets, organiser, props);
         when(tickets.save(any())).thenAnswer(inv -> {
             Ticket t = inv.getArgument(0);
@@ -216,28 +220,32 @@ class CrudEnhancementTest {
         assertThat(ticketService.toView(issued, true).code()).isEqualTo(code);
 
         new OutboxWriter(outboxRepo, new ObjectMapper())
-                .write("booking-events", "BOOKING_CREATED", "k1", java.util.Map.of("type", "BOOKING_CREATED"));
+                .write("booking-events", "BOOKING_CREATED", "booking:1", "k1",
+                        java.util.Map.of("type", "BOOKING_CREATED"));
         OutboxEvent pending = new OutboxEvent();
         pending.setId(1L);
         pending.setTopic("booking-events");
         pending.setDedupKey("k1");
+        pending.setMessageKey("booking:1");
         pending.setPayload("{}");
         pending.setEventType("BOOKING_CREATED");
         OutboxStatusService status = new OutboxStatusService(outboxRepo);
-        when(outboxRepo.findTop50ByPublishedAtIsNullAndFailedAtIsNullOrderByIdAsc()).thenReturn(List.of(pending));
+        when(outboxRepo.claimBatch(anyString(), any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(1);
+        when(outboxRepo.findByClaimedByOrderByIdAsc(anyString())).thenReturn(List.of(pending));
         when(outboxRepo.countByPublishedAtIsNullAndFailedAtIsNull()).thenReturn(1L);
         when(outboxRepo.countByFailedAtIsNotNull()).thenReturn(0L);
-        OutboxRelay relay = new OutboxRelay(outboxRepo, kafka, status, 12L);
+        OutboxRelay relay = new OutboxRelay(outboxRepo, kafka, status, 12L, 50, 60);
         relay.publish();
-        assertThat(relay.pending()).isEqualTo(1);
-        assertThat(relay.failed()).isZero();
+        assertThat(status.pending()).isEqualTo(1);
+        assertThat(status.failed()).isZero();
         KafkaTemplate<String, String> failing = org.mockito.Mockito.mock(KafkaTemplate.class);
         when(failing.send(anyString(), anyString(), anyString())).thenThrow(new RuntimeException("down"));
-        new OutboxRelay(outboxRepo, failing, status, 12L).publish();
+        new OutboxRelay(outboxRepo, failing, status, 12L, 50, 60).publish();
 
+        PopularCache popularCache = new PopularCache();
         PlatformService platform = new PlatformService(
                 favourites, interactions, metrics, preferences, recs, notifications, events, bookings, eventService,
-                new InteractionService(interactions, metrics));
+                new InteractionService(interactions, metrics), popularCache);
         when(events.findById(20L)).thenReturn(Optional.of(event(20L, EventStatus.PUBLISHED, 2L)));
         when(favourites.existsByUserIdAndEventId(2L, 20L)).thenReturn(false);
         platform.favourite(20L);
@@ -259,9 +267,8 @@ class CrudEnhancementTest {
         when(interactions.findByUserIdOrderByCreatedAtDesc(2L)).thenReturn(List.of());
         assertThat(platform.recommend()).isNotNull();
         assertThat(platform.popular()).isNotEmpty();
-        platform.advanceLifecycle();
         when(events.findByOrganiserIdOrderByStartsAtDesc(2L)).thenReturn(List.of(event(20L, EventStatus.PUBLISHED, 2L)));
-        platform.setOutboxRelay(relay);
+        platform.setOutboxStatus(status);
         assertThat(platform.dashboard().get("eventCount")).isEqualTo(1);
         when(events.findByIdAndOrganiserId(20L, 2L)).thenReturn(Optional.of(event(20L, EventStatus.PUBLISHED, 2L)));
         when(metrics.findByEventIdAndMetricDateBetween(any(), any(), any())).thenReturn(List.of());
@@ -287,24 +294,36 @@ class CrudEnhancementTest {
         other.setUserId(99L);
         when(notifications.findById(4L)).thenReturn(Optional.of(other));
         assertThatThrownBy(() -> platform.markRead(4L)).isInstanceOf(BusinessException.class);
-        platform.subscribe(1L);
-        platform.emit(1L, "ticket", "ok");
         when(favourites.findByUserIdOrderByCreatedAtDesc(2L)).thenReturn(List.of(new EventFavourite(2L, 20L)));
         assertThat(platform.myFavourites().getTotal()).isEqualTo(1);
-        assertThat(platform.cacheFallbacks()).isZero();
         org.springframework.data.redis.core.StringRedisTemplate redis =
                 org.mockito.Mockito.mock(org.springframework.data.redis.core.StringRedisTemplate.class);
         org.springframework.data.redis.core.ValueOperations<String, String> values =
                 org.mockito.Mockito.mock(org.springframework.data.redis.core.ValueOperations.class);
         when(redis.opsForValue()).thenReturn(values);
+        // Redis 缓存命中 / 缓存内容损坏 / 未命中：接口都必须正常返回（回源数据库）。
         when(values.get("popular:ids")).thenReturn("not-a-number");
-        platform.setRedis(redis);
+        popularCache.setRedis(redis);
         assertThat(platform.popular()).isNotEmpty();
         when(values.get("popular:ids")).thenReturn("");
         assertThat(platform.popular()).isNotEmpty();
         when(values.get("popular:ids")).thenReturn("20");
+        when(events.findById(20L)).thenReturn(Optional.of(event(20L, EventStatus.PUBLISHED, 2L)));
         assertThat(platform.popular()).isNotEmpty();
-        PlatformController api = new PlatformController(platform);
+        popularCache.evict();
+        org.mockito.Mockito.verify(redis).delete("popular:ids");
+        // SSE 订阅所有权：本人可订，他人不可订。
+        Booking ownBooking = new Booking();
+        ownBooking.setId(1L);
+        ownBooking.setUserId(2L);
+        when(bookings.findById(1L)).thenReturn(Optional.of(ownBooking));
+        SseSubscriptionService sse = new SseSubscriptionService(
+                new SseConnectionRegistry(1000, 5, 20), bookings, events);
+        assertThat(sse.subscribe(1L)).isNotNull();
+        BaseContext.setUserId(99L);
+        assertThatThrownBy(() -> sse.subscribe(1L)).isInstanceOf(BusinessException.class);
+        BaseContext.setUserId(2L);
+        PlatformController api = new PlatformController(platform, sse);
         api.favourite(20L);
         api.unfavourite(20L);
         api.favourites();
@@ -333,7 +352,8 @@ class CrudEnhancementTest {
         when(events.findByIdAndOrganiserId(21L, 2L)).thenReturn(Optional.of(leftover));
         orgApi.delete(21L);
         EventService eventServiceForOps = new EventService(events);
-        BookingService bookingService = new BookingService(bookings, eventServiceForOps, events, ticketService, tickets, users, new OutboxWriter(outboxRepo, new ObjectMapper()));
+        BookingService bookingService = new BookingService(bookings, eventServiceForOps, events, ticketService, tickets, users,
+                new OutboxWriter(outboxRepo, new ObjectMapper()), new PopularCache());
         OrganiserOpsController ops = new OrganiserOpsController(organiser, ticketService, bookings, users, bookingService);
         Booking confirmed = new Booking();
         confirmed.setId(30L);

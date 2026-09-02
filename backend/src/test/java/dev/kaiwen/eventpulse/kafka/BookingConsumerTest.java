@@ -20,6 +20,7 @@ import dev.kaiwen.eventpulse.entity.Notification;
 import dev.kaiwen.eventpulse.repository.ConsumedEventRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.service.InteractionService;
+import dev.kaiwen.eventpulse.sse.SseReminderPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class BookingConsumerTest {
@@ -30,9 +31,11 @@ class BookingConsumerTest {
     NotificationRepository notifications;
     @Mock
     InteractionService interactionService;
+    @Mock
+    SseReminderPublisher reminders;
 
     private BookingConsumer consumer() {
-        return new BookingConsumer(consumedEvents, notifications, interactionService, new ObjectMapper());
+        return new BookingConsumer(consumedEvents, notifications, interactionService, reminders, new ObjectMapper());
     }
 
     private static final String BOOKING_CREATED = """
@@ -94,6 +97,16 @@ class BookingConsumerTest {
         consumer().onMessage(BOOKING_CREATED);
         verify(notifications, never()).save(any());
         verify(interactionService, never()).record(any(), any(), any());
+        // 重复投递也不再发 SSE 提醒。
+        verify(reminders, never()).remindBooking(any(), anyString(), anyString());
+    }
+
+    @Test
+    void processedMessageRegistersSseReminder() {
+        when(consumedEvents.tryInsert(eq(BookingConsumer.CONSUMER_GROUP), eq("BOOKING_CREATED:10"))).thenReturn(1);
+        consumer().onMessage(BOOKING_CREATED);
+        // 事务提交成功后才会真正发布（由 afterCommit 回调保证）。
+        verify(reminders).remindBooking(10L, "BOOKING_CREATED", "BOOKING_CREATED:10");
     }
 
     @Test

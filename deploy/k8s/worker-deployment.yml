@@ -1,0 +1,54 @@
+# Worker Deployment：同一镜像、worker Profile。只暴露 Actuator 健康检查端口，
+# 业务 Controller 不存在。第一版 1 副本；Outbox 领取机制（claimed_until + SKIP LOCKED）
+# 已就绪，可安全扩到 2 副本。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventpulse-worker
+  labels:
+    app: eventpulse-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eventpulse-worker
+  template:
+    metadata:
+      labels:
+        app: eventpulse-worker
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: eventpulse/backend:v1.0
+          imagePullPolicy: IfNotPresent
+          args: ["--spring.profiles.active=worker"]
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: eventpulse-config
+            - secretRef:
+                name: eventpulse-secret
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          # 区分「进程活着」与「还能处理任务」：liveness 放宽阈值，Kafka 短暂
+          # 不可用不会重启 Worker（应用侧继续记录错误并重试）。
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi

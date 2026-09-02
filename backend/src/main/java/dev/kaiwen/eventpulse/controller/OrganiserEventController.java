@@ -3,6 +3,7 @@ package dev.kaiwen.eventpulse.controller;
 import java.time.Instant;
 
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,6 +24,7 @@ import dev.kaiwen.eventpulse.service.OrganiserEventService;
 import jakarta.validation.Valid;
 
 @RestController
+@Profile("api")
 @RequestMapping("/api/organiser/events")
 public class OrganiserEventController {
 

@@ -75,6 +75,7 @@ import dev.kaiwen.eventpulse.service.EventService;
 import dev.kaiwen.eventpulse.service.InteractionService;
 import dev.kaiwen.eventpulse.service.JwtService;
 import dev.kaiwen.eventpulse.service.PlatformService;
+import dev.kaiwen.eventpulse.service.PopularCache;
 import dev.kaiwen.eventpulse.service.TicketService;
 
 @ExtendWith(MockitoExtension.class)
@@ -258,7 +259,8 @@ class UnitTest {
     @Test
     void bookingAndKafka() {
         EventService eventService = new EventService(events);
-        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
+        PopularCache popularCache = new PopularCache();
+        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox, popularCache);
         when(events.incrementSold(any(), anyInt())).thenReturn(1);
         when(events.decrementSoldForCustomerCancellation(any(), anyInt())).thenReturn(1);
         when(users.debitWalletIfEnough(any(), anyLong())).thenReturn(1);
@@ -295,7 +297,7 @@ class UnitTest {
         verify(bookings).save(createdBooking.capture());
         assertThat(createdBooking.getValue().getPaidCents()).isEqualTo(200L);
         verify(users).debitWalletIfEnough(7L, 200L);
-        verify(outbox).write(anyString(), eq("BOOKING_CREATED"), anyString(), any());
+        verify(outbox).write(anyString(), eq("BOOKING_CREATED"), anyString(), anyString(), any());
 
         Booking mine = booking(11L, 7L, 3L, 2, "CONFIRMED");
         when(bookings.findByUserIdOrderByCreatedAtDesc(7L)).thenReturn(List.of(mine));
@@ -328,7 +330,7 @@ class UnitTest {
     @Test
     void insufficientWalletDoesNotCreateOrderAfterInventoryReservation() {
         EventService eventService = new EventService(events);
-        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
+        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox, new PopularCache());
         BaseContext.setUserId(7L);
         Event open = event(3L, "Bookable", "music", "Shanghai", 0, 10, 1L, "PUBLISHED");
         when(events.findById(3L)).thenReturn(Optional.of(open));
@@ -342,13 +344,13 @@ class UnitTest {
         verify(events).incrementSold(3L, 2);
         verify(bookings, never()).save(any());
         verify(ticketService, never()).issue(any(), any(), anyInt());
-        verify(outbox, never()).write(anyString(), anyString(), anyString(), any());
+        verify(outbox, never()).write(anyString(), anyString(), anyString(), anyString(), any());
     }
 
     @Test
     void checkedInTicketCannotBeCancelledOrRefunded() {
         EventService eventService = new EventService(events);
-        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
+        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox, new PopularCache());
         BaseContext.setUserId(7L);
         Booking booking = booking(11L, 7L, 3L, 1, "CONFIRMED");
         Event event = event(3L, "Bookable", "music", "Shanghai", 1, 10, 1L, "PUBLISHED");
@@ -371,7 +373,7 @@ class UnitTest {
     @Test
     void customerCancellationRequiresAnUpcomingPublishedEvent() {
         EventService eventService = new EventService(events);
-        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
+        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox, new PopularCache());
         BaseContext.setUserId(7L);
         Booking booking = booking(11L, 7L, 3L, 1, "CONFIRMED");
         Event event = event(3L, "Started event", "music", "Shanghai", 1, 10, 1L, "ONGOING");
@@ -391,7 +393,8 @@ class UnitTest {
     @Test
     void consumerAndHandlerInterceptor() throws Exception {
         InteractionService interactionService = new InteractionService(interactionRepo, metricsRepo);
-        BookingConsumer consumer = new BookingConsumer(consumedEvents, notifications, interactionService, new ObjectMapper());
+        dev.kaiwen.eventpulse.sse.SseReminderPublisher reminders = org.mockito.Mockito.mock(dev.kaiwen.eventpulse.sse.SseReminderPublisher.class);
+        BookingConsumer consumer = new BookingConsumer(consumedEvents, notifications, interactionService, reminders, new ObjectMapper());
         // 首次处理：写入 consumed_events 成功，创建通知，并写 BOOK interaction（张数 4）。
         when(consumedEvents.tryInsert(eq("eventpulse"), anyString())).thenReturn(1);
         consumer.onMessage("{\"type\":\"BOOKING_CREATED\",\"bookingId\":5,\"dedupKey\":\"k\",\"userId\":1,\"eventId\":2,\"quantity\":4}");
@@ -432,7 +435,8 @@ class UnitTest {
         interceptor.afterCompletion(authed, res, new Object(), null);
         MockHttpServletRequest queryTok = new MockHttpServletRequest("GET", "/api/bookings/1/events");
         queryTok.setParameter("access_token", new JwtService(props).createToken(1L, "USER"));
-        assertThat(interceptor.preHandle(queryTok, new MockHttpServletResponse(), new Object())).isTrue();
+        // 长期 JWT 不再放进 URL（代理日志/浏览器记录会泄漏）：query 参数必须被拒绝。
+        assertThat(interceptor.preHandle(queryTok, new MockHttpServletResponse(), new Object())).isFalse();
         MockHttpServletRequest bad = new MockHttpServletRequest("GET", "/api/bookings");
         bad.addHeader("Authorization", "Bearer bad");
         assertThat(interceptor.preHandle(bad, new MockHttpServletResponse(), new Object())).isFalse();
@@ -545,7 +549,7 @@ class UnitTest {
         when(ticketService.lockForBooking(any())).thenReturn(List.of());
         when(tickets.countByBookingIdAndStatus(any(), any())).thenReturn(0L);
         when(ticketService.issue(any(), any(), anyInt())).thenReturn(List.of());
-        BookingService bookingService = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
+        BookingService bookingService = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox, new PopularCache());
         BookingController bookingsApi = new BookingController(bookingService);
         when(bookings.save(any())).thenAnswer(inv -> {
             Booking b = inv.getArgument(0);

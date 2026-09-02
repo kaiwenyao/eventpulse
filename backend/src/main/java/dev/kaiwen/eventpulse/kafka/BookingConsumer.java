@@ -1,5 +1,6 @@
 package dev.kaiwen.eventpulse.kafka;
 
+import org.springframework.context.annotation.Profile;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,6 +12,7 @@ import dev.kaiwen.eventpulse.outbox.KafkaTopics;
 import dev.kaiwen.eventpulse.repository.ConsumedEventRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.service.InteractionService;
+import dev.kaiwen.eventpulse.sse.SseReminderPublisher;
 
 /**
  * 消费 booking-events，在一个数据库事务里完成：
@@ -18,12 +20,14 @@ import dev.kaiwen.eventpulse.service.InteractionService;
  *  2. 创建通知；
  *  3. BOOKING_CREATED → 写 BOOK interaction，BOOKING_CANCELLED → 写 CANCEL
  *     interaction（EVENT_CANCELLED 等其他类型不写）；
- *  4. 整个事务提交。
+ *  4. 注册事务提交后的 SSE 提醒（提交成功才发布到 Redis）；
+ *  5. 整个事务提交。
  *
  * 任何一步失败（解析、保存、统计）都不能被静默吞掉：异常继续抛出，
  * 交给 Error Handler 有限重试，最终进入 DLT。
  */
 @Component
+@Profile("worker")
 public class BookingConsumer {
 
     public static final String CONSUMER_GROUP = "eventpulse";
@@ -31,16 +35,19 @@ public class BookingConsumer {
     private final ConsumedEventRepository consumedEvents;
     private final NotificationRepository notifications;
     private final InteractionService interactionService;
+    private final SseReminderPublisher reminders;
     private final ObjectMapper objectMapper;
 
     public BookingConsumer(
             ConsumedEventRepository consumedEvents,
             NotificationRepository notifications,
             InteractionService interactionService,
+            SseReminderPublisher reminders,
             ObjectMapper objectMapper) {
         this.consumedEvents = consumedEvents;
         this.notifications = notifications;
         this.interactionService = interactionService;
+        this.reminders = reminders;
         this.objectMapper = objectMapper;
     }
 
@@ -51,7 +58,7 @@ public class BookingConsumer {
 
         boolean firstTime = consumedEvents.tryInsert(CONSUMER_GROUP, event.dedupKey()) == 1;
         if (!firstTime) {
-            // 以前已经完整处理过，重复投递直接结束。
+            // 以前已经完整处理过，重复投递直接结束，也不再发提醒。
             return;
         }
 
@@ -72,6 +79,9 @@ public class BookingConsumer {
                 // 其他事件（如 EVENT_CANCELLED）只创建通知，不冒充用户主动预订 / 取消。
             }
         }
+
+        // 事务提交成功后才会真正发布；提醒只是「请刷新」，最终数据以 PostgreSQL 为准。
+        reminders.remindBooking(event.bookingId(), event.type(), event.dedupKey());
     }
 
     private BookingEvent parse(String json) {

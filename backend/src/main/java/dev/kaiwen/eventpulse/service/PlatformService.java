@@ -1,23 +1,16 @@
 package dev.kaiwen.eventpulse.service;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.common.PageResult;
@@ -31,6 +24,7 @@ import dev.kaiwen.eventpulse.entity.Notification;
 import dev.kaiwen.eventpulse.entity.RecommendationRequest;
 import dev.kaiwen.eventpulse.entity.UserPreference;
 import dev.kaiwen.eventpulse.exception.BusinessException;
+import dev.kaiwen.eventpulse.outbox.OutboxStatusService;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.EventDailyMetricRepository;
 import dev.kaiwen.eventpulse.repository.EventFavouriteRepository;
@@ -38,9 +32,15 @@ import dev.kaiwen.eventpulse.repository.EventRepository;
 import dev.kaiwen.eventpulse.repository.InteractionRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.repository.RecommendationRequestRepository;
-import dev.kaiwen.eventpulse.outbox.OutboxRelay;
 import dev.kaiwen.eventpulse.repository.UserPreferenceRepository;
 
+/**
+ * 平台侧服务：收藏、互动、推荐、热门、通知与主办方数据。
+ *
+ * 没有任何业务级 JVM 内存状态：热门活动只缓存到 Redis（多实例共享），
+ * 缓存降级次数走 Micrometer 指标（监控系统里按实例查看与汇总），
+ * Redis 不可用时直接回源 PostgreSQL，接口照常可用。
+ */
 @Service
 public class PlatformService {
 
@@ -54,11 +54,8 @@ public class PlatformService {
     private final BookingRepository bookings;
     private final EventService eventService;
     private final InteractionService interactionService;
-    private final ConcurrentHashMap<String, CacheEntry> popularCache = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Long, SseEmitter> sse = new ConcurrentHashMap<>();
-    private long cacheFallbacks;
-    private StringRedisTemplate redis;
-    private OutboxRelay outboxRelay;
+    private final PopularCache popularCache;
+    private OutboxStatusService outboxStatus;
 
     public PlatformService(
             EventFavouriteRepository favourites,
@@ -70,7 +67,8 @@ public class PlatformService {
             EventRepository events,
             BookingRepository bookings,
             EventService eventService,
-            InteractionService interactionService) {
+            InteractionService interactionService,
+            PopularCache popularCache) {
         this.favourites = favourites;
         this.interactions = interactions;
         this.metrics = metrics;
@@ -81,16 +79,12 @@ public class PlatformService {
         this.bookings = bookings;
         this.eventService = eventService;
         this.interactionService = interactionService;
+        this.popularCache = popularCache;
     }
 
     @Autowired(required = false)
-    public void setRedis(StringRedisTemplate redis) {
-        this.redis = redis;
-    }
-
-    @Autowired(required = false)
-    public void setOutboxRelay(OutboxRelay outboxRelay) {
-        this.outboxRelay = outboxRelay;
+    public void setOutboxStatus(OutboxStatusService outboxStatus) {
+        this.outboxStatus = outboxStatus;
     }
 
     @Transactional
@@ -142,59 +136,32 @@ public class PlatformService {
             return recommendInternal();
         }
         catch (Exception e) {
-            cacheFallbacks++;
             return popular();
         }
     }
 
+    /**
+     * 热门活动：先读 Redis（所有实例共享），未命中或 Redis 不可用时回源
+     * PostgreSQL；Redis 可用则写回缓存。请求落到哪个实例结果都一致。
+     */
     public List<EventVo> popular() {
-        List<EventVo> fromRedis = readPopularFromRedis();
-        if (fromRedis != null) {
-            return fromRedis;
+        List<Long> cachedIds = popularCache.readIds();
+        if (cachedIds != null) {
+            List<EventVo> cached = cachedIds.stream()
+                    .map(events::findById)
+                    .flatMap(java.util.Optional::stream)
+                    .map(eventService::toVo)
+                    .toList();
+            if (!cached.isEmpty()) {
+                return cached;
+            }
         }
-        CacheEntry cached = popularCache.get("popular");
-        if (cached != null && cached.expiresAt.isAfter(Instant.now())) {
-            return cached.events;
-        }
-        List<EventVo> fresh = events.findByStatusInOrderByStartsAtAsc(EventStatus.PUBLIC_LIST).stream()
+        List<Event> fresh = events.findByStatusInOrderByStartsAtAsc(EventStatus.PUBLIC_LIST).stream()
                 .sorted(Comparator.comparingInt(Event::getSold).reversed())
                 .limit(8)
-                .map(eventService::toVo)
                 .toList();
-        popularCache.put("popular", new CacheEntry(fresh, Instant.now().plusSeconds(30)));
-        writePopularToRedis(fresh);
-        return fresh;
-    }
-
-    private List<EventVo> readPopularFromRedis() {
-        if (redis == null) {
-            return null;
-        }
-        try {
-            String ids = redis.opsForValue().get("popular:ids");
-            if (ids == null || ids.isBlank()) {
-                return null;
-            }
-            List<Long> eventIds = Arrays.stream(ids.split(",")).filter(s -> !s.isBlank()).map(Long::valueOf).toList();
-            return eventIds.stream().map(eventService::require).map(eventService::toVo).toList();
-        }
-        catch (Exception e) {
-            cacheFallbacks++;
-            return null;
-        }
-    }
-
-    private void writePopularToRedis(List<EventVo> fresh) {
-        if (redis == null) {
-            return;
-        }
-        try {
-            String ids = fresh.stream().map(event -> String.valueOf(event.id())).collect(Collectors.joining(","));
-            redis.opsForValue().set("popular:ids", ids, Duration.ofSeconds(30));
-        }
-        catch (Exception e) {
-            cacheFallbacks++;
-        }
+        popularCache.writeIds(fresh.stream().map(Event::getId).toList());
+        return fresh.stream().map(eventService::toVo).toList();
     }
 
     public List<NotificationVo> myNotifications() {
@@ -232,10 +199,9 @@ public class PlatformService {
                 "capacity", capacity,
                 "sellThrough", capacity == 0 ? 0d : sold * 100.0 / capacity,
                 "lowStock", mine.stream().filter(e -> e.remaining() > 0 && e.remaining() <= 5).map(Event::getTitle).toList(),
-                "outboxPending", outboxRelay == null ? 0L : outboxRelay.pending(),
-                "outboxFailed", outboxRelay == null ? 0L : outboxRelay.failed(),
-                "oldestPendingAgeSeconds", outboxRelay == null ? null : outboxRelay.oldestPendingAgeSeconds(),
-                "cacheFallbacks", cacheFallbacks);
+                "outboxPending", outboxStatus == null ? 0L : outboxStatus.pending(),
+                "outboxFailed", outboxStatus == null ? 0L : outboxStatus.failed(),
+                "oldestPendingAgeSeconds", outboxStatus == null ? null : outboxStatus.oldestPendingAgeSeconds());
     }
 
     public Map<String, Object> analytics(Long eventId, LocalDate from, LocalDate to) {
@@ -270,41 +236,6 @@ public class PlatformService {
         pref.setRadiusKm(radiusKm);
         pref.setUpdatedAt(Instant.now());
         preferences.save(pref);
-    }
-
-    public SseEmitter subscribe(Long bookingId) {
-        SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
-        sse.put(bookingId, emitter);
-        emitter.onCompletion(() -> sse.remove(bookingId));
-        emitter.onTimeout(() -> sse.remove(bookingId));
-        return emitter;
-    }
-
-    public void emit(Long bookingId, String name, Object data) {
-        SseEmitter emitter = sse.get(bookingId);
-        if (emitter == null) {
-            return;
-        }
-        try {
-            emitter.send(SseEmitter.event().name(name).data(data));
-        }
-        catch (Exception e) {
-            sse.remove(bookingId);
-        }
-    }
-
-    @Scheduled(fixedDelay = 60000)
-    @Transactional
-    public void advanceLifecycle() {
-        Instant now = Instant.now();
-        events.findByStatusAndStartsAtLessThanEqual(EventStatus.PUBLISHED, now)
-                .forEach(event -> event.setStatus(EventStatus.ONGOING));
-        events.findByStatusAndEndsAtLessThanEqual(EventStatus.ONGOING, now)
-                .forEach(event -> event.setStatus(EventStatus.FINISHED));
-    }
-
-    public long cacheFallbacks() {
-        return cacheFallbacks;
     }
 
     public PageResult<EventVo> myFavourites() {
@@ -371,8 +302,5 @@ public class PlatformService {
                 + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
                 * Math.sin(dLon / 2) * Math.sin(dLon / 2);
         return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
-
-    private record CacheEntry(List<EventVo> events, Instant expiresAt) {
     }
 }

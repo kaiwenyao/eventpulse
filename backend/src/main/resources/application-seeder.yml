@@ -1,0 +1,17 @@
+# seeder 角色：一次性初始化演示数据，完成后退出（Kubernetes Job / Compose 一次性任务）。
+# 不启动 Web 服务、Kafka consumer、Outbox 或任何定时任务。
+spring:
+  main:
+    web-application-type: none
+  autoconfigure:
+    # 覆盖基础 exclude 列表（profile 文件是整表替换）：Seeder 完全不需要 Redis 和 Kafka。
+    exclude:
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisReactiveAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.health.DataRedisHealthContributorAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.health.DataRedisReactiveHealthContributorAutoConfiguration
+      - org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration
+
+eventpulse:
+  redis-enabled: false

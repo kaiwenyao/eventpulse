@@ -1,0 +1,37 @@
+# Seeder Job：一次性初始化演示数据，完成后退出；失败返回非零退出码，
+# Kubernetes 按 backoffLimit 重试。seed_runs 表保证重试不会产生重复数据。
+#
+# Job 名带版本号：已完成的旧 Job 会阻止同名新版创建，发布新版数据时把
+# 名称升到 eventpulse-seeder-v2（或交给 Helm hook / CI 流水线管理）。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eventpulse-seeder-v1
+  labels:
+    app: eventpulse-seeder
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: eventpulse-seeder
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seeder
+          image: eventpulse/backend:v1.0
+          imagePullPolicy: IfNotPresent
+          args: ["--spring.profiles.active=seeder"]
+          envFrom:
+            - configMapRef:
+                name: eventpulse-config
+            - secretRef:
+                name: eventpulse-secret
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi

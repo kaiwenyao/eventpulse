@@ -1,0 +1,31 @@
+# Ingress：/api 转发到 API Service（多副本），并针对 SSE 关闭响应缓冲、
+# 放长读超时；其余路径留给前端静态资源（前端自身如需 Ingress 再补一份）。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eventpulse-api
+  annotations:
+    # SSE 必需：不缓冲响应，长连接超时大于 SSE 心跳间隔（25s）与连接时长。
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: eventpulse-api
+                port:
+                  number: 8080
+          - path: /actuator
+            pathType: Prefix
+            backend:
+              service:
+                name: eventpulse-api
+                port:
+                  number: 8080

@@ -2,6 +2,7 @@ package dev.kaiwen.eventpulse.controller;
 
 import java.util.List;
 
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,6 +15,7 @@ import dev.kaiwen.eventpulse.dto.BookingDtos.NotificationVo;
 import dev.kaiwen.eventpulse.service.PlatformService;
 
 @RestController
+@Profile("api")
 @RequestMapping("/api/notifications")
 public class NotificationController {
 

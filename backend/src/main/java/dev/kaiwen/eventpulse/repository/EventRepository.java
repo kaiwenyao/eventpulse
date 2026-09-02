@@ -28,6 +28,32 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     List<Event> findByStatusAndEndsAtLessThanEqual(String status, Instant now);
 
+    /**
+     * 数据库条件更新：开始时间已到、状态仍为 PUBLISHED 的活动改为 ONGOING。
+     * 多个 Worker 同时执行时，后执行的一方只会更新 0 行，不会覆盖新状态，
+     * 也不会产生乐观锁冲突。
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Event e
+               set e.status = :ongoing, e.updatedAt = :now
+             where e.status = :published
+               and e.startsAt <= :now
+            """)
+    int startPublishedEvents(@Param("published") String published, @Param("ongoing") String ongoing,
+            @Param("now") Instant now);
+
+    /** 数据库条件更新：结束时间已到、状态仍为 ONGOING 的活动改为 FINISHED。 */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Event e
+               set e.status = :finished, e.updatedAt = :now
+             where e.status = :ongoing
+               and e.endsAt <= :now
+            """)
+    int finishOngoingEvents(@Param("ongoing") String ongoing, @Param("finished") String finished,
+            @Param("now") Instant now);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
             UPDATE events

@@ -7,8 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -21,15 +19,15 @@ import dev.kaiwen.eventpulse.seed.DemoCatalog.EventSpec;
 import dev.kaiwen.eventpulse.seed.DemoCatalog.UserSpec;
 
 /**
- * demo profile 启动时播种一整套可以直接点的演示数据：账号、活动、订单、电子票、
- * 收藏、行为流水、每日统计和站内消息。
+ * 播种一整套可以直接点的演示数据：账号、活动、订单、电子票、收藏、行为流水、
+ * 每日统计和站内消息。由 {@link SeederService} 在 seeder Profile 里调用，
+ * 事务由SeederService 统一管理；这里不再负责启动与退出。
  *
- * 只在数据库还没有主演示账号时执行一次；`make down-v` 删掉数据卷后会重新播种。
- * 这里刻意不走 BookingService，因为播种既不需要 Kafka，也不需要登录态。
+ * 数据库还没有主演示账号时才真正写入，重复调用不会产生重复数据。
+ * 刻意不走 BookingService，因为播种既不需要 Kafka，也不需要登录态。
  */
 @Component
-@Profile("demo")
-public class DemoDataSeeder implements CommandLineRunner {
+public class DemoDataSeeder {
 
     /** 售票窗口：活动开始前 45 天开售，开演前 2 小时截止。 */
     private static final int SALES_WINDOW_DAYS = 45;
@@ -51,8 +49,8 @@ public class DemoDataSeeder implements CommandLineRunner {
         this.engagement = engagement;
     }
 
-    @Override
-    public void run(String... args) {
+    /** 幂等：主演示账号已存在时不再写入。 */
+    public void seed() {
         if (users.existsByEmail(DemoCatalog.USERS.get(0).email())) {
             return;
         }

@@ -1,0 +1,56 @@
+# API Deployment：同一镜像、api Profile。
+# - 初始 2 副本，readiness 失败即摘流量；liveness 只判断进程卡死，
+#   不因 Redis 短暂故障重启（应用健康检查未把 Redis 计入）。
+# - terminationGracePeriodSeconds 给普通请求与 SSE 优雅关闭留足时间。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventpulse-api
+  labels:
+    app: eventpulse-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: eventpulse-api
+  template:
+    metadata:
+      labels:
+        app: eventpulse-api
+    spec:
+      terminationGracePeriodSeconds: 40
+      containers:
+        - name: api
+          # 发布前替换为 registry 里的镜像，例如 ghcr.io/<owner>/eventpulse-backend:<commit-sha>
+          image: eventpulse/backend:v1.0
+          imagePullPolicy: IfNotPresent
+          # 镜像 ENTRYPOINT 是 `java -jar app.jar`，args 作为程序参数追加。
+          args: ["--spring.profiles.active=api"]
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: eventpulse-config
+            - secretRef:
+                name: eventpulse-secret
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi

@@ -6,6 +6,7 @@ import java.util.Map;
 
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,14 +19,18 @@ import dev.kaiwen.eventpulse.common.PageResult;
 import dev.kaiwen.eventpulse.common.Result;
 import dev.kaiwen.eventpulse.dto.EventDtos.EventVo;
 import dev.kaiwen.eventpulse.service.PlatformService;
+import dev.kaiwen.eventpulse.sse.SseSubscriptionService;
 
 @RestController
+@Profile("api")
 public class PlatformController {
 
     private final PlatformService platform;
+    private final SseSubscriptionService sseSubscriptions;
 
-    public PlatformController(PlatformService platform) {
+    public PlatformController(PlatformService platform, SseSubscriptionService sseSubscriptions) {
         this.platform = platform;
+        this.sseSubscriptions = sseSubscriptions;
     }
 
     @PostMapping("/api/events/{id}/favourite")
@@ -87,7 +92,9 @@ public class PlatformController {
 
     @GetMapping(path = "/api/bookings/{id}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@PathVariable Long id) {
-        return platform.subscribe(id);
+        // 订阅前检查登录与订单所有权（主办方只能订阅自己活动的订单）。
+        // JWT 走 Authorization 头，不再支持 URL 上的 access_token 参数。
+        return sseSubscriptions.subscribe(id);
     }
 
     @PostMapping("/api/preferences")

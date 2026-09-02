@@ -1,0 +1,22 @@
+# worker 角色：消费 Kafka、发送 Outbox、驱动活动生命周期。
+# 不创建业务 Controller；保留 8080 上的 Actuator 健康检查端口。
+spring:
+  task:
+    scheduling:
+      pool:
+        size: 2
+
+eventpulse:
+  # 事务提交后向 Redis 发布「有新状态」提醒，api 实例订阅后推给浏览器。
+  redis-enabled: ${REDIS_ENABLED:true}
+  outbox:
+    future-wait-seconds: ${OUTBOX_FUTURE_WAIT_SECONDS:12}
+    # 每轮领取并发送的最大条数。
+    batch-size: ${OUTBOX_BATCH_SIZE:50}
+    # 领取租约时长：Worker 意外退出后，其他 Worker 等这么久就能接手。
+    claim-seconds: ${OUTBOX_CLAIM_SECONDS:60}
+  lifecycle:
+    fixed-delay-ms: ${LIFECYCLE_FIXED_DELAY_MS:60000}
+  kafka:
+    # 业务 Topic 的 partition 数：多 Worker 时 Kafka 按 partition 分配消费。
+    topic-partitions: ${KAFKA_PARTITIONS:3}

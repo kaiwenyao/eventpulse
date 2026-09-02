@@ -31,3 +31,6 @@ __pycache__/
 *.pyc
 frontend/coverage/
 frontend/tsconfig.tsbuildinfo
+
+# Kubernetes secret with real values (only the example is committed).
+deploy/k8s/secret.yml

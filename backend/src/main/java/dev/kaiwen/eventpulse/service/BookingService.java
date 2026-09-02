@@ -31,6 +31,7 @@ public class BookingService {
     private final TicketRepository tickets;
     private final UserRepository users;
     private final OutboxWriter outbox;
+    private final PopularCache popularCache;
 
     public BookingService(
             BookingRepository bookings,
@@ -39,7 +40,8 @@ public class BookingService {
             TicketService ticketService,
             TicketRepository tickets,
             UserRepository users,
-            OutboxWriter outbox) {
+            OutboxWriter outbox,
+            PopularCache popularCache) {
         this.bookings = bookings;
         this.eventService = eventService;
         this.events = events;
@@ -47,6 +49,7 @@ public class BookingService {
         this.tickets = tickets;
         this.users = users;
         this.outbox = outbox;
+        this.popularCache = popularCache;
     }
 
     @Transactional
@@ -82,7 +85,8 @@ public class BookingService {
         booking.setCreatedAt(Instant.now());
         bookings.save(booking);
         ticketService.issue(booking.getId(), event.getId(), request.quantity());
-        outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CREATED", "BOOKING_CREATED:" + booking.getId(),
+        outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CREATED", "booking:" + booking.getId(),
+                "BOOKING_CREATED:" + booking.getId(),
                 Map.of(
                         "type", "BOOKING_CREATED",
                         "userId", userId,
@@ -91,6 +95,7 @@ public class BookingService {
                         "quantity", request.quantity(),
                         "title", "Booking confirmed",
                         "message", "You booked " + request.quantity() + " ticket(s) for \"" + event.getTitle() + "\""));
+        popularCache.evict();
         return toVo(booking, event.getTitle());
     }
 
@@ -131,7 +136,8 @@ public class BookingService {
         booking.setCancelledAt(Instant.now());
         users.creditWallet(booking.getUserId(), booking.getPaidCents());
         ticketService.cancelLocked(lockedTickets);
-        outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CANCELLED", "BOOKING_CANCELLED:" + booking.getId(),
+        outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CANCELLED", "booking:" + booking.getId(),
+                "BOOKING_CANCELLED:" + booking.getId(),
                 Map.of(
                         "type", "BOOKING_CANCELLED",
                         "userId", booking.getUserId(),
@@ -140,6 +146,7 @@ public class BookingService {
                         "quantity", booking.getQuantity(),
                         "title", "Booking cancelled",
                         "message", "You cancelled your booking for \"" + event.getTitle() + "\""));
+        popularCache.evict();
         return toVo(booking, event.getTitle());
     }
 

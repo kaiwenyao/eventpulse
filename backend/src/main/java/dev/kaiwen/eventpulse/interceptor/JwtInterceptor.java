@@ -2,7 +2,7 @@ package dev.kaiwen.eventpulse.interceptor;
 
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.AsyncHandlerInterceptor;
 
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.service.JwtService;
@@ -11,8 +11,13 @@ import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+/**
+ * JWT 拦截器。实现 AsyncHandlerInterceptor：SSE 是异步请求，建立连接后
+ * 原请求线程先回到线程池，{@link #afterConcurrentHandlingStarted} 保证此时
+ * 立即清掉 ThreadLocal，用户上下文不会泄漏给复用该线程的下一个请求。
+ */
 @Component
-public class JwtInterceptor implements HandlerInterceptor {
+public class JwtInterceptor implements AsyncHandlerInterceptor {
 
     private final JwtService jwtService;
 
@@ -23,13 +28,15 @@ public class JwtInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws Exception {
+        // 先清理可能残留的旧上下文（线程复用），再解析当前请求的 JWT。
+        BaseContext.clear();
         if (isPublic(request)) {
             return true;
         }
         String header = request.getHeader("Authorization");
         String token = header != null && header.startsWith("Bearer ")
                 ? header.substring(7)
-                : request.getParameter("access_token");
+                : null;
         if (token == null || token.isBlank()) {
             return unauthorized(response);
         }
@@ -42,6 +49,16 @@ public class JwtInterceptor implements HandlerInterceptor {
         catch (Exception e) {
             return unauthorized(response);
         }
+    }
+
+    /**
+     * 异步请求（SSE）开始并发处理时调用：此时请求线程要回线程池，
+     * 必须立刻清掉用户上下文，不能等异步处理结束。
+     */
+    @Override
+    public void afterConcurrentHandlingStarted(HttpServletRequest request, HttpServletResponse response,
+            Object handler) {
+        BaseContext.clear();
     }
 
     @Override

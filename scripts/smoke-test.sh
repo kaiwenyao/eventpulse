@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# End-to-end API smoke test against a running stack (default http://localhost:8080).
+# End-to-end API smoke test against a running stack (default: frontend nginx at
+# http://localhost:3000, which proxies to any healthy api instance).
 # Exercises: register -> list events -> organiser publish -> book -> Kafka notification -> cancel.
 set -uo pipefail
 
-BASE="${BASE_URL:-http://localhost:8080}"
+BASE="${BASE_URL:-http://localhost:3000}"
 PASS=0
 FAIL=0
 
@@ -28,6 +29,10 @@ register_body="{\"email\":\"smoke-$rand_suffix@test.dev\",\"password\":\"123456\
 code=$(req POST /api/auth/register "" "$register_body")
 user_token=$(jget "['data']['token']" < /tmp/ep_body.json)
 [ "$code" = "200" ] && [ -n "$user_token" ] && ok "register user ($code)" || bad "register user ($code)"
+
+# V7 起下单会扣钱包：新用户余额为 0，先充值再订 ¥100 的票。
+code=$(req POST /api/auth/wallet/recharge "$user_token" '{"amountCents":50000}')
+[ "$code" = "200" ] && ok "wallet recharge ($code)" || bad "wallet recharge ($code)"
 
 code=$(req POST /api/auth/login "" \
   "{\"email\":\"organiser@eventpulse.dev\",\"password\":\"Organiser123456\"}")

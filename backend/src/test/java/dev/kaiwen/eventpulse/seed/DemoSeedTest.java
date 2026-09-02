@@ -107,7 +107,7 @@ class DemoSeedTest {
         when(users.existsByEmail("user@eventpulse.dev")).thenReturn(true);
 
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         verify(users, never()).save(any());
@@ -118,7 +118,7 @@ class DemoSeedTest {
     @Test
     void seedsEveryCatalogueAccountWithItsRoleAndHashedPassword() {
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         List<User> saved = captureUsers();
@@ -133,7 +133,7 @@ class DemoSeedTest {
     @Test
     void walletBalancesAreTheStartingAmountMinusEveryConfirmedBooking() {
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         Map<String, Long> balances = captureUsers().stream()
@@ -152,7 +152,7 @@ class DemoSeedTest {
     @Test
     void everyCatalogueEventIsSeededWithVenueSalesWindowAndOrganiser() {
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         List<Event> saved = captureEvents();
@@ -187,7 +187,7 @@ class DemoSeedTest {
     @Test
     void soldNeverExceedsCapacityAndAbsorbsTheConfirmedDemoBookings() {
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         List<Event> saved = captureEvents();
@@ -207,7 +207,7 @@ class DemoSeedTest {
     @Test
     void statusTimestampsMatchTheLifecycleTheEventClaims() {
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         List<Event> saved = captureEvents();
@@ -235,7 +235,7 @@ class DemoSeedTest {
     @Test
     void bookingsCarryAPriceSnapshotAndCancelledOnesGetACancelTimestamp() {
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         List<Booking> saved = captureBookings();
@@ -261,7 +261,7 @@ class DemoSeedTest {
     @Test
     void ticketsMirrorTheirBookingAndTheSeededCheckIns() {
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         List<Ticket> saved = captureTickets();
@@ -287,7 +287,7 @@ class DemoSeedTest {
     @Test
     void notificationsAreUniquePerBookingAndOldOnesArriveAlreadyRead() {
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         List<Notification> saved = captureNotifications();
@@ -308,7 +308,7 @@ class DemoSeedTest {
     @Test
     void favouritesAndPreferencesGiveRecommendationsSomethingToRankOn() {
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         ArgumentCaptor<EventFavourite> favouriteCaptor = ArgumentCaptor.forClass(EventFavourite.class);
@@ -337,7 +337,7 @@ class DemoSeedTest {
     @Test
     void dailyMetricsCoverOnlyPublicEventsAndFormAFunnel() {
         // Act
-        seeder.run();
+        seeder.seed();
 
         // Assert
         List<Event> seededEvents = captureEvents();
@@ -362,14 +362,14 @@ class DemoSeedTest {
     @Test
     void seedingTwiceProducesTheSameNumbers() {
         // Arrange
-        seeder.run();
+        seeder.seed();
         List<String> first = captureMetrics().stream().map(DemoSeedTest::fingerprint).toList();
 
         // Act
         org.mockito.Mockito.reset(users, events, bookings, tickets, favourites,
                 interactions, metrics, notifications, preferences, ticketService, passwordEncoder);
         setUp();
-        seeder.run();
+        seeder.seed();
         List<String> second = captureMetrics().stream().map(DemoSeedTest::fingerprint).toList();
 
         // Assert
