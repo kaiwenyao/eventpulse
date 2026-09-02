@@ -58,7 +58,8 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%X{requestId:-}] [%15.15t] %-40.40logger{39} : %m%n%wEx"
   level:
-    org.hibernate.SQL: DEBUG
+    # SQL 过程日志默认开；生产嫌吵可用 SQL_LOG_LEVEL=WARN 压掉。
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:DEBUG}
 
 management:
   endpoints:
