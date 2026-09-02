@@ -11,7 +11,7 @@ from typing import Any
 
 from langchain.agents import create_agent
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
@@ -125,6 +125,10 @@ def run_discovery_agent(
     if not messages:
         raise AgentExecutionError("agent returned no messages")
     final = messages[-1]
+    if not isinstance(final, AIMessage):
+        # 预算 / 递归耗尽时可能停在工具消息上：工具原始 JSON 不能当面向用户
+        # 的回答（否则原始查询结果会原样出现在聊天里），按整体失败降级。
+        raise AgentExecutionError(f"agent ended on {type(final).__name__}")
     text = _content_to_text(final.content)
     answer = parse_discovery_answer(text, ledger.allowed_event_ids, settings.max_events_returned)
     if not answer.answer:

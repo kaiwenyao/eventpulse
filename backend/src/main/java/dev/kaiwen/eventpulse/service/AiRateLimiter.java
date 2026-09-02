@@ -27,6 +27,9 @@ public class AiRateLimiter {
     /** key → (windowStartEpochMinute, count)。仅无 Redis 时使用。 */
     private final Map<String, Window> localWindows = new ConcurrentHashMap<>();
 
+    /** 上次本地窗口清理所在的分钟号：只在分钟切换时扫一遍，摊薄清理成本。 */
+    private volatile long lastPruneMinute = -1;
+
     public AiRateLimiter(AppProperties properties) {
         this.properties = properties;
     }
@@ -57,9 +60,22 @@ public class AiRateLimiter {
 
     private boolean tryAcquireLocal(String key, int limitPerMinute) {
         long minute = Instant.now().getEpochSecond() / 60;
+        pruneStaleWindows(minute);
         Window window = localWindows.compute(key, (k, old) ->
                 old == null || old.minute != minute ? new Window(minute) : old);
         return window.count.incrementAndGet() <= limitPerMinute;
+    }
+
+    /**
+     * 本地窗口按分钟分桶，旧分钟条目不会自然过期：不清理的话 Map 会随
+     * 时间线性增长（每个活跃 bucket 每分钟新增一条）。分钟切换时清一次。
+     */
+    void pruneStaleWindows(long minute) {
+        if (lastPruneMinute == minute) {
+            return;
+        }
+        lastPruneMinute = minute;
+        localWindows.values().removeIf(w -> w.minute < minute);
     }
 
     public int userLimit() {

@@ -142,7 +142,7 @@ def build_tools(client: BackendClient, ledger: ToolLedger) -> list[BaseTool]:
         get_event_details,
     ]
 
-    if client._context_token:
+    if client.has_user_context:
         @tool("get_my_preferences")
         def get_my_preferences() -> str:
             """读取当前登录用户主动保存的偏好（类别、城市、默认位置）。未登录时不可用。"""

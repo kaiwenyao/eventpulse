@@ -103,6 +103,10 @@ public class AiGatewayService {
             events.findByIdAndOrganiserId(request.eventId(), userId)
                     .orElseThrow(() -> BusinessException.forbidden("You can only improve your own events"));
         }
+        // 每次调用都是真实的 LLM 成本：主办方也要按用户限流，防止脚本刷调用。
+        if (!rateLimiter.tryAcquire("user:" + userId, rateLimiter.userLimit())) {
+            throw tooManyRequests();
+        }
         String requestId = UUID.randomUUID().toString();
         ImproveEventPayload payload = new ImproveEventPayload(
                 requestId,
@@ -229,7 +233,9 @@ public class AiGatewayService {
             return null;
         }
         try {
-            var claims = jwtService.parseToken(authorization.substring(7));
+            // parseLoginToken 同样拒绝带 purpose 的服务间 token：泄漏的上下文
+            // token 当 Bearer 用时按游客处理，而不是冒充登录用户。
+            var claims = jwtService.parseLoginToken(authorization.substring(7));
             Long userId = claims.get("userId", Number.class).longValue();
             String role = claims.get("role", String.class);
             return new AiUser(userId, role == null ? "USER" : role);
@@ -271,16 +277,22 @@ public class AiGatewayService {
     }
 
     private void appendMessages(AiConversation conversation, String question, String answer) {
-        saveMessage(conversation.getId(), AiMessage.ROLE_USER, question);
+        // 会话行随之更新 updated_at：ix_ai_conversations_user (user_id, updated_at DESC)
+        // 才能真实反映「最近会话」。
+        conversation.setUpdatedAt(Instant.now());
+        conversations.save(conversation);
+        saveMessage(conversation.getId(), AiMessage.ROLE_USER, question,
+                properties.getAi().getMaxMessageChars());
         saveMessage(conversation.getId(), AiMessage.ROLE_ASSISTANT,
-                answer == null ? "" : answer);
+                answer == null ? "" : answer, MAX_ANSWER_CHARS);
     }
 
-    private void saveMessage(Long conversationId, String role, String content) {
+    private void saveMessage(Long conversationId, String role, String content, int maxChars) {
         AiMessage message = new AiMessage();
         message.setConversationId(conversationId);
         message.setRole(role);
-        message.setContent(truncate(content, properties.getAi().getMaxMessageChars()));
+        // 助手回答按响应同样的上限（2000）入库：历史与用户实际看到的保持一致。
+        message.setContent(truncate(content, maxChars));
         messages.save(message);
     }
 

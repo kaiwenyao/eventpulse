@@ -3,8 +3,6 @@
 LLM 的原始输出永远不直接进响应：先解析、校验、裁剪成这些结构。
 """
 
-from typing import Any
-
 from pydantic import AliasGenerator, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
@@ -113,8 +111,3 @@ class ToolEvent(CamelModel):
     price_cents: int | None = None
     remaining: int | None = None
     status: str | None = None
-
-
-def to_jsonable(value: Any) -> Any:
-    """模型输出 / 工具结果统一经 Pydantic 校验后再序列化。"""
-    return value

@@ -124,9 +124,8 @@ def improve_event_copy(model: BaseChatModel, payload: Any) -> tuple[Suggestion, 
         parsed = extract_json(_content_to_text(response.content))
         if parsed is not None:
             try:
-                suggestion_out = _validate(parsed)
-                warnings = suggestion_out.to_suggestion().warnings
-                return suggestion_out.to_suggestion(), warnings, usage
+                suggestion = _validate(parsed).to_suggestion()
+                return suggestion, suggestion.warnings, usage
             except Exception as exc:  # pydantic 校验失败
                 last_error = f"validation failed: {type(exc).__name__}"
         else:

@@ -34,6 +34,11 @@ class BackendClient:
         if self._http is not None:
             self._http.close()
 
+    @property
+    def has_user_context(self) -> bool:
+        """是否携带签名的用户上下文（决定个人化工具是否注入）。"""
+        return bool(self._context_token)
+
     def _headers(self) -> dict[str, str]:
         headers = {
             "X-Internal-Token": self._settings.backend_service_token,

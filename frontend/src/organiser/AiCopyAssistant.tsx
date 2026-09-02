@@ -71,7 +71,7 @@ export function AiCopyAssistant({
         startsAt: localInputToIso(form.startsAt),
         tone: '',
       })
-      setSuggestion({
+      const next = {
         title: response.suggestion.title ?? '',
         summary: response.suggestion.summary ?? '',
         description: response.suggestion.description ?? '',
@@ -81,6 +81,14 @@ export function AiCopyAssistant({
           ...(response.suggestion.warnings ?? []),
           ...(response.warnings ?? []),
         ],
+      }
+      setSuggestion(next)
+      // 空建议字段默认不勾选：应用时不能把表单已有内容清成空串。
+      setSelected({
+        title: next.title !== '',
+        summary: next.summary !== '',
+        description: next.description !== '',
+        attendanceNotes: next.attendanceNotes !== '',
       })
     } catch (e) {
       const message = e instanceof ApiError ? e.message : t('ai.copy.failed')
@@ -95,7 +103,8 @@ export function AiCopyAssistant({
     if (!suggestion) return
     const patch: Partial<EventFormState> = {}
     for (const field of SUGGESTION_FIELDS) {
-      if (selected[field]) {
+      // 空建议不写入表单：清空主办方已填的内容比不应用更糟。
+      if (selected[field] && suggestion[field]) {
         patch[FIELD_TO_FORM[field]] = suggestion[field]
       }
     }

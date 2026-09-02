@@ -105,6 +105,7 @@ class AiGatewayServiceTest {
     void improveEventReturnsSanitisedSuggestionForOrganiser() {
         BaseContext.setUserId(9L);
         BaseContext.setRole("ORGANISER");
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
         when(client.improveEvent(any())).thenReturn(new ImproveEventResult(
                 "r1", new CopySuggestion("t", "s", "d", "n", java.util.Arrays.asList(" ", null, "missing price info")),
                 List.of("w"), "openai", "gpt-test", new AiUsage(10, 5)));
@@ -149,6 +150,7 @@ class AiGatewayServiceTest {
     void improveEventMapsUpstreamFailureToDegradedSignal() {
         BaseContext.setUserId(9L);
         BaseContext.setRole("ORGANISER");
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
         when(client.improveEvent(any())).thenThrow(new AiUnavailableException(AiServiceClient.UNAVAILABLE));
         assertThatThrownBy(() -> gateway.improveEvent(new ImproveEventRequest(
                 null, null, null, null, null, null, null, null, null, null, null)))
@@ -186,6 +188,25 @@ class AiGatewayServiceTest {
         assertThat(response.events()).hasSize(1);
         assertThat(response.events().get(0).event().id()).isEqualTo(1L);
         assertThat(response.events().get(0).reason()).isEqualTo("周六音乐");
+        verify(conversations, never()).save(any());
+        verify(messages, never()).save(any());
+    }
+
+    @Test
+    void aiToolsContextTokenAsBearerIsTreatedAsGuest() {
+        // 服务间用户上下文 token（purpose=ai-tools）即使泄漏，当 Bearer 用时
+        // 也必须按游客处理，不能冒充登录用户建立会话（回归：resolveUser 曾用
+        // parseToken，不校验 purpose）。
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
+                "r1", "ok", List.of(), List.of(), "openai", "gpt-test", null));
+
+        String contextBearer = "Bearer " + new JwtService(properties)
+                .createContextToken(2L, "USER", "req-ctx", 300);
+        DiscoveryChatResponse response = gateway.discoveryChat(
+                new DiscoveryChatRequest(null, "找活动"), contextBearer, "1.2.3.4");
+
+        assertThat(response.conversationId()).isNull();
         verify(conversations, never()).save(any());
         verify(messages, never()).save(any());
     }
@@ -250,6 +271,20 @@ class AiGatewayServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus().value())
                 .isEqualTo(429);
+    }
+
+    @Test
+    void improveEventIsRateLimitedToo() {
+        BaseContext.setUserId(9L);
+        BaseContext.setRole("ORGANISER");
+        // 主办方文案助手同样是付费 LLM 调用，不能没有用户级限流。
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(false);
+        assertThatThrownBy(() -> gateway.improveEvent(new ImproveEventRequest(
+                null, null, null, null, null, null, null, null, null, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus().value())
+                .isEqualTo(429);
+        verify(client, never()).improveEvent(any());
     }
 
     @Test

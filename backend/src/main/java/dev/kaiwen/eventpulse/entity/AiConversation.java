@@ -74,4 +74,9 @@ public class AiConversation {
     public Instant getUpdatedAt() {
         return updatedAt;
     }
+
+    /** 显式改动 updated_at 让实体变脏：@PreUpdate 只在发生真实修改时触发。 */
+    public void setUpdatedAt(Instant updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 }

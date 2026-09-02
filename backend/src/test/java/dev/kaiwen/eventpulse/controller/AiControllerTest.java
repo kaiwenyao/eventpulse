@@ -14,7 +14,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.common.Result;
@@ -24,9 +26,14 @@ import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryChatResponse;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventRequest;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventResponse;
 import dev.kaiwen.eventpulse.exception.BusinessException;
+import dev.kaiwen.eventpulse.exception.GlobalExceptionHandler;
 import dev.kaiwen.eventpulse.service.AiGatewayService;
 import dev.kaiwen.eventpulse.service.AiUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class AiControllerTest {
@@ -65,8 +72,10 @@ class AiControllerTest {
 
     @Test
     void discoveryChatPassesAuthorizationAndClientIp() {
+        // XFF 最后一项由本层可信代理（nginx / ingress）写入，客户端伪造的前置
+        // 条目不参与限流；这里取的是 10.0.0.2。
         when(httpRequest.getHeader("X-Forwarded-For")).thenReturn("10.0.0.1, 10.0.0.2");
-        when(gateway.discoveryChat(any(), eq("Bearer tok"), eq("10.0.0.1")))
+        when(gateway.discoveryChat(any(), eq("Bearer tok"), eq("10.0.0.2")))
                 .thenReturn(new DiscoveryChatResponse("r", "1", "ok", List.of(), List.of()));
         AiController controller = new AiController(gateway);
         var result = controller.discoveryChat(new DiscoveryChatRequest("1", "问题"), "Bearer tok", httpRequest);
@@ -85,15 +94,21 @@ class AiControllerTest {
     }
 
     @Test
-    void unavailableExceptionKeepsHttpStatus503() {
+    void unavailableExceptionKeepsHttpStatus503() throws Exception {
         BaseContext.setUserId(9L);
         BaseContext.setRole("ORGANISER");
         when(gateway.improveEvent(any())).thenThrow(
                 new AiUnavailableException("AI assistant is not enabled on this deployment"));
-        AiController controller = new AiController(gateway);
-        assertThatThrownBy(() -> controller.improveEvent(new ImproveEventRequest(
-                null, null, null, null, null, null, null, null, null, null, null)))
-                .isInstanceOf(AiUnavailableException.class);
-        assertThat(HttpStatus.SERVICE_UNAVAILABLE.value()).isEqualTo(503);
+        // 走真实的 MockMvc + GlobalExceptionHandler：断言的是响应状态码，
+        // 而不是框架常量。AI 降级必须是 503，不能混进 500 告警里。
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new AiController(gateway))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        mvc.perform(post("/api/ai/organiser/improve-event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.msg").value("AI assistant is not enabled on this deployment"));
     }
 }

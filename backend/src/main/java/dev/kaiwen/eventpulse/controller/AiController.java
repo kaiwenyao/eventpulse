@@ -48,11 +48,13 @@ public class AiController {
         return Result.success(gateway.discoveryChat(request, authorization, clientIp(httpRequest)));
     }
 
-    /** Nginx 反代设置 X-Forwarded-For；取第一个地址做 IP 级限流。 */
+    /** XFF 的最后一项由本层可信代理（nginx / ingress）写入，取它做 IP 级限流；
+     *  客户端伪造的前置条目不参与限流。无代理时退回 remoteAddr。 */
     private static String clientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+            String[] parts = forwarded.split(",");
+            return parts[parts.length - 1].trim();
         }
         return request.getRemoteAddr();
     }

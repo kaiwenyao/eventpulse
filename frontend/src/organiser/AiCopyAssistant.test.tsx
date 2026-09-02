@@ -79,4 +79,34 @@ describe('AiCopyAssistant', () => {
     await waitFor(() => expect(screen.getByText('周末爵士夜：在城市里听见即兴')).toBeInTheDocument())
     expect(onApply).not.toHaveBeenCalled()
   })
+
+  it('does not apply empty suggestions over existing form content', async () => {
+    const onApply = vi.fn()
+    apiMock.fn.mockResolvedValueOnce({
+      requestId: 'r2',
+      suggestion: {
+        title: '新标题',
+        summary: '',
+        description: '',
+        attendanceNotes: '须知',
+        warnings: [],
+      },
+      warnings: [],
+    })
+    render(<AiCopyAssistant form={createInitialForm()} onApply={onApply} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'AI 完善文案' }))
+    await userEvent.click(await screen.findByRole('button', { name: '生成建议' }))
+    await screen.findByText('新标题')
+
+    // 空建议字段默认不勾选：应用后不能把表单已填内容清成空串。
+    expect(screen.getByRole('checkbox', { name: /简短摘要/ })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /完整描述/ })).not.toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: '应用所选字段' }))
+    const patch = onApply.mock.calls[0][0]
+    expect(patch.title).toBe('新标题')
+    expect(patch.summary).toBeUndefined()
+    expect(patch.description).toBeUndefined()
+    expect(patch.attendanceNotes).toBe('须知')
+  })
 })

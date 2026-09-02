@@ -41,7 +41,9 @@ public class JwtInterceptor implements AsyncHandlerInterceptor {
             return unauthorized(response);
         }
         try {
-            Claims claims = jwtService.parseToken(token);
+            // parseLoginToken 拒绝带 purpose 的服务间 token：这类 token 即使泄漏
+            // 也不能在 /api/** 上冒充登录态。
+            Claims claims = jwtService.parseLoginToken(token);
             BaseContext.setUserId(claims.get("userId", Number.class).longValue());
             BaseContext.setRole(claims.get("role", String.class));
             return true;
