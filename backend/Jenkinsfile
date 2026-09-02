@@ -1,0 +1,285 @@
+// EventPulse backend CI — modeled on dublin-bikes/backend/Jenkinsfile.
+// Kubernetes cloud agent (Jenkins kubernetes-plugin injects the jnlp sidecar):
+//   - maven:  compile, unit tests, Testcontainers integration tests, coverage (JDK 21 + Maven).
+//   - docker: build & tag the backend image via the host-node Docker socket.
+// CI only: tests + build. Deployment is intentionally NOT part of this pipeline.
+//
+// Cluster assumptions: cloud name `kubernetes`, RWX PVC `jenkins-maven-cache`,
+// and a Docker-enabled node exposing /var/run/docker.sock (not plain containerd).
+pipeline {
+    agent {
+        kubernetes {
+            cloud 'kubernetes'
+            defaultContainer 'maven'
+            // -----------------------------------------------------------------------------
+            // Pod definition. Two workload containers (maven + docker); Jenkins injects jnlp.
+            //
+            // maven container (image has JDK 21 + Maven):
+            //   - TESTCONTAINERS_HOST_OVERRIDE: the BookingConcurrencyIT uses Testcontainers.
+            //     Testcontainers assumes localhost, but the daemon socket is mounted from the
+            //     host node and the Pod has its own network namespace — localhost would be the
+            //     Pod itself. status.hostIP (Downward API) tells it to reach back via the node.
+            //   - TESTCONTAINERS_RYUK_DISABLED: Ryuk needs --privileged, which restricted
+            //     clusters usually cannot pull off; falls back to JVM shutdown hooks, and
+            //     post { always } removes leftover postgres:18-alpine Testcontainers.
+            //   - Mounted volumes: shared RWX PVC for the Maven repository (persistent
+            //     dependency cache) and the host-node Docker socket for Testcontainers.
+            //
+            // docker container (docker:27-cli is Alpine and has /bin/sh):
+            //   - builds and tags the backend image (no registry push, CI only).
+            // -----------------------------------------------------------------------------
+            yaml '''
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    jenkins/label: eventpulse-backend-build
+spec:
+  containers:
+    - name: maven
+      image: maven:3.9-eclipse-temurin-21
+      command:
+        - sleep
+      args:
+        - "9999999"
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: "500m"
+          memory: 2Gi
+        limits:
+          cpu: "2000m"
+          memory: 4Gi
+      env:
+        # Tell Testcontainers which address to use to reach the containers it spawns.
+        # The daemon runs on the host node (socket mount), the Pod has its own network
+        # namespace, so localhost would resolve to the Pod, not the node.
+        - name: TESTCONTAINERS_HOST_OVERRIDE
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        # Ryuk cannot run in restricted clusters (needs --privileged); the JVM shutdown
+        # hook cleans up instead, post { always } is the safety net.
+        - name: TESTCONTAINERS_RYUK_DISABLED
+          value: "true"
+      volumeMounts:
+        # Maven local repository — shared NFS PVC so every build on every node reuses
+        # the same dependency cache (the image's default user is root, home is /root).
+        - mountPath: /root/.m2/repository
+          name: maven-repo
+        # Host-node Docker socket: Testcontainers needs it to run the PostgreSQL container.
+        - mountPath: /var/run/docker.sock
+          name: docker-sock
+    - name: docker
+      image: docker:27-cli
+      command:
+        - sleep
+      args:
+        - "9999999"
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: "100m"
+          memory: 128Mi
+        limits:
+          cpu: "500m"
+          memory: 256Mi
+      volumeMounts:
+        - mountPath: /var/run/docker.sock
+          name: docker-sock
+  volumes:
+    # Maven repository backed by the cluster NFS PVC (jenkins-maven-cache, RWX).
+    - name: maven-repo
+      persistentVolumeClaim:
+        claimName: jenkins-maven-cache
+    - name: docker-sock
+      hostPath:
+        path: /var/run/docker.sock
+'''
+        }
+    }
+
+    options {
+        skipDefaultCheckout()
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+        // Serialize against the shared Maven PVC and the host Docker socket.
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        string(name: 'IMAGE_NAME', defaultValue: 'eventpulse/backend', description: 'Docker image name (built & tagged locally, never pushed — CI only)')
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Image tag override (empty means branch-gitHash-jBUILD_NUMBER, e.g. main-abc1234-j88)')
+    }
+
+    environment {
+        CI = 'true'
+    }
+
+    stages {
+        stage('1. Pull Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Backend CI') {
+            when {
+                anyOf {
+                    changeset pattern: 'backend/**'
+                    changeset pattern: 'deploy/backend/**'
+                    changeset pattern: 'pom.xml'
+                    triggeredBy 'UserIdCause'
+                }
+            }
+            stages {
+                stage('2. Maven Compile') {
+                    steps {
+                        container('maven') {
+                            dir('backend') {
+                                sh '''
+                                java -version
+                                mvn -version
+                                mvn -B -ntp -DskipTests compile
+                                '''
+                            }
+                        }
+                    }
+                }
+
+                stage('3. Unit Tests') {
+                    steps {
+                        container('maven') {
+                            dir('backend') {
+                                sh '''
+                                echo "Running unit tests (no external services)"
+                                mvn -B -ntp test \
+                                    -Dtest='!dev.kaiwen.eventpulse.BookingConcurrencyIT' \
+                                    -Dsurefire.failIfNoSpecifiedTests=false
+                                '''
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            junit testResults: 'backend/target/surefire-reports/*.xml', allowEmptyResults: false
+                        }
+                    }
+                }
+
+                stage('4. Integration Tests') {
+                    steps {
+                        container('maven') {
+                            dir('backend') {
+                                sh '''
+                                echo "Running integration tests (Testcontainers: PostgreSQL)"
+                                mvn -B -ntp test \
+                                    -Dtest='dev.kaiwen.eventpulse.BookingConcurrencyIT' \
+                                    -Dsurefire.failIfNoSpecifiedTests=false
+                                '''
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            junit testResults: 'backend/target/surefire-reports/*.xml', allowEmptyResults: false
+                        }
+                    }
+                }
+
+                stage('5. Coverage & Package') {
+                    steps {
+                        container('maven') {
+                            dir('backend') {
+                                sh '''
+                                echo "Generating merged JaCoCo report and enforcing coverage gate"
+                                # Unit + IT append into the same target/jacoco.exec. jacoco:report
+                                # is bound to test (re-run over cumulative data); jacoco:check and
+                                # the CycloneDX SBOM are bound to verify. -DskipTests avoids
+                                # re-running tests while still packaging the jar.
+                                mvn -B -ntp verify -DskipTests
+                                '''
+                            }
+                        }
+                        archiveArtifacts artifacts: 'backend/target/site/jacoco/**', allowEmptyArchive: false
+                        archiveArtifacts artifacts: 'backend/target/bom.json', allowEmptyArchive: false
+                        script {
+                            try {
+                                publishHTML(target: [
+                                    reportName: 'JaCoCo Coverage',
+                                    reportDir: 'backend/target/site/jacoco',
+                                    reportFiles: 'index.html',
+                                    keepAll: true,
+                                    alwaysLinkToLastBuild: true,
+                                    allowMissing: false
+                                ])
+                            } catch (Throwable err) {
+                                echo "publishHTML skipped (HTML Publisher plugin not installed?): ${err}"
+                            }
+                        }
+                    }
+                }
+
+                stage('6. Build Docker Image') {
+                    steps {
+                        container('docker') {
+                            script {
+                                def imageName = (params.IMAGE_NAME ?: '').trim()
+                                if (!(imageName ==~ /^[a-z0-9][a-z0-9._\/-]{0,127}$/)) {
+                                    error("IMAGE_NAME must be a docker repository name (got: ${imageName})")
+                                }
+                                def branch = (env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown')
+                                    .replaceFirst(/^origin\//, '')
+                                    .replaceAll('/', '-')
+                                def gitHash = (env.GIT_COMMIT ?: '0000000').take(7)
+                                def defaultTag = "${branch}-${gitHash}-j${env.BUILD_NUMBER}"
+                                def finalTag = params.IMAGE_TAG?.trim() ? params.IMAGE_TAG.trim() : defaultTag
+                                if (!(finalTag ==~ /^[A-Za-z0-9._-]{1,128}$/)) {
+                                    error("IMAGE_TAG must match [A-Za-z0-9._-] (got: ${finalTag})")
+                                }
+                                env.FULL_IMAGE = "${imageName}:${finalTag}"
+                            }
+                            dir('backend') {
+                                sh '''
+                                # Build context is backend/ (matches docker-compose.yml).
+                                docker build -f ../deploy/backend/Dockerfile -t "$FULL_IMAGE" .
+                                echo "Built image: $FULL_IMAGE"
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Safety net: remove Testcontainers leftovers from a cancelled/killed IT
+            // (Ryuk is disabled). Limit to this suite's image so we do not rm every
+            // Testcontainers container on a shared node.
+            script {
+                try {
+                    container('docker') {
+                        sh '''
+                            echo "Cleaning up leftover Testcontainers PostgreSQL containers"
+                            stray=$(docker ps -aq \
+                                --filter "label=org.testcontainers=true" \
+                                --filter "ancestor=postgres:18-alpine" || true)
+                            if [ -n "$stray" ]; then
+                                docker rm -f $stray || true
+                            else
+                                echo "No stray containers found"
+                            fi
+                        '''
+                    }
+                } catch (err) {
+                    echo "Testcontainers cleanup skipped: ${err}"
+                }
+            }
+            cleanWs()
+        }
+    }
+}

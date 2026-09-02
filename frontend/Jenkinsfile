@@ -1,0 +1,207 @@
+// EventPulse frontend CI — modeled on dublin-bikes/frontend/Jenkinsfile.
+// Kubernetes cloud agent (Jenkins kubernetes-plugin injects the jnlp sidecar):
+//   - node:  install deps, lint, unit tests + coverage, production build, Playwright smoke.
+//   - docker: build & tag the frontend image via the host-node Docker socket.
+// CI only: tests + build. Deployment is intentionally NOT part of this pipeline.
+//
+// Cluster assumptions: cloud name `kubernetes`, and a Docker-enabled node
+// exposing /var/run/docker.sock (needed only for the image-build stage).
+pipeline {
+    agent {
+        kubernetes {
+            cloud 'kubernetes'
+            defaultContainer 'node'
+            // -----------------------------------------------------------------------------
+            // Pod definition. Two workload containers (node + docker); Jenkins injects jnlp.
+            //
+            // node container: npm ci, ESLint, Vitest unit tests (jsdom, no backend needed),
+            // production build, Playwright chromium smoke (installs OS deps on first run).
+            // docker container: docker:27-cli is Alpine and has /bin/sh; talks to the
+            // host-node daemon through the mounted socket.
+            // -----------------------------------------------------------------------------
+            yaml '''
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    jenkins/label: eventpulse-frontend-build
+spec:
+  containers:
+    - name: node
+      image: node:24-slim
+      command:
+        - sleep
+      args:
+        - "9999999"
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: "500m"
+          memory: 2Gi
+        limits:
+          cpu: "2000m"
+          memory: 4Gi
+    - name: docker
+      image: docker:27-cli
+      command:
+        - sleep
+      args:
+        - "9999999"
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: "100m"
+          memory: 128Mi
+        limits:
+          cpu: "500m"
+          memory: 256Mi
+      volumeMounts:
+        - mountPath: /var/run/docker.sock
+          name: docker-sock
+  volumes:
+    - name: docker-sock
+      hostPath:
+        path: /var/run/docker.sock
+'''
+        }
+    }
+
+    options {
+        skipDefaultCheckout()
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+    }
+
+    parameters {
+        string(name: 'IMAGE_NAME', defaultValue: 'eventpulse/frontend', description: 'Docker image name (built & tagged locally, never pushed — CI only)')
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Image tag override (empty means branch-gitHash-jBUILD_NUMBER, e.g. main-abc1234-j88)')
+    }
+
+    environment {
+        CI = 'true'
+    }
+
+    stages {
+        stage('1. Pull Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Frontend CI') {
+            when {
+                anyOf {
+                    changeset pattern: 'frontend/**'
+                    changeset pattern: 'deploy/frontend/**'
+                    triggeredBy 'UserIdCause'
+                }
+            }
+            stages {
+                stage('2. Install & Lint') {
+                    steps {
+                        container('node') {
+                            dir('frontend') {
+                                sh '''
+                                node --version
+                                npm --version
+                                npm ci
+                                npm run lint
+                                '''
+                            }
+                        }
+                    }
+                }
+
+                stage('3. Unit Tests & Coverage') {
+                    steps {
+                        container('node') {
+                            dir('frontend') {
+                                sh '''
+                                # Vitest jsdom unit tests with coverage (enforces the thresholds
+                                # configured in vite.config.ts). No backend or browser needed.
+                                npm run coverage
+                                '''
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            archiveArtifacts artifacts: 'frontend/coverage/**', allowEmptyArchive: true
+                        }
+                    }
+                }
+
+                stage('4. Build') {
+                    steps {
+                        container('node') {
+                            dir('frontend') {
+                                sh '''
+                                # npm run build runs `tsc -b && vite build`.
+                                npm run build
+                                '''
+                            }
+                        }
+                    }
+                }
+
+                stage('5. Playwright Smoke') {
+                    steps {
+                        container('node') {
+                            dir('frontend') {
+                                sh '''
+                                # Same gate as .github/workflows/ci.yml: Chromium against the
+                                # Vite dev server (no backend). --with-deps installs the OS
+                                # libraries node:24-slim does not ship.
+                                npx playwright install --with-deps chromium
+                                npm run e2e
+                                '''
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            archiveArtifacts artifacts: 'frontend/playwright-report/**', allowEmptyArchive: true
+                        }
+                    }
+                }
+
+                stage('6. Build Docker Image') {
+                    steps {
+                        container('docker') {
+                            script {
+                                def imageName = (params.IMAGE_NAME ?: '').trim()
+                                if (!(imageName ==~ /^[a-z0-9][a-z0-9._\/-]{0,127}$/)) {
+                                    error("IMAGE_NAME must be a docker repository name (got: ${imageName})")
+                                }
+                                def branch = (env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown')
+                                    .replaceFirst(/^origin\//, '')
+                                    .replaceAll('/', '-')
+                                def gitHash = (env.GIT_COMMIT ?: '0000000').take(7)
+                                def defaultTag = "${branch}-${gitHash}-j${env.BUILD_NUMBER}"
+                                def finalTag = params.IMAGE_TAG?.trim() ? params.IMAGE_TAG.trim() : defaultTag
+                                if (!(finalTag ==~ /^[A-Za-z0-9._-]{1,128}$/)) {
+                                    error("IMAGE_TAG must match [A-Za-z0-9._-] (got: ${finalTag})")
+                                }
+                                env.FULL_IMAGE = "${imageName}:${finalTag}"
+                            }
+                            // Build context is the repo root (matches docker-compose.yml and the
+                            // frontend Dockerfile COPY paths).
+                            sh '''
+                            docker build -f deploy/frontend/Dockerfile -t "$FULL_IMAGE" .
+                            echo "Built image: $FULL_IMAGE"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
