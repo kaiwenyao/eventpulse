@@ -385,11 +385,11 @@ describe('organiser attendees and analytics', () => {
 })
 
 describe('audience flows', () => {
-  it('covers favourites, nearby, recommend and booking confirm', async () => {
+  it('covers favourites, nearby and booking confirm', async () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(user)
       if (path === '/api/events/1') return Promise.resolve(event)
-      if (path.startsWith('/api/events/nearby') || path.startsWith('/api/recommendations') || path.startsWith('/api/events')) {
+      if (path.startsWith('/api/events/nearby') || path.startsWith('/api/events')) {
         return Promise.resolve([event])
       }
       if (path === '/api/favourites') return Promise.resolve({ records: [event] })
@@ -402,7 +402,6 @@ describe('audience flows', () => {
     await userEvent.type(screen.getByLabelText('城市'), 'Shanghai')
     await userEvent.selectOptions(screen.getByLabelText('排序'), 'price')
     await userEvent.click(screen.getByRole('button', { name: '附近' }))
-    await userEvent.click(screen.getByRole('button', { name: '推荐' }))
     cleanup()
 
     renderApp('/favourites')

@@ -22,6 +22,13 @@ x-backend-common: &backend-common
     CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
     KAFKA_PARTITIONS: ${KAFKA_PARTITIONS:-3}
     SSE_HEARTBEAT_MS: ${SSE_HEARTBEAT_MS:-25000}
+    # AI 网关：Spring Boot 调 Python AI 服务，并用同一对服务间凭证互认。
+    AI_SERVICE_URL: http://ai-service:8090
+    AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-dev-ai-service-token}
+    AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-dev-ai-internal-token}
+    AI_ENABLED: ${AI_ENABLED:-true}
+    # Agent 一轮可能包含多次 LLM 调用，读超时要覆盖全程（默认 90s）。
+    AI_READ_TIMEOUT: ${AI_READ_TIMEOUT:-90000}
 
 services:
   postgres:
@@ -154,6 +161,39 @@ services:
       timeout: 5s
       retries: 60
       start_period: 60s
+
+  # Python AI 服务：FastAPI + LangChain，独立镜像。
+  # 只在 backplane 网络（api 可达），不经公网 Ingress / 前端反代暴露；
+  # 浏览器只调 Spring Boot 的 /api/ai/**。LLM Key 只进这个容器。
+  # 无状态（会话在 PostgreSQL），后续可 --scale ai-service=N。
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    image: eventpulse/ai-service:0.1.0
+    networks:
+      - backplane
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+      LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-4096}
+      BACKEND_INTERNAL_URL: http://api:8080
+      BACKEND_SERVICE_TOKEN: ${AI_INTERNAL_TOKEN:-dev-ai-internal-token}
+      SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-dev-ai-service-token}
+    depends_on:
+      api:
+        condition: service_healthy
+    expose:
+      - "8090"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8090/healthz',timeout=2).status==200 else 1)\""]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
   frontend:
     build:

@@ -20,3 +20,8 @@ data:
   OUTBOX_BATCH_SIZE: "50"
   OUTBOX_CLAIM_SECONDS: "60"
   LIFECYCLE_FIXED_DELAY_MS: "60000"
+  # AI 网关：api 调 Python AI 服务（ClusterIP 内部地址，无公网入口）。
+  AI_SERVICE_URL: "http://eventpulse-ai-service:8090"
+  AI_ENABLED: "true"
+  # Agent 多轮调用总耗时可能远超单次 HTTP 请求，读超时放长。
+  AI_READ_TIMEOUT: "90000"
