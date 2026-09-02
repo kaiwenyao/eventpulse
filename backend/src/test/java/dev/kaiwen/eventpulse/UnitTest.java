@@ -582,7 +582,8 @@ class UnitTest {
 
         AppProperties props = new AppProperties();
         WebMvcConfig web = new WebMvcConfig(new JwtInterceptor(new JwtService(props)),
-                new RequestLoggingInterceptor(), props);
+                new RequestLoggingInterceptor(),
+                new dev.kaiwen.eventpulse.interceptor.InternalServiceInterceptor(props, new JwtService(props)), props);
         web.addInterceptors(new org.springframework.web.servlet.config.annotation.InterceptorRegistry());
         web.addCorsMappings(new org.springframework.web.servlet.config.annotation.CorsRegistry());
         assertThat(new OpenApiConfig().openAPI().getInfo().getTitle()).contains("EventPulse");

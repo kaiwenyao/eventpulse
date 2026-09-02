@@ -7,6 +7,7 @@ import { EmptyState, ErrorNote, EventStatusBadge } from '../ui/Badges'
 import { Field, fieldAria } from '../ui/Field'
 import { SkeletonCard } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
+import { AiCopyAssistant } from './AiCopyAssistant'
 import { CoverUploader } from './CoverUploader'
 import { EventFormPreview } from './EventFormPreview'
 import {
@@ -127,7 +128,17 @@ export function OrganiserFormPage() {
           <h1>{id ? t('organiser.form.edit') : t('organiser.form.create')}</h1>
           <p className="muted">{t('organiser.form.intro')}</p>
         </div>
-        {existing && <EventStatusBadge status={existing.status} />}
+        <div className="page-head-actions">
+          {existing && <EventStatusBadge status={existing.status} />}
+          <AiCopyAssistant
+            form={form}
+            eventId={id}
+            onApply={(patch) => {
+              setForm((prev) => ({ ...prev, ...patch }))
+              notify(t('ai.copy.applied'), 'success')
+            }}
+          />
+        </div>
       </header>
 
       {loading ? (

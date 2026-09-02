@@ -306,7 +306,7 @@ class DemoSeedTest {
     }
 
     @Test
-    void favouritesAndPreferencesGiveRecommendationsSomethingToRankOn() {
+    void favouritesAndPreferencesAreSeededForPersonalisationFeatures() {
         // Act
         seeder.seed();
 

@@ -5,8 +5,9 @@ import { EventTicket } from '../components/EventTicket'
 import { CATEGORIES, EventVo } from '../types'
 import { EmptyState } from '../ui/Badges'
 import { SkeletonGrid } from '../ui/Skeleton'
+import { AiDiscoveryAssistant } from '../components/AiDiscoveryAssistant'
 
-type DiscoveryMode = 'list' | 'nearby' | 'recommend'
+type DiscoveryMode = 'list' | 'nearby'
 
 /** Shanghai city centre — the demo origin for the "附近" radius query. */
 const NEARBY_ORIGIN = { lat: 31.23, lng: 121.47, radiusKm: 30 }
@@ -15,7 +16,6 @@ function buildPath(mode: DiscoveryMode, params: URLSearchParams) {
   if (mode === 'nearby') {
     return `/api/events/nearby?lat=${NEARBY_ORIGIN.lat}&lng=${NEARBY_ORIGIN.lng}&radiusKm=${NEARBY_ORIGIN.radiusKm}`
   }
-  if (mode === 'recommend') return '/api/recommendations'
   return `/api/events${params.size ? `?${params}` : ''}`
 }
 
@@ -28,6 +28,7 @@ export function EventsPage() {
   const [city, setCity] = useState('')
   const [sort, setSort] = useState('startsAt')
   const [mode, setMode] = useState<DiscoveryMode>('list')
+  const [assistantOpen, setAssistantOpen] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -119,13 +120,16 @@ export function EventsPage() {
             {t('events.nearby')}
           </button>
           <button
-            className={`chip ${mode === 'recommend' ? 'active' : ''}`}
-            onClick={() => setMode(mode === 'recommend' ? 'list' : 'recommend')}
+            className={`chip ${assistantOpen ? 'active' : ''}`}
+            aria-expanded={assistantOpen}
+            onClick={() => setAssistantOpen(!assistantOpen)}
           >
-            {t('events.recommend')}
+            {t('ai.discovery.entry')}
           </button>
         </div>
       </div>
+
+      {assistantOpen && <AiDiscoveryAssistant onClose={() => setAssistantOpen(false)} />}
 
       {loading ? (
         <SkeletonGrid label={t('events.loading')} />

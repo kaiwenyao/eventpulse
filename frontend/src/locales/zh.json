@@ -98,7 +98,6 @@
     "sortSold": "热度",
     "modeAria": "切换发现模式",
     "nearby": "附近",
-    "recommend": "推荐",
     "loading": "正在加载活动",
     "emptyTitle": "还没有活动",
     "emptyHint": "换个关键词或分类试试，也可以切换其他城市。",
@@ -426,6 +425,41 @@
       "dropHint": "拖拽图片到这里，或点击下方按钮选择文件",
       "pickFile": "选择文件",
       "removeCover": "移除封面"
+    }
+  },
+  "ai": {
+    "discovery": {
+      "entry": "AI 找活动",
+      "title": "AI 活动发现助手",
+      "hint": "用自然语言描述你想参加的活动，AI 只会推荐数据库中真实存在的活动。",
+      "empty": "试试问：「这个周末有什么适合新手的技术活动？」",
+      "placeholder": "用一句话描述你想找的活动…",
+      "send": "发送",
+      "retry": "重试",
+      "close": "收起助手",
+      "failed": "AI 助手暂时不可用，请稍后再试，或使用普通搜索。",
+      "guestNote": "游客每次提问相互独立；登录后 AI 可以结合你的历史追问继续对话。AI 可能出错，请以活动详情页为准。"
+    },
+    "copy": {
+      "entry": "AI 完善文案",
+      "title": "AI 文案建议",
+      "hint": "根据你已填写的内容生成建议；不会替你编造时间、地点或价格。",
+      "generate": "生成建议",
+      "regenerate": "重新生成",
+      "apply": "应用所选字段",
+      "applied": "已把所选建议应用到表单",
+      "close": "收起",
+      "retry": "重试",
+      "failed": "AI 文案助手暂时不可用，请稍后再试。",
+      "warnings": "缺失信息 / 需要确认",
+      "emptyField": "（AI 没有足够资料改写这一项）",
+      "confirmNote": "建议不会自动保存：确认后请正常保存或发布活动。",
+      "fields": {
+        "title": "建议标题",
+        "summary": "简短摘要",
+        "description": "完整描述",
+        "attendanceNotes": "参与须知"
+      }
     }
   }
 }

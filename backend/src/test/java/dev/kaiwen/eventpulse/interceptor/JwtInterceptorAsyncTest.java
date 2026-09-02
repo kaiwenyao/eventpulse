@@ -92,9 +92,36 @@ class JwtInterceptorAsyncTest {
         run.get(5, TimeUnit.SECONDS);
     }
 
+    @Test
+    void aiToolsContextTokenIsRejectedAsLoginJwt() throws Exception {
+        Future<?> run = reusedThread.submit(() -> {
+            // 上下文 token 与登录 JWT 用同一密钥签名，但 purpose=ai-tools：
+            // 即使泄漏，也不能在 /api/** 上冒充该用户的登录态（回归：曾因
+            // parseToken 不校验 purpose 而被接受）。
+            MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/bookings");
+            request.addHeader("Authorization", "Bearer " + contextToken(2L));
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            try {
+                assertThat(interceptor.preHandle(request, response, new Object())).isFalse();
+            }
+            catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+            assertThat(response.getStatus()).isEqualTo(401);
+            assertThat(BaseContext.getUserId()).isNull();
+        });
+        run.get(5, TimeUnit.SECONDS);
+    }
+
     private static String token(Long userId) {
         AppProperties props = new AppProperties();
         props.setSecretKey("test-secret-key-change-me-0123456789ab");
         return new JwtService(props).createToken(userId, "USER");
+    }
+
+    private static String contextToken(Long userId) {
+        AppProperties props = new AppProperties();
+        props.setSecretKey("test-secret-key-change-me-0123456789ab");
+        return new JwtService(props).createContextToken(userId, "USER", "req-1", 300);
     }
 }

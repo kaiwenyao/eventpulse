@@ -1,0 +1,13 @@
+# AI Service：仅集群内部访问（ClusterIP），不在 Ingress 配置公开路径。
+apiVersion: v1
+kind: Service
+metadata:
+  name: eventpulse-ai-service
+spec:
+  type: ClusterIP
+  selector:
+    app: eventpulse-ai-service
+  ports:
+    - name: http
+      port: 8090
+      targetPort: http

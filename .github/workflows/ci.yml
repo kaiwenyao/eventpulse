@@ -105,3 +105,43 @@ jobs:
       - name: Playwright browser smoke tests (no backend needed)
         run: npx playwright install --with-deps chromium && npm run e2e
         working-directory: frontend
+
+  # Python AI 服务：模拟 LLM / 工具响应，不调用付费模型、不需要真实 Key。
+  ai-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: ai-service/uv.lock
+      - name: Run pytest (scripted LLM, no real API key)
+        run: |
+          cd ai-service
+          uv sync --extra dev
+          uv run pytest
+
+  deploy-config:
+    name: Docker Compose & Kubernetes config validity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose.yml
+        run: docker compose config -q
+      - name: Validate Kubernetes manifests
+        run: |
+          python3 - <<'PYEOF'
+          import glob, sys
+          import yaml
+          allowed_kinds = {"ConfigMap", "Secret", "Deployment", "Service", "Ingress", "Job"}
+          for path in sorted(glob.glob("deploy/k8s/**/*.yml", recursive=True)):
+              docs = list(yaml.safe_load_all(open(path)))
+              for doc in docs:
+                  if not isinstance(doc, dict) or doc.get("kind") not in allowed_kinds:
+                      sys.exit(f"invalid manifest: {path}")
+              print(f"ok {path}")
+          PYEOF
+          # AI 服务绝不能出现在公网 Ingress 上
+          if grep -q "ai-service" deploy/k8s/ingress.yml; then
+            echo "ai-service must not be exposed via ingress"; exit 1
+          fi

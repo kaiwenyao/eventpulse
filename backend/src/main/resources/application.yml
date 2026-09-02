@@ -82,3 +82,17 @@ eventpulse:
   redis-host: ${REDIS_HOST:localhost}
   redis-port: ${REDIS_PORT:6379}
   seed-name: demo-v1
+  ai:
+    enabled: ${AI_ENABLED:true}
+    service-url: ${AI_SERVICE_URL:http://localhost:8090}
+    service-token: ${AI_SERVICE_TOKEN:dev-ai-service-token}
+    internal-token: ${AI_INTERNAL_TOKEN:dev-ai-internal-token}
+    connect-timeout-ms: ${AI_CONNECT_TIMEOUT:2000}
+    read-timeout-ms: ${AI_READ_TIMEOUT:90000}
+    rate-limit-user-per-minute: ${AI_RATE_LIMIT_USER:10}
+    rate-limit-ip-per-minute: ${AI_RATE_LIMIT_IP:30}
+    max-message-chars: 1000
+    max-events: 10
+    history-limit: 8
+    context-token-ttl-seconds: 300
+    time-zone: ${AI_TIME_ZONE:Asia/Shanghai}

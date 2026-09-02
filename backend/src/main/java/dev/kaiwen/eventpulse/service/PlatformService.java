@@ -4,9 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,7 +19,6 @@ import dev.kaiwen.eventpulse.entity.Event;
 import dev.kaiwen.eventpulse.entity.EventDailyMetric;
 import dev.kaiwen.eventpulse.entity.EventFavourite;
 import dev.kaiwen.eventpulse.entity.Notification;
-import dev.kaiwen.eventpulse.entity.RecommendationRequest;
 import dev.kaiwen.eventpulse.entity.UserPreference;
 import dev.kaiwen.eventpulse.exception.BusinessException;
 import dev.kaiwen.eventpulse.outbox.OutboxStatusService;
@@ -31,11 +28,12 @@ import dev.kaiwen.eventpulse.repository.EventFavouriteRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
 import dev.kaiwen.eventpulse.repository.InteractionRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
-import dev.kaiwen.eventpulse.repository.RecommendationRequestRepository;
 import dev.kaiwen.eventpulse.repository.UserPreferenceRepository;
 
 /**
- * 平台侧服务：收藏、互动、推荐、热门、通知与主办方数据。
+ * 平台侧服务：收藏、互动、附近、热门、通知与主办方数据。
+ * 个性化找活动由独立的 Python AI 服务负责（见 AiGatewayService），
+ * 这里不再有旧版规则推荐与评分逻辑。
  *
  * 没有任何业务级 JVM 内存状态：热门活动只缓存到 Redis（多实例共享），
  * 缓存降级次数走 Micrometer 指标（监控系统里按实例查看与汇总），
@@ -48,7 +46,6 @@ public class PlatformService {
     private final InteractionRepository interactions;
     private final EventDailyMetricRepository metrics;
     private final UserPreferenceRepository preferences;
-    private final RecommendationRequestRepository recommendationRequests;
     private final NotificationRepository notifications;
     private final EventRepository events;
     private final BookingRepository bookings;
@@ -62,7 +59,6 @@ public class PlatformService {
             InteractionRepository interactions,
             EventDailyMetricRepository metrics,
             UserPreferenceRepository preferences,
-            RecommendationRequestRepository recommendationRequests,
             NotificationRepository notifications,
             EventRepository events,
             BookingRepository bookings,
@@ -73,7 +69,6 @@ public class PlatformService {
         this.interactions = interactions;
         this.metrics = metrics;
         this.preferences = preferences;
-        this.recommendationRequests = recommendationRequests;
         this.notifications = notifications;
         this.events = events;
         this.bookings = bookings;
@@ -129,15 +124,6 @@ public class PlatformService {
                 .filter(event -> haversine(lat, lng, event.getLatitude(), event.getLongitude()) <= radius)
                 .map(eventService::toVo)
                 .toList();
-    }
-
-    public List<EventVo> recommend() {
-        try {
-            return recommendInternal();
-        }
-        catch (Exception e) {
-            return popular();
-        }
     }
 
     /**
@@ -244,46 +230,6 @@ public class PlatformService {
                 .map(fav -> eventService.toVo(eventService.require(fav.getEventId()), true))
                 .toList();
         return new PageResult<>(items.size(), items);
-    }
-
-    private List<EventVo> recommendInternal() {
-        Long userId = BaseContext.getUserId();
-        UserPreference pref = userId == null ? null : preferences.findById(userId).orElse(null);
-        List<Event> candidates = events.findByStatusInOrderByStartsAtAsc(EventStatus.PUBLIC_LIST);
-        List<EventVo> ranked = candidates.stream()
-                .sorted((a, b) -> Integer.compare(score(b, pref, userId), score(a, pref, userId)))
-                .limit(10)
-                .map(event -> eventService.toVo(event, userId != null && favourites.existsByUserIdAndEventId(userId, event.getId())))
-                .toList();
-        RecommendationRequest request = new RecommendationRequest();
-        request.setRequestId(UUID.randomUUID().toString());
-        request.setUserId(userId);
-        request.setPartitionKey("default");
-        request.setModelVersion("rules-v1");
-        request.setFeatureVersion("pref-v1");
-        request.setFrozenCandidates(ranked.stream().map(e -> String.valueOf(e.id())).reduce((a, b) -> a + "," + b).orElse(""));
-        request.setQueriedAt(Instant.now());
-        request.setExpiresAt(Instant.now().plusSeconds(300));
-        recommendationRequests.save(request);
-        return ranked;
-    }
-
-    private int score(Event event, UserPreference pref, Long userId) {
-        int score = event.getSold();
-        if (pref != null) {
-            if (pref.getCategories() != null
-                    && pref.getCategories().toLowerCase(Locale.ROOT).contains(event.getCategory().toLowerCase(Locale.ROOT))) {
-                score += 20;
-            }
-            if (pref.getCities() != null && pref.getCities().contains(event.getCity())) {
-                score += 15;
-            }
-        }
-        if (userId != null) {
-            score += (int) interactions.findByUserIdOrderByCreatedAtDesc(userId).stream()
-                    .filter(i -> event.getId().equals(i.getEventId())).count();
-        }
-        return score;
     }
 
     private static Long requireUser() {

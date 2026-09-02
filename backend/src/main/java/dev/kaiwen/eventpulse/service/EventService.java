@@ -117,7 +117,7 @@ public class EventService {
         return event;
     }
 
-    static void requireOrganiser() {
+    public static void requireOrganiser() {
         if (!"ORGANISER".equals(BaseContext.getRole())) {
             throw BusinessException.forbidden("Only organisers can manage events");
         }
@@ -136,11 +136,11 @@ public class EventService {
         event.setUpdatedAt(Instant.now());
     }
 
-    EventVo toVo(Event event) {
+    public EventVo toVo(Event event) {
         return toVo(event, null);
     }
 
-    EventVo toVo(Event event, Boolean favourite) {
+    public EventVo toVo(Event event, Boolean favourite) {
         Instant now = Instant.now();
         String reason = unbookableReason(event, now);
         return new EventVo(
