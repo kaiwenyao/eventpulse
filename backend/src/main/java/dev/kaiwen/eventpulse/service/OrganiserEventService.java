@@ -146,6 +146,7 @@ public class OrganiserEventService {
             }
         });
         for (Booking booking : bookings.findByEventIdOrderByCreatedAtDesc(id)) {
+            // The event row is already updated above; claim the booking before touching its wallet.
             if (bookings.cancelConfirmed(booking.getId()) == 1) {
                 users.creditWallet(booking.getUserId(), booking.getPaidCents());
                 outbox.write(KafkaTopics.BOOKING_EVENTS, "EVENT_CANCELLED",

@@ -62,14 +62,15 @@ public class BookingService {
             throw new BusinessException("单次最多预订 " + maxQty + " 张");
         }
         long paidCents = Math.multiplyExact((long) event.getPriceCents(), request.quantity());
-        if (users.debitWalletIfEnough(userId, paidCents) == 0) {
-            throw BusinessException.conflict("余额不足");
-        }
+        // Keep the activity-before-wallet order used by both cancellation flows to avoid deadlocks.
         int updated = events.incrementSold(event.getId(), request.quantity());
         if (updated == 0) {
             Event latest = eventService.require(request.eventId());
             String latestReason = EventService.unbookableReason(latest, Instant.now());
             throw BusinessException.conflict(latestReason == null ? "余票不足" : latestReason);
+        }
+        if (users.debitWalletIfEnough(userId, paidCents) == 0) {
+            throw BusinessException.conflict("余额不足");
         }
 
         Booking booking = new Booking();
@@ -114,14 +115,17 @@ public class BookingService {
     @Transactional
     public BookingVo cancel(Long id) {
         Booking booking = requireOwn(id);
+        Event event = eventService.require(booking.getEventId());
+        // Keep the activity -> booking -> wallet order used when an organiser cancels an event.
+        if (events.decrementSold(event.getId(), booking.getQuantity()) == 0) {
+            throw BusinessException.conflict("订单库存状态异常，请稍后重试");
+        }
         if (bookings.cancelConfirmed(booking.getId()) == 0) {
             throw new BusinessException("订单已取消");
         }
-        Event event = eventService.require(booking.getEventId());
         booking.setStatus("CANCELLED");
         booking.setCancelledAt(Instant.now());
         users.creditWallet(booking.getUserId(), booking.getPaidCents());
-        events.decrementSold(event.getId(), booking.getQuantity());
         ticketService.cancelForBooking(booking.getId());
         outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CANCELLED", "BOOKING_CANCELLED:" + booking.getId(),
                 Map.of(

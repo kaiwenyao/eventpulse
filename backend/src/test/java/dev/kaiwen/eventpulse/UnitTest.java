@@ -324,19 +324,20 @@ class UnitTest {
     }
 
     @Test
-    void insufficientWalletDoesNotReserveInventoryOrCreateOrder() {
+    void insufficientWalletDoesNotCreateOrderAfterInventoryReservation() {
         EventService eventService = new EventService(events);
         BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
         BaseContext.setUserId(7L);
         Event open = event(3L, "可订", "music", "上海", 0, 10, 1L, "PUBLISHED");
         when(events.findById(3L)).thenReturn(Optional.of(open));
+        when(events.incrementSold(3L, 2)).thenReturn(1);
         when(users.debitWalletIfEnough(7L, 200L)).thenReturn(0);
 
         assertThatThrownBy(() -> service.create(new CreateBookingRequest(3L, 2)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getStatus()).isEqualTo(HttpStatus.CONFLICT);
 
-        verify(events, never()).incrementSold(any(), anyInt());
+        verify(events).incrementSold(3L, 2);
         verify(bookings, never()).save(any());
         verify(ticketService, never()).issue(any(), any(), anyInt());
         verify(outbox, never()).write(anyString(), anyString(), anyString(), any());
