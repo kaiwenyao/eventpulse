@@ -1,0 +1,13 @@
+# 普通 HTTP 与 SSE 都不固定落同一个 Pod；SSE 断线后客户端会重连其他 Pod。
+apiVersion: v1
+kind: Service
+metadata:
+  name: eventpulse-api
+spec:
+  type: ClusterIP
+  selector:
+    app: eventpulse-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

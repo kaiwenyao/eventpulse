@@ -3,6 +3,7 @@ package dev.kaiwen.eventpulse.kafka;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
@@ -17,6 +18,7 @@ import dev.kaiwen.eventpulse.outbox.KafkaTopics;
  * DLT 发布失败时也不能把原消息当成处理成功（不会提交 offset）。
  */
 @Configuration
+@Profile("worker")
 public class KafkaErrorHandlerConfig {
 
     @Bean

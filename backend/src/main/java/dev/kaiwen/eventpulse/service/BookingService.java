@@ -31,6 +31,7 @@ public class BookingService {
     private final TicketRepository tickets;
     private final UserRepository users;
     private final OutboxWriter outbox;
+    private final PopularCache popularCache;
 
     public BookingService(
             BookingRepository bookings,
@@ -39,7 +40,8 @@ public class BookingService {
             TicketService ticketService,
             TicketRepository tickets,
             UserRepository users,
-            OutboxWriter outbox) {
+            OutboxWriter outbox,
+            PopularCache popularCache) {
         this.bookings = bookings;
         this.eventService = eventService;
         this.events = events;
@@ -47,6 +49,7 @@ public class BookingService {
         this.tickets = tickets;
         this.users = users;
         this.outbox = outbox;
+        this.popularCache = popularCache;
     }
 
     @Transactional
@@ -82,7 +85,8 @@ public class BookingService {
         booking.setCreatedAt(Instant.now());
         bookings.save(booking);
         ticketService.issue(booking.getId(), event.getId(), request.quantity());
-        outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CREATED", "BOOKING_CREATED:" + booking.getId(),
+        outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CREATED", "booking:" + booking.getId(),
+                "BOOKING_CREATED:" + booking.getId(),
                 Map.of(
                         "type", "BOOKING_CREATED",
                         "userId", userId,
@@ -91,6 +95,7 @@ public class BookingService {
                         "quantity", request.quantity(),
                         "title", "Booking confirmed",
                         "message", "You booked " + request.quantity() + " ticket(s) for \"" + event.getTitle() + "\""));
+        popularCache.evict();
         return toVo(booking, event.getTitle());
     }
 
@@ -124,14 +129,20 @@ public class BookingService {
         if (lockedTickets.stream().anyMatch(ticket -> TicketStatus.CHECKED_IN.equals(ticket.getStatus()))) {
             throw BusinessException.conflict("A ticket has already been checked in, refund is not allowed");
         }
+        // 作废票必须排在 cancelConfirmed 之前：那条 @Modifying(clearAutomatically = true)
+        // 会清空持久化上下文，之后 lockedTickets 就成了游离实体，改了也不会落库——
+        // 结果是订单已退款、票却仍是 VALID，可以照常核销入场。放在前面，
+        // cancelConfirmed 的 flushAutomatically 会先把票的改动刷进数据库。
+        // 若紧接着的 cancelConfirmed 落空而抛错，整个事务回滚，这里的改动一并撤销。
+        ticketService.cancelLocked(lockedTickets);
         if (bookings.cancelConfirmed(booking.getId()) == 0) {
             throw new BusinessException("Booking already cancelled");
         }
         booking.setStatus("CANCELLED");
         booking.setCancelledAt(Instant.now());
         users.creditWallet(booking.getUserId(), booking.getPaidCents());
-        ticketService.cancelLocked(lockedTickets);
-        outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CANCELLED", "BOOKING_CANCELLED:" + booking.getId(),
+        outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CANCELLED", "booking:" + booking.getId(),
+                "BOOKING_CANCELLED:" + booking.getId(),
                 Map.of(
                         "type", "BOOKING_CANCELLED",
                         "userId", booking.getUserId(),
@@ -140,6 +151,7 @@ public class BookingService {
                         "quantity", booking.getQuantity(),
                         "title", "Booking cancelled",
                         "message", "You cancelled your booking for \"" + event.getTitle() + "\""));
+        popularCache.evict();
         return toVo(booking, event.getTitle());
     }
 

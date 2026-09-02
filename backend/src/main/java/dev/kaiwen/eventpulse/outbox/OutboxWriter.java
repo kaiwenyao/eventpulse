@@ -18,7 +18,7 @@ public class OutboxWriter {
     /**
      * 应用自己的 payload 大小上限（524,288 字节 = 512 KiB）。
      * 写入 Outbox 前就挡住明显超大的消息；Relay 的隔离机制仍然保留，
-     * 负责兼住漏网与后续配置变化的情况。
+     * 负责兜住漏网与后续配置变化的情况。
      */
     static final int MAX_PAYLOAD_BYTES = 512 * 1024;
 
@@ -33,11 +33,17 @@ public class OutboxWriter {
     /**
      * 写入前先检查序列化后的 payload 大小，超过 512 KiB 直接报错，
      * 避免把明显超大的消息写进 Outbox 再让 Relay 反复隔离。
+     *
+     * @param messageKey 稳定的业务标识（例如 booking:123）。它决定 Kafka 分区：
+     *                   同一订单的消息进入同一 partition 并保持先后顺序，
+     *                   与用于消费端去重的 dedupKey 用途不同。
      */
-    public void write(String topic, String eventType, String dedupKey, Map<String, Object> payload) {
+    public void write(String topic, String eventType, String messageKey, String dedupKey,
+            Map<String, Object> payload) {
         OutboxEvent event = new OutboxEvent();
         event.setTopic(topic);
         event.setEventType(eventType);
+        event.setMessageKey(messageKey);
         event.setDedupKey(dedupKey);
         event.setCreatedAt(Instant.now());
         try {

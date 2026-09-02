@@ -29,6 +29,18 @@ public class OutboxEvent {
     @Column(name = "dedup_key", nullable = false)
     private String dedupKey;
 
+    /** 稳定的业务标识（例如 booking:123）：决定 Kafka 分区与同键消息的先后顺序。 */
+    @Column(name = "message_key", nullable = false)
+    private String messageKey;
+
+    /** 当前领取该消息的 Worker（workerId + 每轮随机 token），用于多 Worker 抢占。 */
+    @Column(name = "claimed_by", length = 100)
+    private String claimedBy;
+
+    /** 领取租约到期时间：Worker 意外退出后，其他 Worker 等租约过期即可接手。 */
+    @Column(name = "claimed_until")
+    private Instant claimedUntil;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -82,6 +94,30 @@ public class OutboxEvent {
 
     public void setDedupKey(String dedupKey) {
         this.dedupKey = dedupKey;
+    }
+
+    public String getMessageKey() {
+        return messageKey;
+    }
+
+    public void setMessageKey(String messageKey) {
+        this.messageKey = messageKey;
+    }
+
+    public String getClaimedBy() {
+        return claimedBy;
+    }
+
+    public void setClaimedBy(String claimedBy) {
+        this.claimedBy = claimedBy;
+    }
+
+    public Instant getClaimedUntil() {
+        return claimedUntil;
+    }
+
+    public void setClaimedUntil(Instant claimedUntil) {
+        this.claimedUntil = claimedUntil;
     }
 
     public Instant getCreatedAt() {

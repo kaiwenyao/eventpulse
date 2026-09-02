@@ -47,7 +47,29 @@ public class OutboxStatusService {
     }
 
     /**
-     * Kafka 明确确认成功后标记 FAILED。条件 UPDATE 返回 0 行时
+     * 领取一批待发送消息（原子 UPDATE，见 OutboxRepository.claimBatch）。
+     * @Modifying 查询必须在事务里执行：由这里的 @Transactional 提供短事务，
+     * Relay 本身不开事务（Kafka 等待的 12 秒不能占着数据库事务）。
+     */
+    @Transactional
+    public int claimBatch(String token, Instant until, Instant now, int batch) {
+        return outbox.claimBatch(token, until, now, batch);
+    }
+
+    /** 发送前给整批续租：Worker 活着租约就不过期，多 Worker 不会重复处理同一条。 */
+    @Transactional
+    public void renewClaim(String token, Instant until) {
+        outbox.renewClaim(token, until);
+    }
+
+    /** 一轮结束时释放本批剩余租约，其余消息立即可以被任意 Worker 重新领取。 */
+    @Transactional
+    public void releaseAllClaims(String token) {
+        outbox.releaseAllClaims(token);
+    }
+
+    /**
+     * Kafka 明确确认成功后标记已发布。条件 UPDATE 返回 0 行时
      * 只表示「已经没有需要更新的行」，不抛异常、不阻塞 Relay。
      */
     @Transactional
@@ -56,6 +78,22 @@ public class OutboxStatusService {
         if (updated == 0) {
             log.warn("Outbox 已经标记过或不存在 id={}", id);
         }
+    }
+
+    /** 待发送数：published_at 为空且未被隔离。API 的主办方 Dashboard 用它观察积压。 */
+    public long pending() {
+        return outbox.countByPublishedAtIsNullAndFailedAtIsNull();
+    }
+
+    /** 已隔离数：等待人工检查后恢复。 */
+    public long failed() {
+        return outbox.countByFailedAtIsNotNull();
+    }
+
+    /** 最老的待发送消息已经等了多久（秒）。没有待发送消息时返回 0，避免监控字段为 null。 */
+    public Double oldestPendingAgeSeconds() {
+        Double age = outbox.secondsSinceOldestPending();
+        return age == null ? 0d : age;
     }
 
     /**

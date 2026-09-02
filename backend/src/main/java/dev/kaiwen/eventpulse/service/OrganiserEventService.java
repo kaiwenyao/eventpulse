@@ -44,6 +44,7 @@ public class OrganiserEventService {
     private final UserRepository users;
     private final OutboxWriter outbox;
     private final ObjectMapper objectMapper;
+    private final PopularCache popularCache;
 
     public OrganiserEventService(
             EventRepository events,
@@ -53,7 +54,8 @@ public class OrganiserEventService {
             EventService eventService,
             UserRepository users,
             OutboxWriter outbox,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            PopularCache popularCache) {
         this.events = events;
         this.bookings = bookings;
         this.tickets = tickets;
@@ -62,6 +64,7 @@ public class OrganiserEventService {
         this.users = users;
         this.outbox = outbox;
         this.objectMapper = objectMapper;
+        this.popularCache = popularCache;
     }
 
     public PageResult<EventVo> list(String q, String status, String category, Instant from, Instant to, String sort) {
@@ -125,6 +128,7 @@ public class OrganiserEventService {
         event.setUpdatedAt(Instant.now());
         events.save(event);
         audit(event.getId(), "PUBLISH", before, snapshot(event));
+        popularCache.evict();
         return eventService.toVo(event);
     }
 
@@ -150,6 +154,7 @@ public class OrganiserEventService {
             if (bookings.cancelConfirmed(booking.getId()) == 1) {
                 users.creditWallet(booking.getUserId(), booking.getPaidCents());
                 outbox.write(KafkaTopics.BOOKING_EVENTS, "EVENT_CANCELLED",
+                        "booking:" + booking.getId(),
                         "EVENT_CANCELLED:" + id + ":" + booking.getUserId(),
                         Map.of(
                                 "type", "EVENT_CANCELLED",
@@ -161,6 +166,7 @@ public class OrganiserEventService {
             }
         }
         audit(event.getId(), "CANCEL", before, snapshot(event));
+        popularCache.evict();
         return eventService.toVo(event);
     }
 
@@ -177,6 +183,7 @@ public class OrganiserEventService {
         event.setUpdatedAt(Instant.now());
         events.save(event);
         audit(event.getId(), "ARCHIVE", before, snapshot(event));
+        popularCache.evict();
         return eventService.toVo(event);
     }
 

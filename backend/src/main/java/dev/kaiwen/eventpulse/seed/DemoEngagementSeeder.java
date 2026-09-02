@@ -7,7 +7,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import dev.kaiwen.eventpulse.domain.EventStatus;
@@ -41,7 +40,6 @@ import dev.kaiwen.eventpulse.service.TicketService;
  * 截图和测试才不会漂。
  */
 @Component
-@Profile("demo")
 public class DemoEngagementSeeder {
 
     /** 每个活动生成多少天的每日统计，与主办方「数据」页默认的 14 天窗口对齐。 */

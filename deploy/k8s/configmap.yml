@@ -1,0 +1,22 @@
+# 普通配置（非敏感）：所有角色共享一套地址与运行参数。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eventpulse-config
+data:
+  DB_URL: "jdbc:postgresql://postgres:5432/eventpulse"
+  DB_USER: "eventpulse"
+  KAFKA_BOOTSTRAP: "kafka:9092"
+  REDIS_ENABLED: "true"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  CORS_ORIGINS: "https://eventpulse.example.com"
+  # 业务 Topic partition 数：多 Worker 分配消费；本地开发至少 3。
+  KAFKA_PARTITIONS: "3"
+  # SSE 心跳：20~30 秒，小于 Ingress 读超时。
+  SSE_HEARTBEAT_MS: "25000"
+  # Outbox 批量与领取租约。租约按条自动续期，OUTBOX_CLAIM_SECONDS 实际是
+  # Worker 崩溃后其他 Worker 的接管延迟。
+  OUTBOX_BATCH_SIZE: "50"
+  OUTBOX_CLAIM_SECONDS: "60"
+  LIFECYCLE_FIXED_DELAY_MS: "60000"

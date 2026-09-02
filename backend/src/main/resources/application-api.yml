@@ -1,0 +1,23 @@
+# api 角色：只处理 HTTP 与 SSE。不消费 Kafka，不跑 Outbox / 生命周期任务。
+spring:
+  autoconfigure:
+    # 覆盖基础 exclude 列表（profile 文件是整表替换）：禁用 Redis 自动装配（由
+    # RedisConfig 手工管理）之外，再禁用 Kafka —— api 实例不需要任何 Kafka Bean。
+    exclude:
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisReactiveAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.health.DataRedisHealthContributorAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.health.DataRedisReactiveHealthContributorAutoConfiguration
+      - org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration
+
+eventpulse:
+  # SSE 与热门缓存需要 Redis；Redis 短暂不可用时接口回源 PostgreSQL。
+  redis-enabled: ${REDIS_ENABLED:true}
+  sse:
+    # 连接空闲超时：浏览器会自动重连，重连后先走 REST 补偿。
+    timeout-ms: ${SSE_TIMEOUT_MS:1800000}
+    # 心跳：20~30 秒一次，避免代理与负载均衡器掐掉空闲连接。
+    heartbeat-ms: ${SSE_HEARTBEAT_MS:25000}
+    max-connections-per-booking: ${SSE_MAX_PER_BOOKING:5}
+    max-connections-per-user: ${SSE_MAX_PER_USER:20}

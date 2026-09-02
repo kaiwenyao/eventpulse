@@ -43,9 +43,13 @@ spring:
     scheduling:
       pool:
         size: 2
+  lifecycle:
+    # Graceful shutdown: finish in-flight requests and let SSE clients reconnect.
+    timeout-per-shutdown-phase: 20s
 
 server:
   port: 8080
+  shutdown: graceful
 
 management:
   endpoints:
@@ -68,15 +72,4 @@ eventpulse:
   redis-enabled: ${REDIS_ENABLED:false}
   redis-host: ${REDIS_HOST:localhost}
   redis-port: ${REDIS_PORT:6379}
-  outbox:
-    future-wait-seconds: 12
-
----
-spring:
-  config:
-    activate:
-      on-profile: demo
-
-eventpulse:
-  redis-enabled: ${REDIS_ENABLED:true}
-  redis-host: ${REDIS_HOST:redis}
+  seed-name: demo-v1
