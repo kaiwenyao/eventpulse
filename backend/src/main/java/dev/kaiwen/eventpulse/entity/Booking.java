@@ -26,6 +26,10 @@ public class Booking {
     @Column(nullable = false)
     private int quantity;
 
+    /** Amount actually paid from the wallet, in cents. Kept as a price snapshot for refunds. */
+    @Column(name = "paid_cents", nullable = false)
+    private long paidCents;
+
     /** CONFIRMED 已确认；CANCELLED 已取消。创建后立刻确认，并往 Kafka 发一条消息。 */
     @Column(nullable = false)
     private String status;
@@ -69,6 +73,14 @@ public class Booking {
 
     public void setQuantity(int quantity) {
         this.quantity = quantity;
+    }
+
+    public long getPaidCents() {
+        return paidCents;
+    }
+
+    public void setPaidCents(long paidCents) {
+        this.paidCents = paidCents;
     }
 
     public String getStatus() {

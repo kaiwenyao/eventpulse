@@ -19,6 +19,7 @@ import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
+import dev.kaiwen.eventpulse.repository.UserRepository;
 
 @Service
 public class BookingService {
@@ -28,6 +29,7 @@ public class BookingService {
     private final EventRepository events;
     private final TicketService ticketService;
     private final TicketRepository tickets;
+    private final UserRepository users;
     private final OutboxWriter outbox;
 
     public BookingService(
@@ -36,12 +38,14 @@ public class BookingService {
             EventRepository events,
             TicketService ticketService,
             TicketRepository tickets,
+            UserRepository users,
             OutboxWriter outbox) {
         this.bookings = bookings;
         this.eventService = eventService;
         this.events = events;
         this.ticketService = ticketService;
         this.tickets = tickets;
+        this.users = users;
         this.outbox = outbox;
     }
 
@@ -57,6 +61,10 @@ public class BookingService {
         if (request.quantity() > maxQty) {
             throw new BusinessException("单次最多预订 " + maxQty + " 张");
         }
+        long paidCents = Math.multiplyExact((long) event.getPriceCents(), request.quantity());
+        if (users.debitWalletIfEnough(userId, paidCents) == 0) {
+            throw BusinessException.conflict("余额不足");
+        }
         int updated = events.incrementSold(event.getId(), request.quantity());
         if (updated == 0) {
             Event latest = eventService.require(request.eventId());
@@ -68,6 +76,7 @@ public class BookingService {
         booking.setUserId(userId);
         booking.setEventId(event.getId());
         booking.setQuantity(request.quantity());
+        booking.setPaidCents(paidCents);
         booking.setStatus("CONFIRMED");
         booking.setCreatedAt(Instant.now());
         bookings.save(booking);
@@ -105,13 +114,14 @@ public class BookingService {
     @Transactional
     public BookingVo cancel(Long id) {
         Booking booking = requireOwn(id);
-        if (!"CONFIRMED".equals(booking.getStatus())) {
+        if (bookings.cancelConfirmed(booking.getId()) == 0) {
             throw new BusinessException("订单已取消");
         }
         Event event = eventService.require(booking.getEventId());
-        events.decrementSold(event.getId(), booking.getQuantity());
         booking.setStatus("CANCELLED");
         booking.setCancelledAt(Instant.now());
+        users.creditWallet(booking.getUserId(), booking.getPaidCents());
+        events.decrementSold(event.getId(), booking.getQuantity());
         ticketService.cancelForBooking(booking.getId());
         outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CANCELLED", "BOOKING_CANCELLED:" + booking.getId(),
                 Map.of(

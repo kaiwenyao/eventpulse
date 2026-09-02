@@ -265,7 +265,7 @@ Redis 挂了必须回源 PostgreSQL，推荐和列表不能 500。Compose 加 `r
 
 | 表 | 关键字段 |
 | --- | --- |
-| users | email UNIQUE, password (BCrypt), name, role (`USER` / `ORGANISER`), **wallet_cents**（演示钱包余额，分） |
+| users | email UNIQUE, password (BCrypt), name, role (`USER` / `ORGANISER`), **wallet_cents**（站内钱包余额，分） |
 | events | title, description, category, city, starts_at, price_cents, capacity, sold, organiser_id, status, created_at, **location geography(Point,4326)**, **embedding vector(64)** |
 | bookings | user_id, event_id, quantity, status (`CONFIRMED` / `CANCELLED`), created_at |
 | notifications | booking_id, message, created_at |
@@ -468,7 +468,7 @@ CANCELLED → ARCHIVED
 | POST | `/api/auth/login` | 公开 | `{email, password}`；失败 → `"邮箱或密码错误"` |
 | GET | `/api/auth/me` | JWT | `{id, email, name, role}`，不含 password / token |
 | GET | `/api/auth/profile` | JWT | `ProfileVo`：`{id, email, name, role, walletCents, totalSpentCents, bookingCount, ticketCount, favouriteCount, notificationCount}` |
-| POST | `/api/auth/wallet/recharge` | JWT | `{amountCents}`（100–500000，即 ¥1–¥5000）；只加演示余额，不做真实支付；返回 `ProfileVo` |
+| POST | `/api/auth/wallet/recharge` | JWT | `{amountCents}`（100–500000，即 ¥1–¥5000）；模拟充值并增加站内余额，不做真实支付；返回 `ProfileVo` |
 
 register / login 成功返回：
 
@@ -997,7 +997,7 @@ Compose：`postgres`（PostGIS + pgvector）、`redis`、`kafka`、`backend`、`
 - 每张票独立展示二维码与当前核销状态。
 - 按状态管理订单，并在规则允许时取消。
 - 消息中心接收预订、变更、取消、提醒和核销相关通知。
-- 个人中心展示演示钱包余额、累计消费与账户统计（订单 / 电子票 / 收藏 / 消息），支持演示充值。
+- 个人中心展示钱包余额、累计消费与账户统计（订单 / 电子票 / 收藏 / 消息），支持模拟充值。
 - SSE 提供订单和票据状态的实时提示，REST 始终作为事实来源。
 
 ### 17.3 平台可靠性
@@ -1024,7 +1024,7 @@ Compose：`postgres`（PostGIS + pgvector）、`redis`、`kafka`、`backend`、`
 
 ## 18 诚实边界
 
-单节点 Kafka / Redis。演示账号。Outbox 保证最终发出，不保证恰好一次业务副作用（消费者要能重复写通知——用 `dedup_key` 去重即可）。SSE 会断，REST 才是事实。推荐是合成评估，不是点击率承诺。附近依赖主办方填写坐标。退款只做线下标记，不做自动退款。钱包余额是演示数据（注册播种 / 个人中心充值），不接入真实支付与结算；充值只是把演示余额存进 `users.wallet_cents`，订单价格以详情页为准，预订不依赖钱包余额。
+单节点 Kafka / Redis。演示账号。Outbox 保证最终发出，不保证恰好一次业务副作用（消费者要能重复写通知——用 `dedup_key` 去重即可）。SSE 会断，REST 才是事实。推荐是合成评估，不是点击率承诺。附近依赖主办方填写坐标。钱包充值仍为演示数据，不接入真实支付渠道；但预订会在一个事务内按订单金额扣除 `users.wallet_cents`，用户取消订单或主办方取消活动时按订单实付金额自动退款。
 
 这是练习项目：把架构图上的盒子用能讲清的实现跑通，并让主办方到参与者的运营闭环真的能走完，而不是生产订票或生产推荐系统。
 

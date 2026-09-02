@@ -31,11 +31,10 @@ public class AuthService {
     private final TicketRepository tickets;
     private final EventFavouriteRepository favourites;
     private final NotificationRepository notifications;
-    private final EventService eventService;
 
     public AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService,
             BookingRepository bookings, TicketRepository tickets,
-            EventFavouriteRepository favourites, NotificationRepository notifications, EventService eventService) {
+            EventFavouriteRepository favourites, NotificationRepository notifications) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
@@ -43,7 +42,6 @@ public class AuthService {
         this.tickets = tickets;
         this.favourites = favourites;
         this.notifications = notifications;
-        this.eventService = eventService;
     }
 
     @Transactional
@@ -82,7 +80,7 @@ public class AuthService {
         List<Long> bookingIds = mine.stream().map(Booking::getId).toList();
         long spent = mine.stream()
                 .filter(b -> "CONFIRMED".equals(b.getStatus()))
-                .mapToLong(b -> (long) eventService.require(b.getEventId()).getPriceCents() * b.getQuantity())
+                .mapToLong(Booking::getPaidCents)
                 .sum();
         long ticketCount = bookingIds.isEmpty() ? 0 : tickets.countByBookingIdIn(bookingIds);
         return new ProfileVo(
