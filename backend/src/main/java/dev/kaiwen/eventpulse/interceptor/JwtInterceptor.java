@@ -41,7 +41,9 @@ public class JwtInterceptor implements AsyncHandlerInterceptor {
             return unauthorized(response);
         }
         try {
-            Claims claims = jwtService.parseToken(token);
+            // parseLoginToken 拒绝带 purpose 的服务间 token：这类 token 即使泄漏
+            // 也不能在 /api/** 上冒充登录态。
+            Claims claims = jwtService.parseLoginToken(token);
             BaseContext.setUserId(claims.get("userId", Number.class).longValue());
             BaseContext.setRole(claims.get("role", String.class));
             return true;
@@ -76,11 +78,13 @@ public class JwtInterceptor implements AsyncHandlerInterceptor {
         if ("POST".equals(method) && ("/api/auth/login".equals(path) || "/api/auth/register".equals(path))) {
             return true;
         }
-        if ("GET".equals(method) && path.startsWith("/api/events") && !path.equals("/api/events/mine")
-                && !path.contains("/favourite")) {
+        // AI 找活动助手是公开路径：游客可单轮提问；带 Bearer 时由 AiGateway
+        // 自行解析用户身份并加载其会话。
+        if ("POST".equals(method) && "/api/ai/discovery/chat".equals(path)) {
             return true;
         }
-        if ("GET".equals(method) && path.equals("/api/recommendations")) {
+        if ("GET".equals(method) && path.startsWith("/api/events") && !path.equals("/api/events/mine")
+                && !path.contains("/favourite")) {
             return true;
         }
         return "GET".equals(method) && path.startsWith("/api/media/images/");

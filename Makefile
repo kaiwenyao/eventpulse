@@ -1,4 +1,4 @@
-.PHONY: up down stop down-v logs ps infra up-infra seed up-runtime up-distributed test-distributed test test-frontend test-all smoke clean testcontainers-cleanup psql
+.PHONY: up down stop down-v logs ps infra up-infra seed up-runtime up-distributed test-distributed test test-frontend test-ai test-all smoke clean testcontainers-cleanup psql
 
 # 实例数。api 与 worker 默认各 2 个：这个项目要验证的就是多实例行为
 # （SSE 跨实例送达、Outbox 领取租约、Kafka 分区再均衡、Nginx 轮询），
@@ -59,7 +59,11 @@ test:
 test-frontend:
 	cd frontend && npm ci && npm run lint && npm run coverage && npx playwright install --with-deps chromium && npm run e2e
 
-test-all: test test-frontend
+# Python AI 服务测试：模拟 LLM 与工具响应，不调用付费模型、不需要真实 Key。
+test-ai:
+	cd ai-service && uv sync --extra dev && uv run pytest
+
+test-all: test test-frontend test-ai
 
 # Ryuk is disabled for determinism; clean leftover Testcontainers containers.
 # Portable across GNU/BSD xargs (macOS has no xargs -r).

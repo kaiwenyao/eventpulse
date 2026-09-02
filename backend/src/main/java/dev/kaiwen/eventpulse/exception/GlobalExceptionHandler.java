@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import dev.kaiwen.eventpulse.common.Result;
+import dev.kaiwen.eventpulse.service.AiUnavailableException;
 
 /**
  * 统一把异常转成 {@link Result} JSON。
@@ -34,6 +35,16 @@ public class GlobalExceptionHandler {
                 .map(error -> error.getField() + " " + error.getDefaultMessage())
                 .orElse("Invalid request");
         return json(HttpStatus.BAD_REQUEST, message);
+    }
+
+    /**
+     * AI 降级是预期的服务状态（上游不可用 / 未配置 Key），返回 503 而不是 500：
+     * 监控据此区分「AI 暂时不可用」与真实的服务器错误，告警与重试语义才正确。
+     * message 本身面向用户且不含内部细节。
+     */
+    @ExceptionHandler(AiUnavailableException.class)
+    public ResponseEntity<Result<Void>> handleAiUnavailable(AiUnavailableException ex) {
+        return json(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

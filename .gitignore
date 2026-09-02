@@ -26,7 +26,8 @@ frontend/blob-report/
 
 # ML artifacts
 ml/.venv/
-ml/.pytest_cache/
+ai-service/.venv/
+.pytest_cache/
 __pycache__/
 *.pyc
 frontend/coverage/

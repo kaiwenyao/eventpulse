@@ -1192,3 +1192,118 @@ li > .card {
 .recharge-hint {
   margin: var(--space-3) 0 0;
 }
+
+/* ---- AI 助手（活动发现 + 主办方文案） ---- */
+
+.ai-assistant {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: var(--space-4);
+  margin: var(--space-4) 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ai-assistant-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ai-assistant-head h2 {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.ai-assistant-log {
+  max-height: 480px;
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-3);
+  padding-right: 4px;
+}
+
+.ai-turn {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: var(--space-3);
+  background: var(--paper-bg, transparent);
+}
+
+.ai-turn-user {
+  background: var(--n-100, transparent);
+}
+
+.ai-turn-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-turn-events {
+  margin-top: var(--space-3);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ai-event-reason {
+  margin: var(--space-1) 0 0;
+}
+
+.ai-assistant-input {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ai-assistant-input input {
+  flex: 1;
+}
+
+.ai-copy {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: var(--space-3);
+  background: var(--surface);
+  display: grid;
+  gap: var(--space-2);
+  min-width: 260px;
+}
+
+.ai-copy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ai-copy-field {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
+}
+
+.ai-copy-value {
+  grid-column: 1 / -1;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+.ai-copy-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}

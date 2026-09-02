@@ -65,11 +65,6 @@ public class PlatformController {
         return Result.success(platform.nearby(lat, lng, radiusKm));
     }
 
-    @GetMapping("/api/recommendations")
-    public Result<List<EventVo>> recommend() {
-        return Result.success(platform.recommend());
-    }
-
     @GetMapping("/api/organiser/dashboard")
     public Result<Map<String, Object>> dashboard() {
         return Result.success(platform.dashboard());

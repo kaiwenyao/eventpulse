@@ -43,7 +43,6 @@ import dev.kaiwen.eventpulse.entity.Interaction;
 import dev.kaiwen.eventpulse.entity.MediaAsset;
 import dev.kaiwen.eventpulse.entity.Notification;
 import dev.kaiwen.eventpulse.entity.OutboxEvent;
-import dev.kaiwen.eventpulse.entity.RecommendationRequest;
 import dev.kaiwen.eventpulse.entity.Ticket;
 import dev.kaiwen.eventpulse.entity.User;
 import dev.kaiwen.eventpulse.entity.UserPreference;
@@ -60,7 +59,6 @@ import dev.kaiwen.eventpulse.repository.InteractionRepository;
 import dev.kaiwen.eventpulse.repository.MediaAssetRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.repository.OutboxRepository;
-import dev.kaiwen.eventpulse.repository.RecommendationRequestRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
 import dev.kaiwen.eventpulse.repository.UserPreferenceRepository;
 import dev.kaiwen.eventpulse.repository.UserRepository;
@@ -87,7 +85,6 @@ class CrudEnhancementTest {
     @Mock InteractionRepository interactions;
     @Mock EventDailyMetricRepository metrics;
     @Mock UserPreferenceRepository preferences;
-    @Mock RecommendationRequestRepository recs;
     @Mock NotificationRepository notifications;
     @Mock OutboxRepository outboxRepo;
     @Mock UserRepository users;
@@ -244,7 +241,7 @@ class CrudEnhancementTest {
 
         PopularCache popularCache = new PopularCache();
         PlatformService platform = new PlatformService(
-                favourites, interactions, metrics, preferences, recs, notifications, events, bookings, eventService,
+                favourites, interactions, metrics, preferences, notifications, events, bookings, eventService,
                 new InteractionService(interactions, metrics), popularCache);
         when(events.findById(20L)).thenReturn(Optional.of(event(20L, EventStatus.PUBLISHED, 2L)));
         when(favourites.existsByUserIdAndEventId(2L, 20L)).thenReturn(false);
@@ -259,13 +256,10 @@ class CrudEnhancementTest {
         when(events.findByStatusInOrderByStartsAtAsc(any())).thenReturn(List.of(event(20L, EventStatus.PUBLISHED, 2L), noGeo));
         assertThat(platform.nearby(31.2, 121.5, 50d)).isNotEmpty();
         assertThat(platform.nearby(null, null, null)).isNotNull();
-        when(recs.save(any())).thenAnswer(inv -> inv.getArgument(0));
         UserPreference pref = new UserPreference();
         pref.setCategories("music");
         pref.setCities("Shanghai");
         when(preferences.findById(2L)).thenReturn(Optional.of(pref));
-        when(interactions.findByUserIdOrderByCreatedAtDesc(2L)).thenReturn(List.of());
-        assertThat(platform.recommend()).isNotNull();
         assertThat(platform.popular()).isNotEmpty();
         when(events.findByOrganiserIdOrderByStartsAtDesc(2L)).thenReturn(List.of(event(20L, EventStatus.PUBLISHED, 2L)));
         platform.setOutboxStatus(status);
@@ -329,7 +323,6 @@ class CrudEnhancementTest {
         api.favourites();
         api.interact(java.util.Map.of("eventId", 20, "type", "CLICK"));
         api.nearby(31.2, 121.5, 10d);
-        api.recommend();
         api.dashboard();
         api.analytics(20L, LocalDate.now().minusDays(1), LocalDate.now());
         api.eventAnalytics(20L, null, null);
@@ -559,17 +552,6 @@ class CrudEnhancementTest {
         p.setRadiusKm(3d);
         p.setUpdatedAt(Instant.now());
         assertThat(p.getRadiusKm()).isEqualTo(3d);
-        RecommendationRequest r = new RecommendationRequest();
-        r.setId(1L);
-        r.setRequestId("rid");
-        r.setUserId(1L);
-        r.setPartitionKey("p");
-        r.setModelVersion("m");
-        r.setFeatureVersion("f");
-        r.setFrozenCandidates("1");
-        r.setQueriedAt(Instant.now());
-        r.setExpiresAt(Instant.now());
-        assertThat(r.getRequestId()).isEqualTo("rid");
         EventDailyMetric m = new EventDailyMetric();
         m.setEventId(1L);
         m.setMetricDate(LocalDate.now());
@@ -582,6 +564,44 @@ class CrudEnhancementTest {
         m.setCancels(1);
         m.setCheckIns(1);
         assertThat(m.getCheckIns()).isEqualTo(1);
+        // AI 会话 / 消息 / 调用日志实体的字段与回调。
+        dev.kaiwen.eventpulse.entity.AiConversation conversation = new dev.kaiwen.eventpulse.entity.AiConversation();
+        conversation.setUserId(1L);
+        conversation.setKind("discovery");
+        assertThat(conversation.getUserId()).isEqualTo(1L);
+        assertThat(conversation.getKind()).isEqualTo("discovery");
+        assertThat(conversation.getCreatedAt()).isNotNull();
+        assertThat(conversation.getCreatedAt()).isNotNull();
+        assertThat(conversation.getUpdatedAt()).isNotNull();
+        dev.kaiwen.eventpulse.entity.AiMessage message = new dev.kaiwen.eventpulse.entity.AiMessage();
+        message.setConversationId(1L);
+        message.setRole(dev.kaiwen.eventpulse.entity.AiMessage.ROLE_USER);
+        message.setContent("hi");
+        assertThat(message.getConversationId()).isEqualTo(1L);
+        assertThat(message.getRole()).isEqualTo("user");
+        assertThat(message.getContent()).isEqualTo("hi");
+        assertThat(message.getCreatedAt()).isNotNull();
+        dev.kaiwen.eventpulse.entity.AiRequestLog aiLog = new dev.kaiwen.eventpulse.entity.AiRequestLog();
+        aiLog.setRequestId("rid");
+        aiLog.setUserId(1L);
+        aiLog.setFeature("discovery");
+        aiLog.setProvider("openai");
+        aiLog.setModelName("m");
+        aiLog.setStatus("success");
+        aiLog.setErrorCode(null);
+        aiLog.setLatencyMs(12);
+        aiLog.setInputTokens(3);
+        aiLog.setOutputTokens(5);
+        assertThat(aiLog.getRequestId()).isEqualTo("rid");
+        assertThat(aiLog.getFeature()).isEqualTo("discovery");
+        assertThat(aiLog.getProvider()).isEqualTo("openai");
+        assertThat(aiLog.getModelName()).isEqualTo("m");
+        assertThat(aiLog.getStatus()).isEqualTo("success");
+        assertThat(aiLog.getErrorCode()).isNull();
+        assertThat(aiLog.getLatencyMs()).isEqualTo(12);
+        assertThat(aiLog.getInputTokens()).isEqualTo(3);
+        assertThat(aiLog.getOutputTokens()).isEqualTo(5);
+        assertThat(aiLog.getCreatedAt()).isNotNull();
         assertThat(new EventDailyMetric.Key()).isNotEqualTo(new EventDailyMetric.Key(1L, LocalDate.now()));
         assertThat(new EventDailyMetric.Key(1L, LocalDate.now())).isNotEqualTo("x");
         assertThat(new EventDailyMetric.Key(1L, LocalDate.now()).hashCode()).isNotZero();

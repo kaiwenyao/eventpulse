@@ -98,7 +98,6 @@
     "sortSold": "Popularity",
     "modeAria": "Discovery mode",
     "nearby": "Nearby",
-    "recommend": "For you",
     "loading": "Loading events",
     "emptyTitle": "No events yet",
     "emptyHint": "Try another keyword or category, or switch city.",
@@ -426,6 +425,41 @@
       "dropHint": "Drop an image here, or use the button below to choose a file",
       "pickFile": "Choose file",
       "removeCover": "Remove cover"
+    }
+  },
+  "ai": {
+    "discovery": {
+      "entry": "AI Find Events",
+      "title": "AI event discovery assistant",
+      "hint": "Describe what you feel like attending; the assistant only recommends events that really exist in the database.",
+      "empty": "Try asking: “Any beginner-friendly tech events this weekend?”",
+      "placeholder": "Describe the event you are looking for…",
+      "send": "Send",
+      "retry": "Retry",
+      "close": "Collapse assistant",
+      "failed": "The AI assistant is temporarily unavailable. Please try again later or use the normal search.",
+      "guestNote": "Guest questions are independent; sign in so the assistant can keep the conversation context. AI can make mistakes — always check the event page."
+    },
+    "copy": {
+      "entry": "AI polish copy",
+      "title": "AI copy suggestions",
+      "hint": "Suggestions are generated from what you filled in; it will not invent times, venues or prices.",
+      "generate": "Generate suggestions",
+      "regenerate": "Regenerate",
+      "apply": "Apply selected fields",
+      "applied": "Applied the selected suggestions to the form",
+      "close": "Collapse",
+      "retry": "Retry",
+      "failed": "The AI copy assistant is temporarily unavailable. Please try again later.",
+      "warnings": "Missing info / needs confirmation",
+      "emptyField": "(not enough source material for this field)",
+      "confirmNote": "Nothing is saved automatically: review, then save or publish as usual.",
+      "fields": {
+        "title": "Suggested title",
+        "summary": "Short summary",
+        "description": "Full description",
+        "attendanceNotes": "Attendance notes"
+      }
     }
   }
 }

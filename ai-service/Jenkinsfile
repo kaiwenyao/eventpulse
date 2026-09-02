@@ -1,0 +1,201 @@
+// EventPulse ai-service CI — modeled on backend/Jenkinsfile / frontend/Jenkinsfile.
+// Kubernetes cloud agent (Jenkins kubernetes-plugin injects the jnlp sidecar):
+//   - uv:  sync locked deps (uv.lock), run pytest — all LLM / tool responses are
+//     scripted, so CI never calls a paid model and needs no real API key.
+//   - docker: on main, build & push ghcr.io/<user>/eventpulse-ai-service:<short-sha>
+//     (same tagging as backend / frontend: commit short SHA, no `latest`).
+//
+// Cluster assumptions: cloud name `kubernetes`, the shared RWX PVC
+// `jenkins-maven-cache` (reused with a subPath for the uv cache), and a
+// Docker-enabled node exposing /var/run/docker.sock.
+pipeline {
+    agent {
+        kubernetes {
+            cloud 'kubernetes'
+            defaultContainer 'uv'
+            // -----------------------------------------------------------------------------
+            // Pod definition. Two workload containers (uv + docker); Jenkins injects jnlp.
+            //
+            // uv container (same base image as ai-service/Dockerfile):
+            //   - `command: sleep` replaces the image's `uv` ENTRYPOINT, so Jenkins'
+            //     keep-alive process works unchanged.
+            //   - Mounted volume: the shared RWX PVC for the uv download cache
+            //     (subPath keeps it separate from the Maven repository cache).
+            //
+            // docker container (docker:27-cli is Alpine and has /bin/sh):
+            //   - on main, builds and pushes the ai-service image to GHCR.
+            // -----------------------------------------------------------------------------
+            yaml '''
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    jenkins/label: eventpulse-ai-service-build
+spec:
+  containers:
+    - name: uv
+      # Same base image as ai-service/Dockerfile: uv + Python 3.12.
+      image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+      command:
+        - sleep
+      args:
+        - "9999999"
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: "250m"
+          memory: 512Mi
+        limits:
+          cpu: "1000m"
+          memory: 2Gi
+      env:
+        # CI never touches a real LLM: tests use scripted fake models / fake
+        # backends (see tests/conftest.py). Same values as the conftest defaults,
+        # set explicitly so an agent-level env var cannot leak a real key in.
+        - name: LLM_API_KEY
+          value: "test-key"
+        - name: SERVICE_TOKEN
+          value: "service-token"
+        - name: BACKEND_SERVICE_TOKEN
+          value: "internal-token"
+        - name: BACKEND_INTERNAL_URL
+          value: "http://backend.test"
+      volumeMounts:
+        # uv download cache — shared NFS PVC (jenkins-maven-cache), isolated via
+        # subPath so it does not mix with the Maven repository tree.
+        - mountPath: /root/.cache/uv
+          name: uv-cache
+          subPath: uv-cache
+    - name: docker
+      image: docker:27-cli
+      command:
+        - sleep
+      args:
+        - "9999999"
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: "100m"
+          memory: 128Mi
+        limits:
+          cpu: "500m"
+          memory: 256Mi
+      volumeMounts:
+        - mountPath: /var/run/docker.sock
+          name: docker-sock
+  volumes:
+    - name: uv-cache
+      persistentVolumeClaim:
+        claimName: jenkins-maven-cache
+    - name: docker-sock
+      hostPath:
+        path: /var/run/docker.sock
+'''
+        }
+    }
+
+    options {
+        skipDefaultCheckout()
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+        // Serialize against the shared cache PVC and the host Docker socket.
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        CI = 'true'
+    }
+
+    stages {
+        stage('1. Pull Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('AI Service CI') {
+            when {
+                anyOf {
+                    changeset pattern: 'ai-service/**'
+                    triggeredBy 'UserIdCause'
+                }
+            }
+            stages {
+                stage('2. Sync Dependencies') {
+                    steps {
+                        container('uv') {
+                            dir('ai-service') {
+                                sh '''
+                                uv --version
+                                python --version
+                                # --frozen: never drift from uv.lock (same as the Dockerfile
+                                # and .github/workflows/ci.yml). --extra dev pulls in pytest.
+                                uv sync --frozen --extra dev
+                                '''
+                            }
+                        }
+                    }
+                }
+
+                stage('3. Pytest') {
+                    steps {
+                        container('uv') {
+                            dir('ai-service') {
+                                sh '''
+                                echo "Running pytest (scripted LLM / backend, no real API key)"
+                                uv run pytest --junitxml=junit-report.xml
+                                '''
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            junit testResults: 'ai-service/junit-report.xml', allowEmptyResults: false
+                        }
+                    }
+                }
+
+            }
+        }
+
+        stage('4. Build & Push Image') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('docker') {
+                    script {
+                        // Shared with backend / frontend: usernamePassword `ghcr-token`
+                        // (GitHub user + classic PAT with write:packages). Tag is the
+                        // commit short SHA — immutable, no `latest`.
+                        withCredentials([usernamePassword(credentialsId: 'ghcr-token', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_PASS')]) {
+                            def gitCommit = (env.GIT_COMMIT ?: '').trim()
+                            if (!(gitCommit ==~ /^[0-9a-f]{7,40}$/)) {
+                                error("GIT_COMMIT is missing or invalid (got: ${gitCommit})")
+                            }
+                            env.FULL_IMAGE = "ghcr.io/${env.GHCR_USER.toLowerCase()}/eventpulse-ai-service:${gitCommit.take(7)}"
+                            echo "Pushing ${env.FULL_IMAGE}"
+                            sh 'echo "$GHCR_PASS" | docker login ghcr.io -u "$GHCR_USER" --password-stdin'
+                            dir('ai-service') {
+                                sh '''
+                                # Build context is ai-service/ (its own Dockerfile, uv.lock-pinned).
+                                docker build -t "$FULL_IMAGE" .
+                                docker push "$FULL_IMAGE"
+                                '''
+                            }
+                            sh 'docker logout ghcr.io'
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}

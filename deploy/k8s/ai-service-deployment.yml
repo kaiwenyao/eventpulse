@@ -1,0 +1,87 @@
+# AI Service Deployment：Python（FastAPI + LangChain），与 Spring Boot 镜像分开。
+# - ClusterIP-only（见 ai-service-service.yml），不在 Ingress 暴露公网路径。
+# - LLM_API_KEY 只进这个容器的环境（生产应换用 Secret / external-secrets）。
+# - 无状态：会话由 Spring Boot 持久化到 PostgreSQL，因此可以随时扩副本。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventpulse-ai-service
+  labels:
+    app: eventpulse-ai-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eventpulse-ai-service
+  template:
+    metadata:
+      labels:
+        app: eventpulse-ai-service
+    spec:
+      containers:
+        - name: ai-service
+          image: eventpulse/ai-service:v1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8090
+          env:
+            - name: LLM_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  name: eventpulse-ai-config
+                  key: LLM_PROVIDER
+            - name: LLM_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: eventpulse-ai-config
+                  key: LLM_MODEL
+            - name: LLM_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: eventpulse-ai-config
+                  key: LLM_BASE_URL
+                  optional: true
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: eventpulse-ai-secret
+                  key: LLM_API_KEY
+                  optional: true
+            - name: LLM_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: eventpulse-ai-config
+                  key: LLM_TIMEOUT_SECONDS
+            - name: BACKEND_INTERNAL_URL
+              value: "http://eventpulse-api:8080"
+            - name: BACKEND_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: eventpulse-secret
+                  key: AI_INTERNAL_TOKEN
+            - name: SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: eventpulse-secret
+                  key: AI_SERVICE_TOKEN
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi

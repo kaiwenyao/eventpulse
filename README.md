@@ -130,22 +130,27 @@ make down        # 停掉全部容器并删数据卷；下次 make up 会重跑�
 `deploy/k8s/` 下是同一镜像的三种角色清单：
 
 ```text
-configmap.yml         普通配置（数据库 / Kafka / Redis 地址、partition、心跳、批量）
-secret.example.yml    敏感配置示例（DB_PASSWORD / SECRET_KEY），复制为 secret.yml 使用
+configmap.yml         普通配置（数据库 / Kafka / Redis 地址、partition、心跳、批量、AI 网关地址）
+ai-configmap.yml      AI 服务非敏感配置（LLM provider / model / 超时）
+secret.example.yml    敏感配置示例（DB_PASSWORD / SECRET_KEY / AI 服务间凭证），复制为 secret.yml 使用
 api-deployment.yml    api，2 副本，readiness/liveness 分离，优雅停机 40s
 api-service.yml       ClusterIP Service
 worker-deployment.yml worker，第一版 1 副本（可安全扩到 2），只暴露 Actuator
 seeder-job.yml        Job（名称带版本，backoffLimit=3，restartPolicy=Never）
+ai-service-deployment.yml  Python AI 服务（FastAPI + LangChain），1 副本起，可扩
+ai-service-service.yml     ClusterIP Service（仅集群内，不在 Ingress 暴露）
 ingress.yml           /api 转发到 api Service；关闭缓冲、放长超时以支持 SSE
 ```
 
 ```bash
-kubectl apply -f deploy/k8s/configmap.yml
+kubectl apply -f deploy/k8s/configmap.yml -f deploy/k8s/ai-configmap.yml
 kubectl apply -f deploy/k8s/secret.example.yml   # 先填好真实值或换成 sealed-secrets
 kubectl apply -f deploy/k8s/seeder-job.yml
 kubectl wait --for=condition=complete job/eventpulse-seeder-v1 --timeout=300s
 kubectl apply -f deploy/k8s/api-deployment.yml -f deploy/k8s/api-service.yml \
-              -f deploy/k8s/worker-deployment.yml -f deploy/k8s/ingress.yml
+              -f deploy/k8s/worker-deployment.yml \
+              -f deploy/k8s/ai-service-deployment.yml -f deploy/k8s/ai-service-service.yml \
+              -f deploy/k8s/ingress.yml
 ```
 
 发布流程：先等 Seeder Job 成功（`kubectl wait ... condition=complete`），
@@ -153,6 +158,40 @@ kubectl apply -f deploy/k8s/api-deployment.yml -f deploy/k8s/api-service.yml \
 镜像名目前是占位的 `eventpulse/backend:v1.0`，发布前替换成 registry 实际镜像
 （例如 `ghcr.io/<owner>/eventpulse-backend:<commit-sha>`）。
 所有 API 实例共享同一 `SECRET_KEY`，api / worker / seeder 共用同一套数据库连接。
+
+## AI 助手
+
+AI 是运行时调用的外部 LLM 能力（不训练模型、不做向量化）。架构：
+
+```text
+浏览器 ──> Spring Boot /api/ai/** ──> Python AI Service ──> 外部 LLM
+                      │  （Agent 需要业务数据时）
+                      └────< /internal/ai-tools/**（服务间凭证 + 短期签名用户上下文）──> PostgreSQL
+```
+
+两个功能：
+
+| 功能 | 入口 | 说明 |
+| --- | --- | --- |
+| 主办方文案完善 | `POST /api/ai/organiser/improve-event`（JWT ORGANISER） | 普通 LLM 调用 + 结构化输出；建议先在前端确认，再走普通保存/发布接口；不自动保存 |
+| 自然语言找活动 | `POST /api/ai/discovery/chat`（可选 JWT） | LangChain Agent 通过只读工具查真实活动；登录用户的会话存 PostgreSQL，游客单轮；Spring Boot 返回前再次复核活动可见性 |
+
+边界与降级：
+
+- 浏览器永远不直接访问 Python 服务；LLM API Key 只存在于 ai-service 的 Secret。
+- `/internal/**` 需要服务间凭证，不经公网 Ingress 暴露；userId 来自 Spring Boot
+  签发的短期 token，模型与请求体都决定不了身份。
+- 未配置 `LLM_API_KEY` 时 AI 接口明确返回不可用，普通搜索、编辑、预订不受影响。
+- 限流（用户/IP 每分钟）、工具调用次数、输入输出长度、超时与重试都有上限；
+  LLM 输出按不可信数据处理，编造或已下架的活动 ID 会被丢弃。
+- 全链路记录 `ai_requests`（状态、耗时、token 用量），不含密钥与完整提示词。
+
+配置在 `.env.example` 的 `AI` 段（provider / model / key / base_url / 超时 /
+服务间凭证）。模型是 OpenAI 兼容的任意网关均可（配 `LLM_BASE_URL`）；
+**reasoning 类模型（如 deepseek-v4）注意**：思考 token 计入
+`LLM_MAX_OUTPUT_TOKENS` 输出预算，预算太小（如 1024）会导致空回复，
+默认已设 4096。本地调试：`make up` 后打开 http://localhost:3000，
+首页「AI 找活动」即可提问；主办方登录后进活动表单页点「AI 完善文案」。
 
 ## 本地开发
 
@@ -180,7 +219,12 @@ mvn -pl backend spring-boot:run -Dspring-boot.run.profiles=seeder
 ```
 
 ```bash
-# 终端 4
+# 终端 4：Python AI 服务（LLM_API_KEY 留空时 AI 明确显示不可用）
+cd ai-service && uv sync && uv run uvicorn app.main:app --port 8090
+```
+
+```bash
+# 终端 5
 cd frontend && npm ci && npm run dev
 ```
 
@@ -219,12 +263,20 @@ Authorization 头、指数退避自动重连），收到提醒后重新拉取 RE
 | `*ProfileWiringIT` | api / worker / seeder 三个 Profile 各自装配了什么、排除了什么 |
 | `JwtInterceptorAsyncTest` | SSE 异步请求的 ThreadLocal 清理、线程复用不串身份 |
 | `BookingConcurrencyIT` | 并发下单不超卖 |
+| `AiMigrationIT` | V9 迁移：全新建库 + 旧库升级两条路径，旧推荐表被删除 |
+| `AiGatewayServiceTest` / `AiServiceClientTest` / `InternalServiceInterceptorTest` | AI 网关限流、活动复核、编造 ID 过滤、服务间认证 |
+
+Python AI 服务的测试（模拟 LLM 与工具响应，CI 不调用付费模型、不需要真实 Key）：
+
+```bash
+make test-ai
+```
 
 ```bash
 make testcontainers-cleanup  # 清掉 Testcontainers 残留容器
 make test                    # 后端 mvn verify（单测 + IT + JaCoCo 90% 线覆盖门槛）
 make test-frontend           # ESLint + Vitest + Playwright
-make test-all                # 上面两层
+make test-all                # 后端 + 前端 + AI 服务三层
 ```
 
 整栈冒烟（需要本机 `curl` 和 `python3`）：
