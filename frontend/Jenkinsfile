@@ -1,8 +1,8 @@
 // EventPulse frontend CI — modeled on dublin-bikes/frontend/Jenkinsfile.
 // Kubernetes cloud agent (Jenkins kubernetes-plugin injects the jnlp sidecar):
 //   - node:  install deps, lint, unit tests + coverage, production build, Playwright smoke.
-//   - docker: build & tag the frontend image via the host-node Docker socket.
-// CI only: tests + build. Deployment is intentionally NOT part of this pipeline.
+//   - docker: on main, build & push ghcr.io/<user>/eventpulse-frontend:<short-sha>
+//     (same tagging as nightdeal: commit short SHA, no latest).
 //
 // Cluster assumptions: cloud name `kubernetes`, and a Docker-enabled node
 // exposing /var/run/docker.sock (needed only for the image-build stage).
@@ -16,8 +16,9 @@ pipeline {
             //
             // node container: npm ci, ESLint, Vitest unit tests (jsdom, no backend needed),
             // production build, Playwright chromium smoke (installs OS deps on first run).
-            // docker container: docker:27-cli is Alpine and has /bin/sh; talks to the
-            // host-node daemon through the mounted socket.
+            // docker container: docker:27-cli is Alpine and has /bin/sh; on main it
+            // talks to the host-node daemon through the mounted socket to build and
+            // push ghcr.io/<user>/eventpulse-frontend:<short-sha>.
             // -----------------------------------------------------------------------------
             yaml '''
 apiVersion: v1
@@ -72,11 +73,6 @@ spec:
         skipDefaultCheckout()
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
-    }
-
-    parameters {
-        string(name: 'IMAGE_NAME', defaultValue: 'eventpulse/frontend', description: 'Docker image name (built & tagged locally, never pushed — CI only)')
-        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Image tag override (empty means branch-gitHash-jBUILD_NUMBER, e.g. main-abc1234-j88)')
     }
 
     environment {
@@ -167,31 +163,33 @@ spec:
                     }
                 }
 
-                stage('6. Build Docker Image') {
-                    steps {
-                        container('docker') {
-                            script {
-                                def imageName = (params.IMAGE_NAME ?: '').trim()
-                                if (!(imageName ==~ /^[a-z0-9][a-z0-9._\/-]{0,127}$/)) {
-                                    error("IMAGE_NAME must be a docker repository name (got: ${imageName})")
-                                }
-                                def branch = (env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown')
-                                    .replaceFirst(/^origin\//, '')
-                                    .replaceAll('/', '-')
-                                def gitHash = (env.GIT_COMMIT ?: '0000000').take(7)
-                                def defaultTag = "${branch}-${gitHash}-j${env.BUILD_NUMBER}"
-                                def finalTag = params.IMAGE_TAG?.trim() ? params.IMAGE_TAG.trim() : defaultTag
-                                if (!(finalTag ==~ /^[A-Za-z0-9._-]{1,128}$/)) {
-                                    error("IMAGE_TAG must match [A-Za-z0-9._-] (got: ${finalTag})")
-                                }
-                                env.FULL_IMAGE = "${imageName}:${finalTag}"
+            }
+        }
+
+        stage('6. Build & Push Image') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('docker') {
+                    script {
+                        // Shared with nightdeal / vimpaste: usernamePassword `ghcr-token`
+                        // (GitHub user + classic PAT with write:packages). Tag is the
+                        // commit short SHA — immutable, no `latest`.
+                        withCredentials([usernamePassword(credentialsId: 'ghcr-token', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_PASS')]) {
+                            def gitCommit = (env.GIT_COMMIT ?: '').trim()
+                            if (!(gitCommit ==~ /^[0-9a-f]{7,40}$/)) {
+                                error("GIT_COMMIT is missing or invalid (got: ${gitCommit})")
                             }
-                            // Build context is the repo root (matches docker-compose.yml and the
-                            // frontend Dockerfile COPY paths).
+                            env.FULL_IMAGE = "ghcr.io/${env.GHCR_USER.toLowerCase()}/eventpulse-frontend:${gitCommit.take(7)}"
+                            echo "Pushing ${env.FULL_IMAGE}"
+                            sh 'echo "$GHCR_PASS" | docker login ghcr.io -u "$GHCR_USER" --password-stdin'
                             sh '''
+                            # Build context is the repo root (matches docker-compose.yml).
                             docker build -f deploy/frontend/Dockerfile -t "$FULL_IMAGE" .
-                            echo "Built image: $FULL_IMAGE"
+                            docker push "$FULL_IMAGE"
                             '''
+                            sh 'docker logout ghcr.io'
                         }
                     }
                 }

@@ -1,8 +1,8 @@
 // EventPulse backend CI — modeled on dublin-bikes/backend/Jenkinsfile.
 // Kubernetes cloud agent (Jenkins kubernetes-plugin injects the jnlp sidecar):
 //   - maven:  compile, unit tests, Testcontainers integration tests, coverage (JDK 21 + Maven).
-//   - docker: build & tag the backend image via the host-node Docker socket.
-// CI only: tests + build. Deployment is intentionally NOT part of this pipeline.
+//   - docker: on main, build & push ghcr.io/<user>/eventpulse-backend:<short-sha>
+//     (same tagging as nightdeal: commit short SHA, no latest).
 //
 // Cluster assumptions: cloud name `kubernetes`, RWX PVC `jenkins-maven-cache`,
 // and a Docker-enabled node exposing /var/run/docker.sock (not plain containerd).
@@ -26,7 +26,7 @@ pipeline {
             //     dependency cache) and the host-node Docker socket for Testcontainers.
             //
             // docker container (docker:27-cli is Alpine and has /bin/sh):
-            //   - builds and tags the backend image (no registry push, CI only).
+            //   - on main, builds and pushes the backend image to GHCR.
             // -----------------------------------------------------------------------------
             yaml '''
 apiVersion: v1
@@ -107,11 +107,6 @@ spec:
         timestamps()
         // Serialize against the shared Maven PVC and the host Docker socket.
         disableConcurrentBuilds()
-    }
-
-    parameters {
-        string(name: 'IMAGE_NAME', defaultValue: 'eventpulse/backend', description: 'Docker image name (built & tagged locally, never pushed — CI only)')
-        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Image tag override (empty means branch-gitHash-jBUILD_NUMBER, e.g. main-abc1234-j88)')
     }
 
     environment {
@@ -222,32 +217,35 @@ spec:
                     }
                 }
 
-                stage('6. Build Docker Image') {
-                    steps {
-                        container('docker') {
-                            script {
-                                def imageName = (params.IMAGE_NAME ?: '').trim()
-                                if (!(imageName ==~ /^[a-z0-9][a-z0-9._\/-]{0,127}$/)) {
-                                    error("IMAGE_NAME must be a docker repository name (got: ${imageName})")
-                                }
-                                def branch = (env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown')
-                                    .replaceFirst(/^origin\//, '')
-                                    .replaceAll('/', '-')
-                                def gitHash = (env.GIT_COMMIT ?: '0000000').take(7)
-                                def defaultTag = "${branch}-${gitHash}-j${env.BUILD_NUMBER}"
-                                def finalTag = params.IMAGE_TAG?.trim() ? params.IMAGE_TAG.trim() : defaultTag
-                                if (!(finalTag ==~ /^[A-Za-z0-9._-]{1,128}$/)) {
-                                    error("IMAGE_TAG must match [A-Za-z0-9._-] (got: ${finalTag})")
-                                }
-                                env.FULL_IMAGE = "${imageName}:${finalTag}"
+            }
+        }
+
+        stage('6. Build & Push Image') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('docker') {
+                    script {
+                        // Shared with nightdeal / vimpaste: usernamePassword `ghcr-token`
+                        // (GitHub user + classic PAT with write:packages). Tag is the
+                        // commit short SHA — immutable, no `latest`.
+                        withCredentials([usernamePassword(credentialsId: 'ghcr-token', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_PASS')]) {
+                            def gitCommit = (env.GIT_COMMIT ?: '').trim()
+                            if (!(gitCommit ==~ /^[0-9a-f]{7,40}$/)) {
+                                error("GIT_COMMIT is missing or invalid (got: ${gitCommit})")
                             }
+                            env.FULL_IMAGE = "ghcr.io/${env.GHCR_USER.toLowerCase()}/eventpulse-backend:${gitCommit.take(7)}"
+                            echo "Pushing ${env.FULL_IMAGE}"
+                            sh 'echo "$GHCR_PASS" | docker login ghcr.io -u "$GHCR_USER" --password-stdin'
                             dir('backend') {
                                 sh '''
                                 # Build context is backend/ (matches docker-compose.yml).
                                 docker build -f ../deploy/backend/Dockerfile -t "$FULL_IMAGE" .
-                                echo "Built image: $FULL_IMAGE"
+                                docker push "$FULL_IMAGE"
                                 '''
                             }
+                            sh 'docker logout ghcr.io'
                         }
                     }
                 }
