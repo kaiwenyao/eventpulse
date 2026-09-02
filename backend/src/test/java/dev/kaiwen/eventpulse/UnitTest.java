@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -42,6 +43,7 @@ import dev.kaiwen.eventpulse.common.AppProperties;
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.common.PageResult;
 import dev.kaiwen.eventpulse.common.Result;
+import dev.kaiwen.eventpulse.domain.TicketStatus;
 import dev.kaiwen.eventpulse.dto.AuthDtos.LoginRequest;
 import dev.kaiwen.eventpulse.dto.AuthDtos.RegisterRequest;
 import dev.kaiwen.eventpulse.dto.AuthDtos.WalletRechargeRequest;
@@ -51,6 +53,7 @@ import dev.kaiwen.eventpulse.entity.Booking;
 import dev.kaiwen.eventpulse.entity.Event;
 import dev.kaiwen.eventpulse.entity.Interaction;
 import dev.kaiwen.eventpulse.entity.Notification;
+import dev.kaiwen.eventpulse.entity.Ticket;
 import dev.kaiwen.eventpulse.entity.User;
 import dev.kaiwen.eventpulse.exception.BusinessException;
 import dev.kaiwen.eventpulse.exception.GlobalExceptionHandler;
@@ -161,7 +164,7 @@ class UnitTest {
         String token = jwt.createToken(3L, "ORGANISER");
         assertThat(jwt.parseToken(token).get("userId", Number.class).longValue()).isEqualTo(3L);
 
-        AuthService auth = new AuthService(users, passwordEncoder, jwt, bookings, tickets, favourites, notifications, new EventService(events));
+        AuthService auth = new AuthService(users, passwordEncoder, jwt, bookings, tickets, favourites, notifications);
         when(users.existsByEmail("a@b.c")).thenReturn(true);
         assertThatThrownBy(() -> auth.register(new RegisterRequest("a@b.c", "123456", "A")))
                 .isInstanceOf(BusinessException.class);
@@ -193,13 +196,19 @@ class UnitTest {
         assertThatThrownBy(() -> auth.me(99L)).isInstanceOf(BusinessException.class);
 
         // 个人中心：余额 + 账户统计 + 演示充值。
-        when(bookings.findByUserIdOrderByCreatedAtDesc(2L)).thenReturn(List.of());
+        Booking paidBooking = booking(50L, 2L, 1L, 1, "CONFIRMED");
+        when(bookings.findByUserIdOrderByCreatedAtDesc(2L)).thenReturn(List.of(paidBooking));
         when(favourites.countByUserId(2L)).thenReturn(2L);
         when(notifications.countByUserId(2L)).thenReturn(3L);
         assertThat(auth.profile(2L).walletCents()).isEqualTo(0);
+        assertThat(auth.profile(2L).totalSpentCents()).isEqualTo(100);
         assertThat(auth.profile(2L).favouriteCount()).isEqualTo(2);
         assertThat(auth.profile(2L).notificationCount()).isEqualTo(3);
         WalletRechargeRequest recharge = new WalletRechargeRequest(50000);
+        when(users.rechargeWalletWithinLimit(2L, 50000L, 10_000_000_000L)).thenAnswer(inv -> {
+            stored.setWalletCents(stored.getWalletCents() + inv.getArgument(1, Long.class));
+            return 1;
+        });
         assertThat(auth.recharge(2L, recharge).walletCents()).isEqualTo(50000);
         assertThat(stored.getWalletCents()).isEqualTo(50000);
     }
@@ -242,8 +251,6 @@ class UnitTest {
         assertThatThrownBy(() -> service.update(1L, new EventRequest("x", "", "art", "上海", Instant.now(), 1, 1)))
                 .isInstanceOf(BusinessException.class);
         assertThat(service.update(1L, req).title()).isEqualTo("新活动");
-        service.cancel(1L);
-        assertThat(published.getStatus()).isEqualTo("CANCELLED");
 
         BaseContext.setUserId(2L);
         assertThatThrownBy(() -> service.update(1L, req)).isInstanceOf(BusinessException.class);
@@ -252,9 +259,13 @@ class UnitTest {
     @Test
     void bookingAndKafka() {
         EventService eventService = new EventService(events);
-        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, outbox);
+        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
         when(events.incrementSold(any(), anyInt())).thenReturn(1);
-        when(events.decrementSold(any(), anyInt())).thenReturn(1);
+        when(events.decrementSoldForCustomerCancellation(any(), anyInt())).thenReturn(1);
+        when(users.debitWalletIfEnough(any(), anyLong())).thenReturn(1);
+        when(users.creditWallet(any(), anyLong())).thenReturn(1);
+        when(bookings.cancelConfirmed(any())).thenReturn(1, 0);
+        when(ticketService.lockForBooking(any())).thenReturn(List.of());
         when(tickets.countByBookingIdAndStatus(any(), any())).thenReturn(0L);
         when(ticketService.issue(any(), any(), anyInt())).thenReturn(List.of());
 
@@ -281,6 +292,10 @@ class UnitTest {
             return b;
         });
         assertThat(service.create(new CreateBookingRequest(3L, 2)).status()).isEqualTo("CONFIRMED");
+        ArgumentCaptor<Booking> createdBooking = ArgumentCaptor.forClass(Booking.class);
+        verify(bookings).save(createdBooking.capture());
+        assertThat(createdBooking.getValue().getPaidCents()).isEqualTo(200L);
+        verify(users).debitWalletIfEnough(7L, 200L);
         verify(outbox).write(anyString(), eq("BOOKING_CREATED"), anyString(), any());
 
         Booking mine = booking(11L, 7L, 3L, 2, "CONFIRMED");
@@ -296,7 +311,8 @@ class UnitTest {
         assertThatThrownBy(() -> service.get(13L)).isInstanceOf(BusinessException.class);
 
         assertThat(service.cancel(11L).status()).isEqualTo("CANCELLED");
-        verify(events).decrementSold(3L, 2);
+        verify(events).decrementSoldForCustomerCancellation(3L, 2);
+        verify(users).creditWallet(7L, 200L);
         assertThatThrownBy(() -> service.cancel(11L)).isInstanceOf(BusinessException.class);
 
         when(events.incrementSold(any(), anyInt())).thenReturn(0);
@@ -308,6 +324,69 @@ class UnitTest {
         mine.setStatus("CONFIRMED");
         assertThat(service.tickets(11L)).isEmpty();
         service.toPublic(mine);
+    }
+
+    @Test
+    void insufficientWalletDoesNotCreateOrderAfterInventoryReservation() {
+        EventService eventService = new EventService(events);
+        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
+        BaseContext.setUserId(7L);
+        Event open = event(3L, "可订", "music", "上海", 0, 10, 1L, "PUBLISHED");
+        when(events.findById(3L)).thenReturn(Optional.of(open));
+        when(events.incrementSold(3L, 2)).thenReturn(1);
+        when(users.debitWalletIfEnough(7L, 200L)).thenReturn(0);
+
+        assertThatThrownBy(() -> service.create(new CreateBookingRequest(3L, 2)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+
+        verify(events).incrementSold(3L, 2);
+        verify(bookings, never()).save(any());
+        verify(ticketService, never()).issue(any(), any(), anyInt());
+        verify(outbox, never()).write(anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void checkedInTicketCannotBeCancelledOrRefunded() {
+        EventService eventService = new EventService(events);
+        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
+        BaseContext.setUserId(7L);
+        Booking booking = booking(11L, 7L, 3L, 1, "CONFIRMED");
+        Event event = event(3L, "可订", "music", "上海", 1, 10, 1L, "PUBLISHED");
+        Ticket checkedIn = new Ticket();
+        checkedIn.setStatus(TicketStatus.CHECKED_IN);
+        when(bookings.findById(11L)).thenReturn(Optional.of(booking));
+        when(events.findById(3L)).thenReturn(Optional.of(event));
+        when(events.decrementSoldForCustomerCancellation(3L, 1)).thenReturn(1);
+        when(ticketService.lockForBooking(11L)).thenReturn(List.of(checkedIn));
+
+        assertThatThrownBy(() -> service.cancel(11L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+
+        verify(bookings, never()).cancelConfirmed(11L);
+        verify(users, never()).creditWallet(7L, 100L);
+        verify(ticketService, never()).cancelLocked(any());
+    }
+
+    @Test
+    void customerCancellationRequiresAnUpcomingPublishedEvent() {
+        EventService eventService = new EventService(events);
+        BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
+        BaseContext.setUserId(7L);
+        Booking booking = booking(11L, 7L, 3L, 1, "CONFIRMED");
+        Event event = event(3L, "已开始", "music", "上海", 1, 10, 1L, "ONGOING");
+        when(bookings.findById(11L)).thenReturn(Optional.of(booking));
+        when(events.findById(3L)).thenReturn(Optional.of(event));
+        when(events.decrementSoldForCustomerCancellation(3L, 1)).thenReturn(0);
+
+        assertThatThrownBy(() -> service.cancel(11L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+
+        verify(ticketService, never()).lockForBooking(any());
+        verify(bookings, never()).cancelConfirmed(11L);
+        verify(users, never()).creditWallet(anyLong(), anyLong());
     }
 
     @Test
@@ -435,7 +514,7 @@ class UnitTest {
     @Test
     void controllersAndConfig() {
         AuthService auth = new AuthService(users, passwordEncoder, new JwtService(new AppProperties()),
-                bookings, tickets, favourites, notifications, new EventService(events));
+                bookings, tickets, favourites, notifications);
         when(users.existsByEmail("n@b.c")).thenReturn(false);
         when(passwordEncoder.encode(anyString())).thenReturn("hash");
         when(users.save(any())).thenAnswer(inv -> {
@@ -472,13 +551,16 @@ class UnitTest {
         });
         assertThat(eventsApi.create(req).getData().id()).isEqualTo(2L);
         assertThat(eventsApi.update(1L, req).getCode()).isEqualTo(1);
-        assertThat(eventsApi.cancel(1L).getCode()).isEqualTo(1);
 
         when(events.incrementSold(any(), anyInt())).thenReturn(1);
-        when(events.decrementSold(any(), anyInt())).thenReturn(1);
+        when(events.decrementSoldForCustomerCancellation(any(), anyInt())).thenReturn(1);
+        when(users.debitWalletIfEnough(any(), anyLong())).thenReturn(1);
+        when(users.creditWallet(any(), anyLong())).thenReturn(1);
+        when(bookings.cancelConfirmed(any())).thenReturn(1);
+        when(ticketService.lockForBooking(any())).thenReturn(List.of());
         when(tickets.countByBookingIdAndStatus(any(), any())).thenReturn(0L);
         when(ticketService.issue(any(), any(), anyInt())).thenReturn(List.of());
-        BookingService bookingService = new BookingService(bookings, eventService, events, ticketService, tickets, outbox);
+        BookingService bookingService = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
         BookingController bookingsApi = new BookingController(bookingService);
         when(bookings.save(any())).thenAnswer(inv -> {
             Booking b = inv.getArgument(0);
@@ -555,6 +637,7 @@ class UnitTest {
         booking.setUserId(userId);
         booking.setEventId(eventId);
         booking.setQuantity(quantity);
+        booking.setPaidCents((long) quantity * 100);
         booking.setStatus(status);
         booking.setCreatedAt(Instant.parse("2026-08-31T00:00:00Z"));
         return booking;

@@ -12,8 +12,8 @@ function initials(name?: string, email?: string) {
 }
 
 /**
- * 个人中心：基本信息、演示钱包余额、充值，以及账户里各维度的统计。
- * 钱包是演示功能，不接真实支付——充值是直接把演示余额加进去。
+ * 个人中心：基本信息、钱包余额、充值，以及账户里各维度的统计。
+ * 充值仍为演示功能，不接真实支付渠道；余额可用于站内预订与退款。
  */
 export function ProfilePage() {
   const { notify } = useToast()
@@ -101,7 +101,7 @@ export function ProfilePage() {
           </p>
         </div>
         <div className="profile-balance">
-          <span className="muted small">演示钱包余额</span>
+          <span className="muted small">钱包余额</span>
           <strong className="balance-num">{formatMoney(profile.walletCents)}</strong>
           <span className="muted small">累计消费 {formatMoney(profile.totalSpentCents)}</span>
         </div>
@@ -163,7 +163,7 @@ export function ProfilePage() {
         <button type="submit" className="btn-primary" disabled={busy}>
           {busy ? '充值中…' : '充值'}
         </button>
-        <p className="muted small recharge-hint">演示功能：充值只增加余额，不接入真实支付渠道。</p>
+        <p className="muted small recharge-hint">演示功能：充值不接入真实支付渠道；余额可用于站内预订。</p>
       </form>
     </div>
   )

@@ -31,6 +31,7 @@ import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.EventAuditLogRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
+import dev.kaiwen.eventpulse.repository.UserRepository;
 
 @Service
 public class OrganiserEventService {
@@ -40,6 +41,7 @@ public class OrganiserEventService {
     private final TicketRepository tickets;
     private final EventAuditLogRepository audits;
     private final EventService eventService;
+    private final UserRepository users;
     private final OutboxWriter outbox;
     private final ObjectMapper objectMapper;
 
@@ -49,6 +51,7 @@ public class OrganiserEventService {
             TicketRepository tickets,
             EventAuditLogRepository audits,
             EventService eventService,
+            UserRepository users,
             OutboxWriter outbox,
             ObjectMapper objectMapper) {
         this.events = events;
@@ -56,6 +59,7 @@ public class OrganiserEventService {
         this.tickets = tickets;
         this.audits = audits;
         this.eventService = eventService;
+        this.users = users;
         this.outbox = outbox;
         this.objectMapper = objectMapper;
     }
@@ -142,7 +146,9 @@ public class OrganiserEventService {
             }
         });
         for (Booking booking : bookings.findByEventIdOrderByCreatedAtDesc(id)) {
-            if ("CONFIRMED".equals(booking.getStatus())) {
+            // The event row is already updated above; claim the booking before touching its wallet.
+            if (bookings.cancelConfirmed(booking.getId()) == 1) {
+                users.creditWallet(booking.getUserId(), booking.getPaidCents());
                 outbox.write(KafkaTopics.BOOKING_EVENTS, "EVENT_CANCELLED",
                         "EVENT_CANCELLED:" + id + ":" + booking.getUserId(),
                         Map.of(

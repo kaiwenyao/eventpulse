@@ -114,7 +114,7 @@ class CrudEnhancementTest {
         EventService eventService = new EventService(events);
         OutboxWriter writer = new OutboxWriter(outboxRepo, new ObjectMapper());
         OrganiserEventService service = new OrganiserEventService(
-                events, bookings, tickets, audits, eventService, writer, new ObjectMapper());
+                events, bookings, tickets, audits, eventService, users, writer, new ObjectMapper());
         assertThatThrownBy(() -> service.list(null, null, null, null, null, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
@@ -192,7 +192,7 @@ class CrudEnhancementTest {
         props.setSecretKey("test-secret-key-change-me-0123456789ab");
         EventService eventService = new EventService(events);
         OrganiserEventService organiser = new OrganiserEventService(
-                events, bookings, tickets, audits, eventService, new OutboxWriter(outboxRepo, new ObjectMapper()),
+                events, bookings, tickets, audits, eventService, users, new OutboxWriter(outboxRepo, new ObjectMapper()),
                 new ObjectMapper());
         TicketService ticketService = new TicketService(tickets, organiser, props);
         when(tickets.save(any())).thenAnswer(inv -> {
@@ -205,11 +205,13 @@ class CrudEnhancementTest {
         Ticket issued = ticketService.issue(10L, 20L, 1).getFirst();
         String code = ticketService.reveal(issued);
         when(tickets.findByTicketCodeHash(TicketCodes.hash(code))).thenReturn(Optional.of(issued));
+        when(tickets.findByTicketCodeHashForUpdate(TicketCodes.hash(code))).thenReturn(Optional.of(issued));
         when(events.findByIdAndOrganiserId(20L, 2L)).thenReturn(Optional.of(event(20L, EventStatus.PUBLISHED, 2L)));
         assertThat(ticketService.checkIn(code, "manual").getStatus()).isEqualTo(TicketStatus.CHECKED_IN);
         assertThatThrownBy(() -> ticketService.checkIn(code, "manual")).isInstanceOf(BusinessException.class);
         when(tickets.findById(1L)).thenReturn(Optional.of(issued));
         assertThat(ticketService.undoCheckIn(1L, "误核").getStatus()).isEqualTo(TicketStatus.VALID);
+        when(tickets.findByBookingIdForUpdate(10L)).thenReturn(List.of(issued));
         ticketService.cancelForBooking(10L);
         assertThat(ticketService.toView(issued, true).code()).isEqualTo(code);
 
@@ -331,7 +333,7 @@ class CrudEnhancementTest {
         when(events.findByIdAndOrganiserId(21L, 2L)).thenReturn(Optional.of(leftover));
         orgApi.delete(21L);
         EventService eventServiceForOps = new EventService(events);
-        BookingService bookingService = new BookingService(bookings, eventServiceForOps, events, ticketService, tickets, new OutboxWriter(outboxRepo, new ObjectMapper()));
+        BookingService bookingService = new BookingService(bookings, eventServiceForOps, events, ticketService, tickets, users, new OutboxWriter(outboxRepo, new ObjectMapper()));
         OrganiserOpsController ops = new OrganiserOpsController(organiser, ticketService, bookings, users, bookingService);
         Booking confirmed = new Booking();
         confirmed.setId(30L);

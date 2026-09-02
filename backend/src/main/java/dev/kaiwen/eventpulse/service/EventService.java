@@ -104,12 +104,6 @@ public class EventService {
         return toVo(event);
     }
 
-    @Transactional
-    public void cancel(Long id) {
-        Event event = requireOwn(id);
-        event.setStatus("CANCELLED");
-    }
-
     Event require(Long id) {
         return events.findById(id).orElseThrow(() -> BusinessException.notFound("活动不存在"));
     }

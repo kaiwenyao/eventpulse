@@ -19,6 +19,7 @@ import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
+import dev.kaiwen.eventpulse.repository.UserRepository;
 
 @Service
 public class BookingService {
@@ -28,6 +29,7 @@ public class BookingService {
     private final EventRepository events;
     private final TicketService ticketService;
     private final TicketRepository tickets;
+    private final UserRepository users;
     private final OutboxWriter outbox;
 
     public BookingService(
@@ -36,12 +38,14 @@ public class BookingService {
             EventRepository events,
             TicketService ticketService,
             TicketRepository tickets,
+            UserRepository users,
             OutboxWriter outbox) {
         this.bookings = bookings;
         this.eventService = eventService;
         this.events = events;
         this.ticketService = ticketService;
         this.tickets = tickets;
+        this.users = users;
         this.outbox = outbox;
     }
 
@@ -57,17 +61,23 @@ public class BookingService {
         if (request.quantity() > maxQty) {
             throw new BusinessException("单次最多预订 " + maxQty + " 张");
         }
+        long paidCents = Math.multiplyExact((long) event.getPriceCents(), request.quantity());
+        // Keep the activity-before-wallet order used by both cancellation flows to avoid deadlocks.
         int updated = events.incrementSold(event.getId(), request.quantity());
         if (updated == 0) {
             Event latest = eventService.require(request.eventId());
             String latestReason = EventService.unbookableReason(latest, Instant.now());
             throw BusinessException.conflict(latestReason == null ? "余票不足" : latestReason);
         }
+        if (users.debitWalletIfEnough(userId, paidCents) == 0) {
+            throw BusinessException.conflict("余额不足");
+        }
 
         Booking booking = new Booking();
         booking.setUserId(userId);
         booking.setEventId(event.getId());
         booking.setQuantity(request.quantity());
+        booking.setPaidCents(paidCents);
         booking.setStatus("CONFIRMED");
         booking.setCreatedAt(Instant.now());
         bookings.save(booking);
@@ -105,14 +115,22 @@ public class BookingService {
     @Transactional
     public BookingVo cancel(Long id) {
         Booking booking = requireOwn(id);
-        if (!"CONFIRMED".equals(booking.getStatus())) {
+        Event event = eventService.require(booking.getEventId());
+        // Keep the activity -> ticket -> booking -> wallet order used when an organiser cancels an event.
+        if (events.decrementSoldForCustomerCancellation(event.getId(), booking.getQuantity()) == 0) {
+            throw BusinessException.conflict("活动已开始或当前状态不能取消");
+        }
+        List<dev.kaiwen.eventpulse.entity.Ticket> lockedTickets = ticketService.lockForBooking(booking.getId());
+        if (lockedTickets.stream().anyMatch(ticket -> TicketStatus.CHECKED_IN.equals(ticket.getStatus()))) {
+            throw BusinessException.conflict("已有电子票完成核销，不能退款");
+        }
+        if (bookings.cancelConfirmed(booking.getId()) == 0) {
             throw new BusinessException("订单已取消");
         }
-        Event event = eventService.require(booking.getEventId());
-        events.decrementSold(event.getId(), booking.getQuantity());
         booking.setStatus("CANCELLED");
         booking.setCancelledAt(Instant.now());
-        ticketService.cancelForBooking(booking.getId());
+        users.creditWallet(booking.getUserId(), booking.getPaidCents());
+        ticketService.cancelLocked(lockedTickets);
         outbox.write(KafkaTopics.BOOKING_EVENTS, "BOOKING_CANCELLED", "BOOKING_CANCELLED:" + booking.getId(),
                 Map.of(
                         "type", "BOOKING_CANCELLED",
