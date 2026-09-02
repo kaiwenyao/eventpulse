@@ -1,6 +1,6 @@
 # EventPulse 分布式部署改造计划
 
-> 状态：已实施（本文件随实现一起提交；实施范围见下文第 10、12 节）
+> 状态：后端分布式部分已实施；Python AI 服务扩展待实施
 > 日期：2026-09-02
 
 ## 1. 改造目标
@@ -44,10 +44,13 @@ seeder    初始化演示数据，完成后退出
 5. 将 Seeder 改为 Kubernetes Job。
 6. 修改 Docker Compose 和 Kubernetes 部署配置。
 7. 将 Kafka 从单节点改造成 3 节点学习集群。
+8. 将 Python AI 服务作为独立常驻服务接入 API。
 
 图片存储不在本次范围内。当前没有使用 media 功能，因此暂不改造。
 
 PostgreSQL 和 Redis 在本次学习项目中继续使用单节点，不做集群和分片。
+
+API、Worker、Seeder 继续共用 Spring Boot 镜像；Python AI 服务使用单独镜像，例如 `eventpulse/ai-service:v1.0`。第一版部署一个 AI Service 副本，不要求它与 Kafka 一样做集群。
 
 ---
 
@@ -90,6 +93,17 @@ Seeder 负责：
 - 初始化失败时返回非零退出码，让 Kubernetes 将 Job 标记为失败。
 
 Seeder 不启动 Web 服务，不启动 Kafka consumer，也不启动任何定时任务。
+
+### 2.4 Python AI Service
+
+Python AI Service 负责：
+
+- 通过 LangChain 调用外部 LLM。
+- 为主办方生成可审核的活动文案建议。
+- 运行活动发现 Agent，并调用 Spring Boot 提供的只读工具接口。
+- 返回经过 Pydantic 校验的固定数据结构。
+
+Python AI Service 不直接连接 PostgreSQL，不保存进程内会话，也不提供公网入口。浏览器只访问 Spring Boot API。
 
 ---
 
@@ -787,6 +801,7 @@ kafka-3
 api
 worker
 seeder
+ai-service
 frontend
 gateway（如果需要统一入口）
 ```
@@ -803,6 +818,7 @@ x-backend-common: &backend-common
     KAFKA_BOOTSTRAP: kafka-1:9092,kafka-2:9092,kafka-3:9092
     REDIS_HOST: redis
     SECRET_KEY: ${SECRET_KEY}
+    AI_SERVICE_URL: http://ai-service:8090
 
 services:
   api:
@@ -817,6 +833,13 @@ services:
     <<: *backend-common
     command: ["--spring.profiles.active=seeder"]
     restart: "no"
+
+  ai-service:
+    image: eventpulse/ai-service:v1.0
+    environment:
+      BACKEND_INTERNAL_URL: http://api:8080
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
 ```
 
 实际 Dockerfile 的 `ENTRYPOINT` 和 Compose `command` 要配合验证，保证参数最终传给 `java -jar app.jar`。
@@ -889,6 +912,8 @@ deploy/k8s/api-deployment.yml
 deploy/k8s/api-service.yml
 deploy/k8s/worker-deployment.yml
 deploy/k8s/seeder-job.yml
+deploy/k8s/ai-service-deployment.yml
+deploy/k8s/ai-service-service.yml
 deploy/k8s/ingress.yml
 deploy/k8s/kafka/kafka-cluster.yml
 deploy/k8s/kafka/kafka-node-pool.yml
@@ -909,6 +934,10 @@ Deployment: eventpulse-worker
 Job: eventpulse-seeder
   image: eventpulse/backend:v1.0
   profile: seeder
+
+Deployment: eventpulse-ai-service
+  image: eventpulse/ai-service:v1.0
+  profile: 不使用 Spring Profile
 ```
 
 ### 9.2 API Deployment
@@ -980,7 +1009,18 @@ Topic 副本数             3
 
 如果 Kubernetes 集群本身只有一个 Node，这套配置仍然只能用于学习，不能抵抗宿主机故障。
 
-### 9.6 配置和密码
+### 9.6 AI Service Deployment
+
+- 第一版副本数为 1，监听内部端口 `8090`。
+- 使用独立的 ClusterIP Service，只有 Spring Boot API 可以调用。
+- 不配置公网 Ingress。
+- readiness 检查确认 Python HTTP 服务可以接收请求；不要求检查外部 LLM 永远可用。
+- liveness 检查只判断 Python 进程是否卡死。
+- LLM API Key 从 Kubernetes Secret 注入，不能写入镜像、ConfigMap 或日志。
+- Python 服务不保存本地会话；重启后由 Spring Boot 从 PostgreSQL 提供需要的上下文。
+- API 调用 Python 时设置连接和读取超时，AI 故障不能长期占住 API 请求线程。
+
+### 9.7 配置和密码
 
 ConfigMap 保存普通配置：
 
@@ -990,13 +1030,19 @@ ConfigMap 保存普通配置：
 - Topic 和 partition 配置
 - SSE 心跳时间
 - Worker 批量处理数量
+- Python AI Service 内部地址
+- LLM provider 和模型名称
 
 Secret 保存敏感配置：
 
 - 数据库密码
 - JWT `SECRET_KEY`
+- LLM API Key
+- Spring Boot 与 Python AI Service 的服务间凭证
 
 所有 API 实例必须使用同一个 JWT 密钥。API、Worker 和 Seeder 使用同一套数据库连接信息。
+
+Python AI Service 使用 ClusterIP Service，只允许集群内部访问，不在 Ingress 中配置公开路径。它不直接连接数据库；需要业务数据时，通过带服务凭证的 Spring Boot 内部接口查询。
 
 ---
 
@@ -1028,6 +1074,8 @@ Secret 保存敏感配置：
 6. Worker 在处理过程中退出，另一 Worker 可以接手超时任务。
 7. 两个 Worker 同时执行生命周期任务不会产生版本冲突。
 8. Seeder Job 运行两次不会重复插入数据。
+9. Python AI Service 重启后不丢失业务数据或会话事实；会话由 Spring Boot 存入 PostgreSQL。
+10. Python AI Service 不可用时，普通活动搜索、编辑和预订继续工作。
 
 ### 10.3 Kafka 集群测试
 
@@ -1050,6 +1098,7 @@ Secret 保存敏感配置：
 - Worker 被终止：已领取但未完成的任务可以恢复。
 - API 被终止：业务数据不丢失，SSE 客户端自动重连。
 - Seeder 中途失败：事务回滚，Job 返回失败，重试可以重新执行。
+- Python AI Service 或外部 LLM 停止：AI 接口快速返回明确错误，其他业务接口不受影响。
 
 ### 10.5 自动化命令
 
@@ -1063,6 +1112,7 @@ make up-distributed     启动两个 API 和两个 Worker
 make test-distributed   执行双实例和故障测试
 make kafka-status       查看节点、Topic、partition 和副本状态
 make kafka-failover     自动停止一个 Kafka 节点并验证恢复
+make test-ai            运行 Python AI 服务测试
 ```
 
 ---
@@ -1121,7 +1171,7 @@ make kafka-failover     自动停止一个 Kafka 节点并验证恢复
 
 1. 重写 Docker Compose 角色结构。
 2. 修改 frontend/gateway 的 API 转发。
-3. 新增 Kubernetes API Deployment、Worker Deployment、Seeder Job 和 Kafka 集群配置。
+3. 新增 Kubernetes API Deployment、Worker Deployment、Seeder Job、Python AI Service Deployment 和 Kafka 集群配置。
 4. 增加健康检查、优雅停机和 SSE Ingress 配置。
 5. 更新 README 和发布操作说明。
 
@@ -1165,6 +1215,11 @@ backend/src/main/resources/application-seeder.yml
 backend/src/main/resources/db/migration/V*_distributed_runtime.sql
 deploy/k8s/*.yml
 deploy/k8s/kafka/*.yml
+ai-service/Dockerfile
+ai-service/app/**
+ai-service/tests/**
+ai-service/pyproject.toml
+ai-service/uv.lock
 ```
 
 ---
@@ -1188,3 +1243,5 @@ deploy/k8s/kafka/*.yml
 13. Kafka 使用 3 个节点，业务 Topic 和 DLT 都有 3 个 partition 和 3 个副本。
 14. 停止任意一个 Kafka 节点后，系统仍能继续发送和消费消息。
 15. 同时停止两个 Kafka 节点时，未发送消息保留在 Outbox，恢复后可以继续处理。
+16. Python AI Service 使用独立镜像和内部 Service 部署，不直接暴露到公网。
+17. Python AI Service 不保存业务状态，不可用时不影响非 AI 功能。

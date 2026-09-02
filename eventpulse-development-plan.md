@@ -6,7 +6,7 @@
 
 Spring Boot 4 · Kafka · PostgreSQL（PostGIS）· Redis · Python AI Service（FastAPI + LangChain）· 外部 LLM。分层对齐 firmament：`Controller → Service → Repository`。统一 `Result` 信封，JWT 拦截器鉴权。AI 作为被业务调用的独立服务：主办方用它完善活动文案，用户用它通过受控工具查找真实活动。
 
-本项目不训练模型、不做微调、不生成 embedding、不使用 pgvector，也不建设机器学习排序流水线。LLM 不能直接执行任意 SQL，不能自动发布活动，不能修改库存、订单或票据。
+本项目不训练或微调模型，也不建设自有推荐算法。AI 功能只在运行时调用外部 LLM。LLM 不能直接执行任意 SQL，不能自动发布活动，不能修改库存、订单或票据。
 
 ## 目录
 
@@ -78,7 +78,7 @@ EventPulse 用最少的代码同时讲清两件事：
 - 复杂票种、座位图、动态定价。
 - 多级组织、团队成员、精细化企业权限。
 - 分布式锁协议、完整 Saga 编排器、生产级运维。
-- 训练模型、微调模型、embedding、向量数据库和机器学习推荐排序。
+- 训练模型、微调模型、自建检索系统和预测排序。
 - 允许 AI 绕过 Spring Boot 权限直接读写数据库。
 - 让 AI 自动发布活动、下单、退款、核销或修改库存。
 
@@ -103,7 +103,7 @@ Kafka · PostgreSQL + PostGIS · Redis · Outbox · Metrics
 
 | 图中盒子 | 计划落地 | 对照本文件 |
 | --- | --- | --- |
-| React Discovery App | `/` 发现、详情、推荐、附近、收藏、预订、票据、消息、偏好 | §3、§14 |
+| React Discovery App | `/` 发现、详情、AI 找活动、附近、收藏、预订、票据、消息、偏好 | §3、§14 |
 | Organiser Console | `/organiser` 工作台、活动管理、详情、编辑、参与者、分析 | §3、§14 |
 | REST | 全部 JSON API，包在 `Result` | §9 |
 | SSE | `GET /api/bookings/{id}/events`，状态变化推 `booking-status` | §9.11 |
@@ -257,7 +257,7 @@ WHERE id = :eventId
 | `popular:events` | 热门 `EventVo[]` JSON | 60s |
 | `popular:counts` | eventId → BOOK+CLICK 计数 | 60s |
 
-Redis 挂了必须回源 PostgreSQL，推荐和列表不能 500。Compose 加 `redis:8`，端口 6379。
+Redis 挂了必须回源 PostgreSQL，热门活动和普通列表不能 500。Compose 加 `redis:8`，端口 6379。
 
 ---
 
@@ -307,7 +307,7 @@ Redis 挂了必须回源 PostgreSQL，推荐和列表不能 500。Compose 加 `r
 | media_assets | owner_id, storage_key, public_url, content_type, size_bytes, status, created_at, deleted_at | 封面与媒体生命周期 |
 | user_preferences | user_id PK, categories `TEXT[]`, city, lat, lng | 显式兴趣；坐标供 nearby |
 | interactions | user_id NULL, event_id, type, position, occurred_at | point-in-time 行为 |
-| ai_conversations | id, user_id NULL, kind, created_at, updated_at | 可选保存 AI 活动助手的多轮会话 |
+| ai_conversations | id, user_id NULL, kind, created_at, updated_at | 保存登录用户的 AI 活动助手多轮会话 |
 | ai_messages | id, conversation_id, role, content, created_at | 保存有限长度的会话历史，不保存模型内部思考过程 |
 | ai_requests | request_id, user_id NULL, feature, provider, model_name, status, latency_ms, input_tokens, output_tokens, created_at | 记录调用结果、耗时和成本，不保存密钥 |
 | outbox | topic, payload JSON, created_at, published_at | 与业务同事务；relay 发出后填 published_at |
@@ -699,7 +699,7 @@ Authorization: Bearer <optional-jwt>
 
 `events[].eventId` 必须来自 Agent 本次调用活动搜索工具得到的结果。Spring Boot 收到 Python 返回值后，还要重新读取这些活动，过滤已经取消、结束、下架或无权限展示的数据，再返回完整 `EventVo`。
 
-原有 `GET /api/recommendations` 不再规划为机器学习接口。迁移期间可以保留为普通热门活动列表，前端新的 AI 入口使用 `/api/ai/discovery/chat`。
+前端切换到 `/api/ai/discovery/chat` 后，删除原有 `GET /api/recommendations`。热门活动改为普通目录查询，例如 `GET /api/events?sort=popular`，不再使用 AI 或模型相关命名。
 
 ### 9.9 媒体 `/api/media/images`
 
@@ -726,7 +726,8 @@ GET /api/meta/metrics
 {
   "bookingsCreated": 12,
   "bookingsCancelled": 2,
-  "recommendationsServed": 40,
+  "aiRequests": 40,
+  "aiFailures": 2,
   "outboxPending": 0
 }
 ```
@@ -820,9 +821,8 @@ AI 是 EventPulse 调用的一项外部能力，不是项目内部训练出来�
 本项目不做：
 
 - 模型训练或微调。
-- embedding 生成。
-- 向量数据库或向量检索。
-- 点击率预测和机器学习排序。
+- 自建语义检索系统。
+- 点击率预测和自动排序算法。
 - 让 LLM 直接连接数据库或执行任意 SQL。
 
 ### 12.2 为什么使用独立 Python 服务
@@ -1094,6 +1094,21 @@ AI_ENABLED
 CI 使用假的 LLM 响应测试固定逻辑，避免网络、费用和模型波动导致 CI 不稳定。连接真实 LLM 的评测作为手动或定时任务运行，用于比较提示词和模型版本，不产生任何训练步骤。
 
 LangChain 当前的 Agent API 支持将普通 Python 函数定义为工具，并支持按 Pydantic schema 返回结构化结果；本计划以这些能力为基础。参考：[LangChain Agents](https://docs.langchain.com/oss/python/langchain/agents)、[Structured output](https://docs.langchain.com/oss/python/langchain/structured-output)。
+
+### 12.14 删除旧推荐方案
+
+实现新 AI 服务前，先清理旧计划和旧规则推荐留下的概念，避免两套方案并存：
+
+1. 删除 `RecommendationRequest` Entity 和 Repository。
+2. 删除 `recommendation_requests` 表；已经执行过旧 migration 的环境通过新的 Flyway migration 删除，不能回改已经发布的 migration。
+3. 删除 `PlatformService.recommend()`、旧规则评分和候选冻结逻辑。
+4. 删除 `GET /api/recommendations` Controller 路由和相关 DTO。
+5. 删除前端对旧推荐接口、分数和旧理由字段的依赖。
+6. 删除旧推荐单元测试，替换成 AI Gateway、Agent 工具和“不编造活动”测试。
+7. 保留普通热门活动查询，但将它视为常规目录功能和 AI Agent 的一个只读工具。
+8. `user_preferences` 和 `interactions` 继续用于用户主动偏好、运营统计和受控 AI 工具，不用于训练模型。
+
+清理完成后，代码、数据库和文档中都不再存在旧排序方案的字段、版本名称或评测任务。
 
 ---
 
