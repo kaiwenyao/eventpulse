@@ -79,16 +79,16 @@ describe('TopBar', () => {
 
     apiMock.fn.mockResolvedValue([])
     renderApp()
-    // No attribute → treated as dark, so the button offers the light switch.
-    const toggle = await screen.findByRole('button', { name: '切换到浅色主题' })
+    // No attribute → treated as light, so the button offers the dark switch.
+    const toggle = await screen.findByRole('button', { name: '切换到深色主题' })
     expect(document.documentElement.dataset.theme).toBeUndefined()
 
     await userEvent.click(toggle)
-    expect(document.documentElement.dataset.theme).toBe('light')
-    expect(localStorage.getItem('theme')).toBe('light')
-    expect(await screen.findByRole('button', { name: '切换到深色主题' })).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: '切换到深色主题' }))
     expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(localStorage.getItem('theme')).toBe('dark')
+    expect(await screen.findByRole('button', { name: '切换到浅色主题' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '切换到浅色主题' }))
+    expect(document.documentElement.dataset.theme).toBe('light')
   })
 })

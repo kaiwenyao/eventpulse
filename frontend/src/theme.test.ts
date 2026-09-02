@@ -19,8 +19,8 @@ describe('theme', () => {
     document.documentElement.removeAttribute('data-theme')
   })
 
-  it('defaults to dark when no attribute is set', () => {
-    expect(currentTheme()).toBe('dark')
+  it('defaults to light when no attribute is set', () => {
+    expect(currentTheme()).toBe('light')
   })
 
   it('reads the applied data-theme attribute', () => {
@@ -30,7 +30,7 @@ describe('theme', () => {
 
   it('ignores attribute values that are not a known theme', () => {
     document.documentElement.dataset.theme = 'nonsense'
-    expect(currentTheme()).toBe('dark')
+    expect(currentTheme()).toBe('light')
   })
 
   it('setTheme applies the attribute and persists it to localStorage', () => {
@@ -62,17 +62,17 @@ describe('theme', () => {
 
     it('follows prefers-color-scheme when present', () => {
       vi.stubGlobal('matchMedia', (query: string) => ({
-        matches: query.includes('light'),
+        matches: query.includes('dark'),
         media: query,
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
       }))
-      expect(preferredTheme()).toBe('light')
+      expect(preferredTheme()).toBe('dark')
     })
 
-    it('falls back to dark when matchMedia is unavailable', () => {
+    it('falls back to light when matchMedia is unavailable', () => {
       vi.stubGlobal('matchMedia', undefined)
-      expect(preferredTheme()).toBe('dark')
+      expect(preferredTheme()).toBe('light')
     })
   })
 

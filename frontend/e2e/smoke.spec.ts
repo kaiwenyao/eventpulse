@@ -149,4 +149,53 @@ test.describe('SPA smoke', () => {
     const cancelled = requests.find((r) => r.url.includes('/cancel'))!
     expect(cancelled.body).toEqual({ reason: '场地检修' })
   })
+  test('shell width is identical on every page including the console', async ({ page }) => {
+    // The console must not stretch the shared page frame: the top bar, content
+    // container and footer keep exactly the same width on /organiser/* as on
+    // every public page (regression: body:has(.console) used to widen --shell
+    // to 1440px on console pages, making the 工作台 layout jump wide).
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await mockApi(page)
+    await page.addInitScript(() => sessionStorage.setItem('ep_token', 'demo'))
+
+    const widths = async (route: string) => {
+      await page.goto(route)
+      await page.waitForSelector('.topbar-inner')
+      if (route.startsWith('/organiser')) await page.waitForSelector('.console')
+      return page.evaluate(() => {
+        const w = (s: string) => Math.round(document.querySelector(s)!.getBoundingClientRect().width)
+        const l = (s: string) => Math.round(document.querySelector(s)!.getBoundingClientRect().left)
+        const r = (s: string) => Math.round(document.querySelector(s)!.getBoundingClientRect().right)
+        return { topW: w('.topbar-inner'), topL: l('.topbar-inner'), topR: r('.topbar-inner') }
+      })
+    }
+
+    const reference = await widths('/')
+    for (const route of ['/organiser', '/organiser/events', '/organiser/events/new', '/organiser/analytics']) {
+      const m = await widths(route)
+      expect(m, route).toEqual(reference)
+    }
+  })
+
+  test('console rail sits flush against the left edge of the console box', async ({ page }) => {
+    // Regression: `.container > *` padded the console by --gutter, which painted
+    // a blank strip of page ground to the left of the ink rail.
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await mockApi(page)
+    await page.addInitScript(() => sessionStorage.setItem('ep_token', 'demo'))
+    await page.goto('/organiser')
+    await page.waitForSelector('.console-rail')
+
+    const gap = await page.evaluate(() => {
+      const box = document.querySelector('.console')!
+      const rail = document.querySelector('.console-rail')!
+      return {
+        paddingLeft: parseFloat(getComputedStyle(box).paddingLeft),
+        inset: Math.round(rail.getBoundingClientRect().left - box.getBoundingClientRect().left),
+      }
+    })
+    expect(gap.paddingLeft).toBe(0)
+    // The 2px ink border is the only inset; anything near --gutter (32px) is the bug.
+    expect(gap.inset).toBeLessThanOrEqual(4)
+  })
 })

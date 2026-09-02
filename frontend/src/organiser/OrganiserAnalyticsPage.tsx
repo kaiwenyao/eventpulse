@@ -26,7 +26,7 @@ function ViewsChart({ series }: { series: MetricRow[] }) {
   return (
     <div className="chart" role="img" aria-label={`最近 ${series.length} 天的每日浏览量`}>
       {series.map((row) => (
-        <div key={row.metricDate} className="chart-col">
+        <div key={row.metricDate} className={`chart-col ${row.views === peak ? 'chart-col-peak' : ''}`}>
           <span className="chart-bar" style={{ height: `${Math.max(2, (row.views / peak) * 100)}%` }} />
           <span className="chart-tick">{row.metricDate?.slice(5)}</span>
         </div>
@@ -61,10 +61,15 @@ export function OrganiserAnalyticsPage() {
 
   const tiles = useMemo(
     () => [
-      { label: '浏览', value: String(data?.views ?? 0), caption: '活动详情页曝光' },
-      { label: '点击', value: String(data?.clicks ?? 0), caption: '进入预订流程' },
-      { label: '预订', value: String(data?.bookings ?? 0), caption: '成功创建的订单' },
-      { label: '转化', value: `${Number(data?.conversion ?? 0).toFixed(1)}%`, caption: '预订 / 浏览' },
+      { label: '浏览', value: String(data?.views ?? 0), caption: '活动详情页曝光', tone: '' },
+      { label: '点击', value: String(data?.clicks ?? 0), caption: '进入预订流程', tone: '' },
+      { label: '预订', value: String(data?.bookings ?? 0), caption: '成功创建的订单', tone: '' },
+      {
+        label: '转化',
+        value: `${Number(data?.conversion ?? 0).toFixed(1)}%`,
+        caption: '预订 / 浏览',
+        tone: 'stat-accent',
+      },
     ],
     [data],
   )
@@ -101,7 +106,7 @@ export function OrganiserAnalyticsPage() {
         <>
           <div className="stat-grid">
             {tiles.map((tile) => (
-              <div key={tile.label} className="stat-card">
+              <div key={tile.label} className={`stat-card ${tile.tone}`}>
                 <p className="stat-label">{tile.label}</p>
                 <p className="stat-value">{tile.value}</p>
                 <p className="stat-caption muted">{tile.caption}</p>
@@ -109,7 +114,7 @@ export function OrganiserAnalyticsPage() {
             ))}
           </div>
 
-          <section className="card">
+          <section>
             <h2 className="section-title">每日浏览趋势</h2>
             {series.length === 0 ? (
               <EmptyState title="暂无趋势数据" hint="选择一场具体活动，或等待今天的指标落库。" />

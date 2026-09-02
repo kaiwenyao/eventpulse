@@ -1,44 +1,77 @@
 /* ---------------------------------------------------------------------------
-   Design tokens + base element styles.
+   Design tokens + base element styles — "Modernist" (EventPulse Redesign).
 
-   Palette  — ink surfaces + paper text + pulse-pink CTA (violet/green accents)
-   Type     — Space Grotesk (display) + system PingFang SC (body)
+   Palette  — paper ground + ink text + a single red accent. No second hue:
+              hierarchy comes from rules, blocks and weight, not from colour.
+   Type     — Archivo (400/600/800/900) with PingFang SC carrying the Chinese.
    Rhythm   — a 4px spacing scale; every gap/padding below is a multiple of it.
+   Edges    — zero radius everywhere; a 2px ink rule separates major blocks,
+              a 1px neutral rule separates rows inside one block.
 --------------------------------------------------------------------------- */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  --ink: #0a0c14;
-  --surface: #11141f;
-  --surface-2: #1a1f2e;
-  --surface-3: #232a3e;
-  --surface-4: #2c344b;
-  --line: #232a3e;
-  --line-strong: #333c56;
-  --paper: #edf0f8;
-  --paper-dim: #c6cbd9;
-  --muted: #8e96ac;
-  --accent: #ff4d8d;
-  --accent-bright: #ff4d8d;
-  --accent-soft: rgba(255, 77, 141, 0.12);
-  --violet: #7c6cff;
-  --green: #2dd4a7;
-  --amber: #f5b040;
-  --red: #ff5d6c;
+  /* Tonal ramps, straight from the design system. One shared lightness scale,
+     so the same step of any role matches the others in visual value. */
+  --n-100: #f8f4f4;
+  --n-200: #eae7e7;
+  --n-300: #d7d3d3;
+  --n-400: #bab6b6;
+  --n-500: #9b9797;
+  --n-600: #7d7979;
+  --n-700: #605d5d;
+  --n-800: #444141;
+  --n-900: #2d2b2b;
 
-  /* Scrim / overlay surfaces derived from the dark ink — theme-specific so they
-     read translucent against their own background. */
-  --scrim-topbar: rgba(10, 12, 20, 0.82);
-  --scrim-footer: rgba(10, 12, 20, 0.6);
-  --scrim-modal: rgba(4, 6, 12, 0.72);
-  --scrim-sticky: rgba(17, 20, 31, 0.92);
-  --placeholder: #5d6475;
-  --hover-wash: rgba(255, 255, 255, 0.02);
-  --empty-wash: rgba(255, 255, 255, 0.015);
+  --accent-100: #fff2ef;
+  --accent-200: #ffe0d9;
+  --accent-300: #ffc4b8;
+  --accent-400: #ff9783;
+  --accent-500: #ff563c;
+  --accent-600: #dd2b0f;
+  --accent-700: #ae1800;
+  --accent-800: #7c1405;
+  --accent-900: #4d170e;
 
-  --font-display: 'Space Grotesk', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
-  --font-body: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  /* Semantic surfaces. The names are inherited from the previous system so
+     every sheet keeps working; the values are the Modernist ones. */
+  --ink: #f3f2f2; /* page ground */
+  --surface: #f8f4f4; /* block / card */
+  --surface-2: #eae9e9;
+  --surface-3: #d7d3d3;
+  --surface-4: #bab6b6;
+
+  --line: #d7d3d3; /* hairline: rows inside one block */
+  --line-strong: #201e1d; /* the ink rule: block boundaries */
+  --rule: 2px; /* block-boundary rule weight */
+
+  --paper: #201e1d; /* primary text */
+  --paper-dim: #444141;
+  --muted: #605d5d;
+
+  --accent: #ec3013;
+  --accent-bright: #ff563c;
+  --accent-soft: #fff2ef;
+
+  /* A single-accent system: the "semantic" slots resolve to red for anything
+     that wants attention and to ink for anything that is merely a state. */
+  --violet: #444141; /* finished / checked-in — neutral ink */
+  --green: #7c1405; /* confirmed / published — deep accent */
+  --amber: #ae1800; /* pending / warning */
+  --red: #ae1800; /* danger / error */
+
+  /* Overlays. Flat and opaque: this system does not blur. */
+  --scrim-topbar: #f3f2f2;
+  --scrim-footer: #f3f2f2;
+  --scrim-modal: rgba(45, 43, 43, 0.5);
+  --scrim-sticky: #f8f4f4;
+  --placeholder: #9b9797;
+  --hover-wash: rgba(32, 30, 29, 0.05);
+  --empty-wash: transparent;
+
+  --font-display: 'Archivo', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-body: 'Archivo', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
 
   --space-1: 4px;
@@ -49,14 +82,15 @@
   --space-6: 32px;
   --space-7: 48px;
 
-  --radius-sm: 8px;
-  --radius: 14px;
-  --radius-lg: 20px;
+  /* Square by decree. Kept as tokens so a future retune has one place to go. */
+  --radius-sm: 0px;
+  --radius: 0px;
+  --radius-lg: 0px;
 
-  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.24);
-  --shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 28px 70px rgba(0, 0, 0, 0.5);
-  --focus: 0 0 0 3px rgba(255, 77, 141, 0.45);
+  --shadow-sm: 0 1px 2px rgba(45, 43, 43, 0.14);
+  --shadow: 0 3px 10px rgba(45, 43, 43, 0.16);
+  --shadow-lg: 0 12px 32px rgba(45, 43, 43, 0.22);
+  --focus: 0 0 0 2px var(--ink), 0 0 0 4px var(--accent);
 }
 
 * {
@@ -70,10 +104,7 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(1000px 480px at 85% -10%, rgba(124, 108, 255, 0.14), transparent 60%),
-    radial-gradient(800px 420px at -10% 12%, rgba(255, 77, 141, 0.1), transparent 60%),
-    var(--ink);
+  background: var(--ink);
   color: var(--paper);
   font-family: var(--font-body);
   font-size: 15px;
@@ -84,51 +115,62 @@ body {
 a {
   color: var(--accent);
   text-decoration: none;
+  text-underline-offset: 3px;
 }
 
 a:hover {
+  color: var(--accent-600);
   text-decoration: underline;
 }
 
 ::selection {
-  background: rgba(255, 77, 141, 0.35);
+  background: var(--accent-200);
 }
 
-:root[data-theme='light'] ::selection {
-  background: rgba(214, 51, 108, 0.25);
-}
-
-/* Visible keyboard focus everywhere, per accessibility floor. */
+/* Visible keyboard focus everywhere, per accessibility floor. A hard square
+   ring — the system has no radius to soften it with. */
 :focus-visible {
-  outline: none;
-  box-shadow: var(--focus);
-  border-radius: var(--radius-sm);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 0;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
 }
 
 h1 {
-  font-family: var(--font-display);
-  font-size: 30px;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+  font-size: 42px;
+  font-weight: 900;
   margin: 0 0 var(--space-2);
 }
 
-h2,
+h2 {
+  font-size: 26px;
+}
+
 h3 {
-  font-family: var(--font-display);
-  line-height: 1.3;
+  font-size: 20px;
 }
 
 p {
   margin: 0 0 var(--space-3);
 }
 
+/* The all-caps micro-label that runs above every block in the design. */
 .eyebrow {
   font-family: var(--font-display);
-  font-size: 12px;
-  letter-spacing: 0.22em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--muted);
   margin: 0 0 var(--space-2);
 }
 
@@ -163,13 +205,20 @@ p {
 .error-text {
   color: var(--red);
   font-size: 13px;
+  font-weight: 600;
   margin: var(--space-2) 0;
 }
 
 .ok-text {
   color: var(--green);
   font-size: 13px;
+  font-weight: 600;
   margin: 0;
+}
+
+/* Photography runs black and white in this system. */
+.grayscale {
+  filter: grayscale(1) contrast(1.08);
 }
 
 /* Shared inline icon sizing — every glyph inherits the text colour. */
@@ -179,61 +228,69 @@ p {
   flex: none;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke-width: 1.6;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
 }
 
 /* ===========================================================================
-   Light theme — "浅纸 + 深色粉紫". Same brand pulse (pink + violet aura) but
-   translated onto a cool paper background. Semantic colours (links, badges,
-   status) use the deepened accents so they clear WCAG AA on white; the bright
-   pink survives only as pure decoration (gradient titles, ambient glows).
+   Dark theme — the same Modernist grammar with ground and ink swapped. Rules
+   stay 2px, corners stay square, and the accent brightens just enough to hold
+   its contrast on ink. Photography still runs monochrome.
    =========================================================================== */
 
-:root[data-theme='light'] {
-  color-scheme: light;
+:root[data-theme='dark'] {
+  color-scheme: dark;
 
-  --ink: #f4f5fa;
-  --surface: #ffffff;
-  --surface-2: #eef0f6;
-  --surface-3: #e7eaf3;
-  --surface-4: #dfe3ee;
-  --line: #e3e7f0;
-  --line-strong: #c5cfdf;
+  --n-100: #2d2b2b;
+  --n-200: #383535;
+  --n-300: #444141;
+  --n-400: #605d5d;
+  --n-500: #7d7979;
+  --n-600: #9b9797;
+  --n-700: #bab6b6;
+  --n-800: #d7d3d3;
+  --n-900: #eae7e7;
 
-  --paper: #20263c;
-  --paper-dim: #4c5660;
-  --muted: #6b7590;
+  /* On ink the accent ramp runs the other way: the "100" end is what a tag
+     paints its background with, the "700/800" end is what it writes in. */
+  --accent-100: #4d170e;
+  --accent-200: #7c1405;
+  --accent-300: #ae1800;
+  --accent-700: #ffc4b8;
+  --accent-800: #ffe0d9;
 
-  --accent: #d6336c; /* readable deep pink — 4.6:1 on white */
-  --accent-bright: #ff4d8d; /* decoration only */
-  --accent-soft: rgba(214, 51, 108, 0.1);
+  --ink: #201e1d;
+  --surface: #2d2b2b;
+  --surface-2: #383535;
+  --surface-3: #444141;
+  --surface-4: #605d5d;
 
-  --violet: #6d5df0; /* 4.5:1 */
-  --green: #0f766e; /* 4.5:1 */
-  --amber: #b45309; /* 5.9:1 */
-  --red: #be123c; /* 6.4:1 */
+  --line: #444141;
+  --line-strong: #f3f2f2;
 
-  --scrim-topbar: rgba(255, 255, 255, 0.82);
-  --scrim-footer: rgba(255, 255, 255, 0.6);
-  --scrim-modal: rgba(18, 22, 44, 0.32);
-  --scrim-sticky: rgba(255, 255, 255, 0.92);
-  --placeholder: #8a93a8;
-  --hover-wash: rgba(20, 24, 48, 0.03);
-  --empty-wash: rgba(20, 24, 48, 0.02);
+  --paper: #f3f2f2;
+  --paper-dim: #d7d3d3;
+  --muted: #bab6b6;
 
-  --shadow-sm: 0 1px 3px rgba(28, 32, 64, 0.06), 0 2px 8px rgba(28, 32, 64, 0.07);
-  --shadow: 0 6px 20px rgba(28, 32, 64, 0.1), 0 2px 6px rgba(28, 32, 64, 0.06);
-  --shadow-lg: 0 14px 40px rgba(28, 32, 64, 0.14);
-  --focus: 0 0 0 3px rgba(214, 51, 108, 0.32);
-}
+  --accent: #ff563c;
+  --accent-bright: #ff9783;
+  --accent-soft: #4d170e;
 
-/* The ambient pink+violet aura carries over, softened so it reads as a wash on
-   paper rather than a glow. */
-:root[data-theme='light'] body {
-  background:
-    radial-gradient(1000px 480px at 85% -10%, rgba(109, 93, 240, 0.07), transparent 60%),
-    radial-gradient(800px 420px at -10% 15%, rgba(214, 51, 108, 0.06), transparent 60%),
-    var(--ink);
+  --violet: #d7d3d3;
+  --green: #ffc4b8;
+  --amber: #ff9783;
+  --red: #ff9783;
+
+  --scrim-topbar: #201e1d;
+  --scrim-footer: #201e1d;
+  --scrim-modal: rgba(15, 14, 14, 0.72);
+  --scrim-sticky: #2d2b2b;
+  --placeholder: #7d7979;
+  --hover-wash: rgba(243, 242, 242, 0.06);
+  --empty-wash: transparent;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow: 0 3px 10px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
 }

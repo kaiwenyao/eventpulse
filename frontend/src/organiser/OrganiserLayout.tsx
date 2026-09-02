@@ -1,11 +1,11 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { ChartIcon, GridIcon, PlusIcon, TicketIcon } from '../ui/Icons'
 
 const CONSOLE_NAV = [
   { to: '/organiser', label: '概览', end: true, Icon: GridIcon },
   { to: '/organiser/events', label: '活动管理', end: false, Icon: TicketIcon },
-  { to: '/organiser/events/new', label: '新建活动', end: false, Icon: PlusIcon },
+  { to: '/organiser/events/new', label: '新建活动', end: true, Icon: PlusIcon },
   { to: '/organiser/analytics', label: '数据分析', end: false, Icon: ChartIcon },
 ]
 
@@ -16,17 +16,29 @@ const CONSOLE_NAV = [
  */
 export function OrganiserLayout() {
   const { user } = useAuth()
+  const { pathname } = useLocation()
+  const onNew = pathname === '/organiser/events/new'
   return (
     <div className="console">
       <aside className="console-rail">
         <p className="console-brand">主办方控制台</p>
         <nav className="console-nav">
-          {CONSOLE_NAV.map(({ to, label, end, Icon }) => (
-            <NavLink key={to} to={to} end={end}>
-              <Icon />
-              <span>{label}</span>
-            </NavLink>
-          ))}
+          {CONSOLE_NAV.map(({ to, label, end, Icon }) => {
+            // 前缀匹配会让 /organiser/events/new 同时命中「活动管理」和「新建活动」，
+            // 所以在新建页掐掉「活动管理」的高亮，保证同一时刻只有一个 tab 亮。
+            const override = to === '/organiser/events' ? !onNew : undefined
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) => (override === false || !isActive ? '' : 'active')}
+              >
+                <Icon />
+                <span>{label}</span>
+              </NavLink>
+            )
+          })}
         </nav>
         {user && (
           <div className="console-user">

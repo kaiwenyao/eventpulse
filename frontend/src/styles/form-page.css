@@ -1,5 +1,8 @@
 /* The event create/edit surface: two columns of fields plus a live preview,
-   with a sticky action bar so 保存草稿 / 发布活动 stay reachable on long forms. */
+   with a sticky action bar so 保存草稿 / 发布活动 stay reachable on long forms.
+
+   Screen 10 splits the panel with one full-height ink rule; the preview rail
+   sits to the right of it. */
 
 .form-page {
   padding-bottom: var(--space-7);
@@ -7,35 +10,49 @@
 
 .form-columns {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 0;
   align-items: start;
+  margin: 0 calc(-1 * var(--space-6));
 }
 
 .form-fields {
   min-width: 0;
+  padding: var(--space-6);
+  border-right: var(--rule) solid var(--line-strong);
 }
 
+/* Each field group is a ruled section, not a boxed card. */
 .form-section {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  padding: var(--space-5);
-  margin: 0 0 var(--space-5);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: inset 0 var(--rule) 0 var(--line-strong);
+  padding: var(--space-5) 0 var(--space-6);
+  margin: 0;
+}
+
+.form-section:first-of-type {
+  box-shadow: none;
+  padding-top: 0;
 }
 
 .form-section legend {
+  float: left;
+  width: 100%;
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--accent);
-  padding: 0 var(--space-2);
-  margin-left: calc(-1 * var(--space-2));
+  padding: 0;
+  margin: 0 0 var(--space-4);
 }
 
+/* Clears the floated legend above it. */
 .form-grid {
+  clear: both;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4) var(--space-5);
@@ -49,28 +66,38 @@
 
 .form-preview {
   position: sticky;
-  top: 84px;
+  top: 90px;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  padding: var(--space-6) 28px;
 }
 
 .form-preview .eyebrow {
   margin: 0;
 }
 
+/* The preview rail shows a real ticket card — give it back its own frame,
+   since it is no longer sitting inside the discovery hairline grid. */
+.form-preview .ticket {
+  border: var(--rule) solid var(--line-strong);
+}
+
 .checklist {
-  padding: var(--space-4);
+  padding: 20px;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border: var(--rule) solid var(--line-strong);
+  border-radius: 0;
 }
 
 .checklist-title {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-3);
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .checklist ul {
@@ -78,7 +105,8 @@
   padding-left: 18px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  font-size: 13px;
 }
 
 /* -------------------------------------------------------------- action bar */
@@ -89,15 +117,14 @@
   z-index: 15;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-5);
-  padding: var(--space-4) var(--space-5);
+  gap: var(--space-2);
+  margin: 0 calc(-1 * var(--space-6));
+  padding: var(--space-4) var(--space-6);
   background: var(--scrim-sticky);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border: 0;
+  border-top: var(--rule) solid var(--line-strong);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .form-actions-spacer {
@@ -123,6 +150,6 @@
 
 .analytics-picker {
   width: auto;
-  min-width: 200px;
+  min-width: 240px;
   max-width: 100%;
 }

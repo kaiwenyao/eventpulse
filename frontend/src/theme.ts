@@ -8,21 +8,22 @@
 export const THEME_STORAGE_KEY = 'theme'
 export type Theme = 'light' | 'dark'
 
-/** The theme currently applied to <html data-theme>. Defaults to dark when the
- *  attribute is absent (e.g. jsdom in tests, which never runs the head script). */
+/** The theme currently applied to <html data-theme>. Defaults to light when the
+ *  attribute is absent (e.g. jsdom in tests, which never runs the head script) —
+ *  paper is the design system's ground, ink is the opt-in inversion. */
 export function currentTheme(): Theme {
   const t = document.documentElement.dataset.theme
-  return t === 'light' || t === 'dark' ? t : 'dark'
+  return t === 'light' || t === 'dark' ? t : 'light'
 }
 
-function systemPrefersLight(): boolean {
-  return typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: light)').matches
+function systemPrefersDark(): boolean {
+  return typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
 }
 
 /** The theme to land on when there is no stored choice — the OS preference, or
- *  dark if it can't be determined. Matches the bootstrap script's fallback. */
+ *  light if it can't be determined. Matches the bootstrap script's fallback. */
 export function preferredTheme(): Theme {
-  return systemPrefersLight() ? 'light' : 'dark'
+  return systemPrefersDark() ? 'dark' : 'light'
 }
 
 export function readStoredTheme(): Theme | null {
@@ -43,7 +44,7 @@ export function setTheme(theme: Theme) {
 
 /** Toggle between the two themes. */
 export function toggleTheme(): Theme {
-  const next = currentTheme() === 'light' ? 'dark' : 'light'
+  const next = currentTheme() === 'dark' ? 'light' : 'dark'
   setTheme(next)
   return next
 }

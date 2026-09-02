@@ -1,21 +1,21 @@
-/* Page frame: top bar, container, footer, page headers, and the operator shell. */
+/* Page frame: top bar, container, footer, page headers, and the operator shell.
+
+   The Modernist grammar: full-bleed bands stacked edge to edge, each closed by
+   a 2px ink rule. Nothing floats, nothing rounds, nothing blurs. */
 
 :root {
   /* Shell width, shared by the top bar, the page body and the footer so the
-     three stay in one vertical gutter. */
-  --shell: 1180px;
-}
-
-/* The operator console carries a nav rail, a work surface and a preview rail;
-   it needs more room than the reading-width marketing pages. */
-body:has(.console) {
-  --shell: 1400px;
+     three stay in one vertical gutter. Never widen this for the console — the
+     console page must look the same from the top bar down as every other page. */
+  --shell: 1240px;
+  /* The gutter the bands share. Bands that run full-bleed pad by this. */
+  --gutter: var(--space-6);
 }
 
 .container {
   max-width: var(--shell);
   margin: 0 auto;
-  padding: 0 var(--space-5) var(--space-7);
+  padding: 0 0 var(--space-7);
   min-height: 60vh;
 }
 
@@ -40,16 +40,20 @@ body {
   width: 100%;
 }
 
+/* Everything that is not itself a full-bleed band indents to the gutter. */
+.container > * {
+  padding-left: var(--gutter);
+  padding-right: var(--gutter);
+}
+
 /* ------------------------------------------------------------------ topbar */
 
 .topbar {
   position: sticky;
   top: 0;
   z-index: 20;
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--rule) solid var(--line-strong);
   background: var(--scrim-topbar);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
 }
 
 .topbar-inner {
@@ -57,20 +61,23 @@ body {
   margin: 0 auto;
   display: flex;
   align-items: center;
-  gap: var(--space-5);
-  padding: var(--space-3) var(--space-5);
+  gap: var(--space-6);
+  height: 72px;
+  padding: 0 var(--gutter);
 }
 
 .brand {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 19px;
-  letter-spacing: 0.02em;
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
   color: var(--paper);
   white-space: nowrap;
 }
 
 .brand:hover {
+  color: var(--paper);
   text-decoration: none;
 }
 
@@ -80,14 +87,17 @@ body {
 
 .topbar nav {
   display: flex;
-  gap: var(--space-5);
+  align-items: center;
+  gap: var(--space-6);
   flex: 1;
 }
 
 .topbar nav a {
   position: relative;
   color: var(--muted);
-  font-size: 14px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
   padding: var(--space-1) 0;
 }
 
@@ -98,17 +108,16 @@ body {
 
 .topbar nav a.active {
   color: var(--paper);
-  font-weight: 600;
 }
 
+/* The 2px accent underscore that marks the current section. */
 .topbar nav a.active::after {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -14px;
+  bottom: -2px;
   height: 2px;
-  border-radius: 2px;
   background: var(--accent);
 }
 
@@ -116,18 +125,24 @@ body {
   gap: var(--space-3);
 }
 
+/* A square ink chip carrying the initial — the design's avatar. */
 .avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, var(--accent), var(--violet));
-  color: #fff;
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 800;
   font-size: 13px;
   flex: none;
+}
+
+.avatar:hover {
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
 }
 
 .nav-toggle {
@@ -136,68 +151,109 @@ body {
 
 /* -------------------------------------------------------------------- hero */
 
+/* The signature band: a solid red field with the headline, closed on the right
+   by a column of statistics divided by 2px rules in the ground colour. */
 .hero {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-6);
-  flex-wrap: wrap;
-  padding: var(--space-7) 0 var(--space-5);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  background: var(--accent);
+  color: #fff;
+  border-bottom: var(--rule) solid var(--line-strong);
+  margin: 0 calc(-1 * var(--gutter));
+}
+
+.hero-copy {
+  padding: var(--space-7) var(--gutter);
+  min-width: 0;
+}
+
+.hero .eyebrow {
+  color: inherit;
+  opacity: 0.9;
+  letter-spacing: 0.2em;
+  margin: 0 0 var(--space-5);
 }
 
 .hero h1 {
-  font-size: clamp(32px, 5vw, 46px);
-  letter-spacing: -0.02em;
-  margin: 0 0 var(--space-2);
+  font-size: clamp(40px, 5.2vw, 76px);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  max-width: 12ch;
+  margin: 0;
 }
 
 .hero-sub {
-  margin: 0;
+  margin: var(--space-5) 0 0;
   font-size: 16px;
+  line-height: 1.5;
+  max-width: 46ch;
+  color: inherit;
 }
 
 .hero-stats {
   display: flex;
-  gap: var(--space-6);
+  flex-direction: column;
   margin: 0;
+  border-left: var(--rule) solid var(--ink);
+}
+
+.hero-stats > div {
+  padding: var(--space-5) 28px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.hero-stats > div + div {
+  border-top: var(--rule) solid var(--ink);
 }
 
 .hero-stats dt {
-  font-size: 12px;
-  letter-spacing: 0.14em;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--muted);
 }
 
 .hero-stats dd {
-  margin: var(--space-1) 0 0;
+  margin: var(--space-2) 0 0;
   font-family: var(--font-display);
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 44px;
+  font-weight: 900;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 /* -------------------------------------------------------------- page heads */
 
 .page {
-  padding-top: var(--space-6);
+  padding-top: 0;
 }
 
+/* Title on the left, the page's one control cluster on the right, closed by an
+   ink rule — the header treatment shared by screens 04 through 12. */
 .page-head {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-4);
   flex-wrap: wrap;
-  margin-bottom: var(--space-5);
+  padding: var(--space-6) var(--gutter) var(--space-5);
+  margin: 0 calc(-1 * var(--gutter)) var(--space-5);
+  border-bottom: var(--rule) solid var(--line-strong);
 }
 
 .page-head h1 {
-  margin: 0 0 var(--space-1);
+  margin: 0;
+  font-size: 42px;
 }
 
 .page-head p {
-  margin: 0;
+  margin: var(--space-3) 0 0;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .section-head {
@@ -209,7 +265,9 @@ body {
 }
 
 .section-title {
-  font-size: 18px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 22px;
   margin: var(--space-6) 0 var(--space-3);
 }
 
@@ -221,9 +279,9 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
-  margin-bottom: var(--space-4);
+  padding-top: var(--space-5);
   flex-wrap: wrap;
 }
 
@@ -232,66 +290,85 @@ body {
 }
 
 .crumbs a:hover {
-  color: var(--paper);
+  color: var(--accent);
 }
 
 /* --------------------------------------------------------- operator shell */
 
+/* Solid ink rail on the left, work surface on the right, the whole console
+   boxed by a 2px rule the way screens 07–12 draw it. */
 .console {
   display: grid;
-  grid-template-columns: 216px minmax(0, 1fr);
-  gap: var(--space-6);
-  padding-top: var(--space-6);
+  grid-template-columns: 248px minmax(0, 1fr);
+  border: var(--rule) solid var(--line-strong);
+  margin: var(--space-6) 0;
+  background: var(--ink);
+}
+
+.container > .console {
+  /* Cancel `.container > *` gutter padding — same pattern as `.auth-shell`.
+     The extra pad painted a blank strip inside the box, left of the rail. */
+  padding: 0;
+  margin-left: var(--gutter);
+  margin-right: var(--gutter);
 }
 
 .console-rail {
-  position: sticky;
-  top: 76px;
-  align-self: start;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  gap: 0;
+  padding: 28px 0;
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .console-brand {
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--muted);
-  margin: 0;
+  color: var(--n-500);
+  margin: 0 var(--space-5) 28px;
+}
+
+.console-brand::before {
+  content: 'EVENTPULSE';
+  display: block;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin-bottom: var(--space-1);
 }
 
 .console-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 0;
 }
 
 .console-nav a {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  color: var(--muted);
+  padding: var(--space-3) var(--space-5);
+  color: var(--n-400);
   font-size: 14px;
   font-weight: 500;
 }
 
 .console-nav a:hover {
-  background: var(--surface-2);
-  color: var(--paper);
+  background: rgba(128, 128, 128, 0.18);
+  color: var(--ink);
   text-decoration: none;
 }
 
 .console-nav a.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-display);
   font-weight: 600;
 }
 
@@ -299,15 +376,33 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--line);
+  margin: auto var(--space-5) 0;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--n-600);
   min-width: 0;
+}
+
+.console-user .avatar {
+  width: 34px;
+  height: 34px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 14px;
 }
 
 .console-user-copy {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+.console-user-copy strong {
+  font-size: 13px;
+}
+
+.console-user-copy .muted {
+  color: var(--n-500);
+  font-size: 11px;
 }
 
 .console-user-copy strong,
@@ -319,16 +414,29 @@ body {
 
 .console-main {
   min-width: 0;
+  padding: 0 var(--space-6) var(--space-6);
 }
 
 .console-main .page {
   padding-top: 0;
 }
 
+/* Inside the console the head rule runs to the panel edge. */
+.console-main .page-head {
+  margin-left: calc(-1 * var(--space-6));
+  margin-right: calc(-1 * var(--space-6));
+  padding-left: var(--space-6);
+  padding-right: var(--space-6);
+}
+
+.console-main .crumbs {
+  padding-top: var(--space-5);
+}
+
 /* ------------------------------------------------------------------ footer */
 
 .site-footer {
-  border-top: 1px solid var(--line);
+  border-top: var(--rule) solid var(--line-strong);
   margin-top: var(--space-7);
   background: var(--scrim-footer);
 }
@@ -336,7 +444,7 @@ body {
 .site-footer-inner {
   max-width: var(--shell);
   margin: 0 auto;
-  padding: var(--space-6) var(--space-5);
+  padding: var(--space-6) var(--gutter);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -350,33 +458,109 @@ body {
 
 /* ------------------------------------------------------------- auth screen */
 
+/* Screen 03: a red editorial panel on the left, the form on the right, one
+   2px box around the pair. */
 .auth-shell {
   display: grid;
-  place-items: center;
-  padding: var(--space-7) 0;
+  grid-template-columns: minmax(0, 1fr) 520px;
+  border: var(--rule) solid var(--line-strong);
+  margin: var(--space-6) var(--gutter);
+  min-height: 640px;
 }
 
+.container > .auth-shell {
+  padding: 0;
+}
+
+.auth-aside {
+  background: var(--accent);
+  color: #fff;
+  padding: var(--space-7) var(--space-6);
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-aside-brand {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+
+.auth-aside h2 {
+  margin: auto 0 0;
+  font-size: clamp(40px, 4.5vw, 76px);
+  font-weight: 900;
+  line-height: 0.96;
+  letter-spacing: -0.035em;
+  max-width: 12ch;
+}
+
+.auth-aside-sub {
+  margin: var(--space-5) 0 0;
+  font-size: 16px;
+  max-width: 40ch;
+}
+
+.auth-aside-stats {
+  display: flex;
+  gap: var(--space-7);
+  margin: var(--space-6) 0 0;
+  padding-top: var(--space-5);
+  border-top: var(--rule) solid #fff;
+}
+
+.auth-aside-stats dt {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.auth-aside-stats dd {
+  margin: 6px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* The form column. `.card` styling is deliberately dropped here — the panel
+   itself is the surface. */
 .auth-card {
   width: 100%;
-  max-width: 440px;
+  max-width: none;
   margin: 0;
+  border: 0;
+  background: var(--ink);
+  padding: var(--space-7) var(--space-6);
+  display: flex;
+  flex-direction: column;
 }
 
 .auth-card h1 {
-  margin-top: 0;
+  margin: 0 0 var(--space-2);
+  font-size: 36px;
 }
 
 .auth-sub {
-  margin: 0 0 var(--space-5);
+  margin: 0 0 var(--space-6);
+  font-size: 14px;
 }
 
 .demo-block {
-  margin-top: var(--space-5);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--line);
+  margin-top: auto;
+  padding-top: var(--space-5);
+  border-top: var(--rule) solid var(--line-strong);
 }
 
 .demo-hint {
-  font-size: 12.5px;
-  margin: 0 0 var(--space-2);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin: 0 0 var(--space-3);
 }

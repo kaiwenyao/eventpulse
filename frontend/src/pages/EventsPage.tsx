@@ -109,7 +109,7 @@ export function EventsPage() {
           <option value="price">票价</option>
           <option value="sold">热度</option>
         </select>
-        <div className="chips" role="group" aria-label="切换发现模式">
+        <div className="chips chips-loose" role="group" aria-label="切换发现模式">
           <button
             className={`chip ${mode === 'nearby' ? 'active' : ''}`}
             onClick={() => setMode(mode === 'nearby' ? 'list' : 'nearby')}

@@ -1,5 +1,8 @@
 /* Breakpoints. The console collapses to a single column first, then the
-   discovery/detail layouts fold at phone width. */
+   discovery/detail layouts fold at phone width.
+
+   Folding a Modernist layout means the vertical ink rules that split a panel
+   become horizontal ones — the rule never simply disappears. */
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -11,10 +14,34 @@
   }
 }
 
+@media (max-width: 1180px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero-stats {
+    flex-direction: row;
+    border-left: 0;
+    border-top: var(--rule) solid var(--ink);
+  }
+
+  .hero-stats > div + div {
+    border-top: 0;
+    border-left: var(--rule) solid var(--ink);
+  }
+}
+
 @media (max-width: 1080px) {
   .form-columns,
-  .detail-body {
+  .detail-body,
+  .auth-shell {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .form-fields,
+  .detail-main {
+    border-right: 0;
+    border-bottom: var(--rule) solid var(--line-strong);
   }
 
   .form-preview,
@@ -22,15 +49,20 @@
     position: static;
   }
 
+  .auth-aside {
+    min-height: 320px;
+  }
+
+  .auth-aside h2 {
+    margin-top: var(--space-6);
+  }
+
   .console {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .console-rail {
-    position: static;
-    flex-direction: row;
-    align-items: center;
-    gap: var(--space-4);
+    padding: var(--space-3) 0;
     overflow-x: auto;
   }
 
@@ -41,28 +73,34 @@
 
   .console-nav {
     flex-direction: row;
-    gap: var(--space-2);
+    gap: 0;
+  }
+
+  .console-nav a {
+    white-space: nowrap;
   }
 }
 
 @media (max-width: 720px) {
-  .container {
-    padding: 0 var(--space-4) var(--space-6);
+  :root {
+    --gutter: var(--space-4);
   }
 
   .topbar-inner {
     flex-wrap: wrap;
+    height: auto;
     gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
+    padding: var(--space-3) var(--gutter);
   }
 
   .nav-toggle {
     display: inline-flex;
     order: 2;
     margin-left: auto;
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-sm);
+    min-height: 0;
+    background: transparent;
+    border: 1px solid var(--n-400);
+    border-radius: 0;
     padding: 9px 12px;
   }
 
@@ -72,7 +110,7 @@
     display: block;
     width: 16px;
     height: 2px;
-    border-radius: 2px;
+    border-radius: 0;
     background: var(--paper);
     position: relative;
   }
@@ -97,8 +135,9 @@
     display: none;
     flex-basis: 100%;
     flex-direction: column;
+    align-items: flex-start;
     gap: var(--space-3);
-    padding-bottom: var(--space-2);
+    padding-bottom: var(--space-3);
   }
 
   .topbar nav.open {
@@ -121,12 +160,24 @@
     display: none;
   }
 
-  .hero {
-    padding: var(--space-6) 0 var(--space-4);
+  .hero-copy {
+    padding: var(--space-6) var(--gutter);
   }
 
   .hero-stats {
-    gap: var(--space-5);
+    flex-wrap: wrap;
+  }
+
+  .hero-stats > div {
+    padding: var(--space-4) var(--gutter);
+  }
+
+  .hero-stats dd {
+    font-size: 32px;
+  }
+
+  .page-head h1 {
+    font-size: 32px;
   }
 
   .search-row {
@@ -136,11 +187,12 @@
   }
 
   /* In a column flex container `flex-basis` sizes the height — reset it so the
-     inputs keep their natural height instead of stretching to 160px. */
+     inputs keep their natural height instead of stretching. */
   .search,
   .search-city {
     flex: none;
     width: 100%;
+    max-width: none;
     min-width: 0;
   }
 
@@ -149,21 +201,55 @@
     width: 100%;
   }
 
+  .search-row .chips,
+  .search-row .chips-loose {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .search-row .chips .chip {
+    flex: 1;
+  }
+
   .grid,
   .form-grid {
     grid-template-columns: 1fr;
   }
 
   .detail-cover {
-    height: 180px;
+    height: 200px;
   }
 
-  .detail-main h1 {
-    font-size: 26px;
+  .detail-main,
+  .detail-side {
+    padding-left: var(--gutter);
+    padding-right: var(--gutter);
   }
 
-  .ticket-stub {
-    width: 78px;
+  .stepper-track {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+  }
+
+  .step + .step {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .form-columns,
+  .form-actions,
+  .stat-grid,
+  .stepper-track {
+    margin-left: calc(-1 * var(--gutter));
+    margin-right: calc(-1 * var(--gutter));
+  }
+
+  .form-fields,
+  .form-preview,
+  .form-actions,
+  .console-main {
+    padding-left: var(--gutter);
+    padding-right: var(--gutter);
   }
 
   .form-actions {

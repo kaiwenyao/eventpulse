@@ -4,16 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EventPulse · 活动预订</title>
-    <meta name="theme-color" content="#0a0c14" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#f4f5fa" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#201e1d" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f3f2f2" media="(prefers-color-scheme: light)" />
     <!-- Apply the persisted/system theme before paint so there is no flash of
          the wrong scheme on load. Reads localStorage first, falls back to the
-         OS preference, and defaults to dark. -->
+         OS preference, and defaults to light — the design system's ground. -->
     <script>
       ;(function () {
         var t = localStorage.getItem('theme')
         if (t !== 'light' && t !== 'dark') {
-          t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+          t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
         }
         document.documentElement.dataset.theme = t
       })()

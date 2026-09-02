@@ -1,4 +1,7 @@
-/* Interactive controls: buttons, inputs, fields, chips, dropzone, modal, toast. */
+/* Interactive controls: buttons, inputs, fields, chips, dropzone, modal, toast.
+
+   Square, bordered, no motion on press. The accent carries the one primary
+   action per view; everything else is an outlined neutral. */
 
 button,
 .btn-primary,
@@ -9,14 +12,16 @@ button,
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  font-family: var(--font-body);
+  font-family: var(--font-display);
   font-size: 14px;
   font-weight: 600;
-  border-radius: var(--radius-sm);
-  padding: 10px 18px;
+  line-height: 1.2;
+  border-radius: 0;
+  padding: 9px 16px;
+  min-height: 38px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
 /* Anchors that must read as buttons (router links, download links). */
@@ -27,67 +32,83 @@ button,
 .btn-primary,
 button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle) {
   background: var(--accent);
-  border: none;
+  border: 1px solid var(--accent);
   color: #fff;
 }
 
 .btn-primary:hover,
 button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle):hover {
-  background: color-mix(in srgb, var(--accent) 85%, #ffffff);
+  background: var(--accent-600);
+  border-color: var(--accent-600);
+  color: #fff;
+  text-decoration: none;
 }
 
 .btn-primary:active,
 button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle):active {
-  transform: translateY(1px);
+  background: var(--accent-700);
+  border-color: var(--accent-700);
 }
 
 .btn-secondary {
-  background: var(--surface-2);
+  background: transparent;
   color: var(--paper);
-  border: 1px solid var(--line);
+  border: 1px solid var(--n-400);
 }
 
 .btn-secondary:hover {
-  background: var(--surface-3);
-  border-color: var(--line-strong);
+  background: var(--hover-wash);
+  border-color: var(--paper);
+  color: var(--paper);
+  text-decoration: none;
 }
 
 .btn-secondary.is-active {
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--paper);
+  border-color: var(--paper);
+  color: var(--ink);
 }
 
 .btn-ghost {
   background: transparent;
   color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border: 1px solid var(--accent);
 }
 
 .btn-ghost:hover {
-  background: var(--accent-soft);
+  background: var(--accent);
   border-color: var(--accent);
+  color: #fff;
+  text-decoration: none;
 }
 
+/* Destructive actions read as a *darker* red block, not an outline — the
+   design gives 取消活动 the same weight as the primary CTA it replaces. */
 .btn-danger {
-  background: transparent;
-  color: var(--red);
-  border: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
+  background: var(--accent-700);
+  color: #fff;
+  border: 1px solid var(--accent-700);
 }
 
 .btn-danger:hover {
-  background: color-mix(in srgb, var(--red) 12%, transparent);
-  border-color: var(--red);
+  background: var(--accent-800);
+  border-color: var(--accent-800);
+  color: #fff;
+  text-decoration: none;
 }
 
 .btn-block {
   display: flex;
   width: 100%;
+  min-height: 46px;
+  font-size: 15px;
   margin-bottom: var(--space-2);
 }
 
 .btn-sm {
-  padding: 7px 14px;
-  font-size: 13px;
+  padding: 6px 14px;
+  min-height: 32px;
+  font-size: 12px;
 }
 
 .btn-icon {
@@ -97,38 +118,69 @@ button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-to
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 /* -------------------------------------------------------------------- chips */
 
+/* The design draws filters as one joined segmented control: a single hairline
+   box, options divided by 1px rules, the active option a solid ink block. */
 .chips {
-  display: flex;
-  gap: var(--space-2);
+  display: inline-flex;
   flex-wrap: wrap;
+  border: 1px solid var(--n-400);
+  background: var(--ink);
 }
 
 .chip {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  color: var(--muted);
-  border-radius: 999px;
-  padding: 7px 16px;
+  background: transparent;
+  border: 0;
+  color: var(--paper);
+  border-radius: 0;
+  padding: 0 16px;
+  min-height: 36px;
+  font-family: var(--font-body);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
+}
+
+.chip + .chip {
+  border-left: 1px solid var(--n-400);
 }
 
 .chip:hover {
+  background: var(--hover-wash);
   color: var(--paper);
-  border-color: var(--line-strong);
 }
 
 .chip.active {
-  color: var(--ink);
   background: var(--paper);
-  border-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-display);
   font-weight: 600;
+}
+
+.chip.active:hover {
+  background: var(--paper);
+}
+
+/* The discovery mode toggles (附近 / 推荐) sit apart from the category bar and
+   read as independent outlined switches. */
+.chips-loose {
+  border: 0;
+  gap: var(--space-2);
+  background: transparent;
+}
+
+.chips-loose .chip {
+  border: 1px solid var(--n-400);
+}
+
+.chips-loose .chip.active {
+  border-color: var(--accent);
+  background: var(--accent-100);
+  color: var(--accent-700);
 }
 
 /* ------------------------------------------------------------------- forms */
@@ -138,29 +190,34 @@ select,
 textarea {
   width: 100%;
   background: var(--surface-2);
-  border: 1px solid var(--line);
+  border: 1px solid var(--n-400);
   color: var(--paper);
-  border-radius: var(--radius-sm);
-  padding: 10px 13px;
+  border-radius: 0;
+  padding: 9px 12px;
+  min-height: 40px;
   font-size: 14px;
   font-family: var(--font-body);
+  caret-color: var(--accent);
 }
 
 textarea {
   resize: vertical;
   line-height: 1.6;
+  min-height: 96px;
 }
 
 input:hover,
 select:hover,
 textarea:hover {
-  border-color: var(--line-strong);
+  border-color: var(--paper);
 }
 
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
 }
 
 input[aria-invalid='true'],
@@ -174,22 +231,22 @@ textarea::placeholder {
 }
 
 /* Native pickers (date/time) inherit the active scheme so the OS control
-   matches the page instead of dropping a white blob onto dark UI. */
+   matches the page instead of dropping a dark blob onto paper UI. */
 input[type='datetime-local'],
 input[type='date'],
 input[type='number'] {
-  color-scheme: dark;
-}
-
-:root[data-theme='light'] input[type='datetime-local'],
-:root[data-theme='light'] input[type='date'],
-:root[data-theme='light'] input[type='number'] {
   color-scheme: light;
 }
 
+:root[data-theme='dark'] input[type='datetime-local'],
+:root[data-theme='dark'] input[type='date'],
+:root[data-theme='dark'] input[type='number'] {
+  color-scheme: dark;
+}
+
 label {
-  font-size: 13px;
-  color: var(--paper-dim);
+  font-size: 12px;
+  color: var(--muted);
   font-weight: 500;
   display: block;
 }
@@ -197,7 +254,7 @@ label {
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 5px;
   min-width: 0;
 }
 
@@ -211,13 +268,17 @@ label {
   margin-right: auto;
 }
 
+/* The required marker is a bare red asterisk-weight token, not a pill. */
 .field-req {
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--accent);
-  background: var(--accent-soft);
-  border-radius: 999px;
-  padding: 1px 8px;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
 }
 
 .field-count {
@@ -251,6 +312,7 @@ label {
 
 .field-error {
   font-size: 12px;
+  font-weight: 600;
   color: var(--red);
   margin: 0;
 }
@@ -258,38 +320,82 @@ label {
 .search {
   flex: 1;
   min-width: 220px;
+  max-width: 320px;
 }
 
 .search-city {
-  flex: 0 1 160px;
+  flex: 0 1 140px;
   min-width: 120px;
 }
 
+/* The filter band: a full-width strip closed by an ink rule, matching the
+   toolbar in screen 01. */
 .search-row {
   display: flex;
   align-items: center;
   gap: var(--space-4);
   flex-wrap: wrap;
-  margin: var(--space-2) 0 var(--space-5);
+  padding: var(--space-4) var(--gutter);
+  margin: 0 calc(-1 * var(--gutter)) var(--space-6);
+  border-bottom: var(--rule) solid var(--line-strong);
 }
 
 .search-row select {
   width: auto;
-  min-width: 130px;
+  min-width: 150px;
+}
+
+/* Pushes the discovery-mode switches to the far edge of the filter band. */
+.search-row .chips-loose {
+  margin-left: auto;
 }
 
 .toolbar {
   margin-bottom: var(--space-4);
 }
 
+/* The −/2/+ quantity control from screen 02: one hairline box, 1px dividers. */
 .stepper {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--n-400);
+}
+
+.stepper button {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--paper);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.stepper button:hover {
+  background: var(--hover-wash);
+  color: var(--paper);
+}
+
+.stepper button:first-child {
+  border-right: 1px solid var(--n-400);
+}
+
+.stepper button:last-child {
+  border-left: 1px solid var(--n-400);
 }
 
 .stepper input {
+  flex: 1;
+  border: 0;
+  min-height: 44px;
+  background: transparent;
   text-align: center;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
@@ -301,21 +407,23 @@ label {
   place-items: center;
   min-height: 148px;
   padding: var(--space-4);
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius);
+  border: 1px dashed var(--n-500);
+  border-radius: 0;
   background: var(--surface-2);
   overflow: hidden;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
 
 .dropzone.is-dragging {
   border-color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--accent-100);
 }
 
 .dropzone.has-image {
   padding: 0;
   border-style: solid;
+  border-width: var(--rule);
+  border-color: var(--line-strong);
 }
 
 .dropzone-hint {
@@ -323,7 +431,11 @@ label {
   align-items: center;
   gap: var(--space-2);
   color: var(--muted);
-  font-size: 13px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   text-align: center;
 }
 
@@ -332,6 +444,7 @@ label {
   max-height: 220px;
   object-fit: cover;
   display: block;
+  filter: grayscale(1) contrast(1.08);
 }
 
 /* Visually hidden but still focusable and hit-testable: the styled trigger
@@ -347,8 +460,8 @@ label {
 
 .file-input:focus-visible {
   opacity: 1;
-  outline: none;
-  box-shadow: var(--focus);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .dropzone-actions {
@@ -358,31 +471,31 @@ label {
 
 /* ----------------------------------------------------------- theme toggle */
 
-/* A square icon button that sits in the top bar; rests on the bar's scrim so
-   only its border + muted glyph carry it. Overrides the default button padding
-   and the transition list (no transform on tap for a tiny control). */
+/* A square icon button that sits in the top bar. Overrides the default button
+   padding; no transform on tap for a control this small. */
 .theme-toggle {
   display: inline-grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
+  min-height: 0;
   padding: 0;
   flex: none;
-  background: var(--surface-2);
+  background: transparent;
   color: var(--muted);
-  border: 1px solid var(--line);
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  border: 1px solid var(--n-400);
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 
 .theme-toggle:hover {
   color: var(--paper);
-  border-color: var(--line-strong);
-  background: var(--surface-3);
+  border-color: var(--paper);
+  background: var(--hover-wash);
 }
 
 .theme-toggle .icon {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
 }
 
 /* ------------------------------------------------------------------ modal */
@@ -395,8 +508,6 @@ label {
   place-items: center;
   padding: var(--space-5);
   background: var(--scrim-modal);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 .modal {
@@ -404,28 +515,32 @@ label {
   max-width: 440px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
   padding: var(--space-5);
   background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
+  border: var(--rule) solid var(--line-strong);
+  border-radius: 0;
   box-shadow: var(--shadow-lg);
 }
 
 .modal-title {
-  font-size: 19px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 20px;
   margin: 0;
 }
 
 .modal-desc {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14px;
+  color: var(--paper-dim);
 }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 /* ------------------------------------------------------------------ toast */
@@ -446,11 +561,11 @@ label {
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  background: var(--surface-2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: var(--rule) solid var(--line-strong);
+  border-radius: 0;
   box-shadow: var(--shadow);
-  animation: toast-in 0.2s ease-out;
+  animation: toast-in 0.16s ease-out;
 }
 
 .toast p {
@@ -459,30 +574,32 @@ label {
   flex: 1;
 }
 
+/* A square mark, not a dot — same shape language as the notification list. */
 .toast-mark {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   margin-top: 6px;
-  border-radius: 999px;
+  border-radius: 0;
   flex: none;
-  background: var(--muted);
+  background: var(--paper);
 }
 
 .toast-success .toast-mark {
-  background: var(--green);
+  background: var(--accent);
 }
 
 .toast-error .toast-mark {
-  background: var(--red);
+  background: var(--accent-700);
 }
 
 .toast-error {
-  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+  border-color: var(--accent-700);
 }
 
 .toast-close {
   background: none;
   border: none;
+  min-height: 0;
   color: var(--muted);
   font-size: 18px;
   line-height: 1;
@@ -497,7 +614,7 @@ label {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;

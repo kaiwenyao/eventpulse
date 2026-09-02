@@ -1,7 +1,7 @@
 import { formatMoney, formatTime } from '../api'
 import { localInputToIso } from '../lib/datetime'
 import { CategoryPill, SoldBar } from '../ui/Badges'
-import { ArrowRightIcon, ClockIcon, PinIcon } from '../ui/Icons'
+import { ArrowRightIcon, ClockIcon } from '../ui/Icons'
 import { EventFormState, publishWarnings, yuanToCents } from './eventForm'
 
 /**
@@ -19,16 +19,15 @@ export function EventFormPreview({ form }: { form: EventFormState }) {
     <aside className="form-preview">
       <p className="eyebrow">实时预览</p>
       <div className="ticket ticket-static">
+        <div
+          className={`ticket-cover ${form.coverUrl ? '' : 'ticket-cover-empty'}`}
+          style={form.coverUrl ? { backgroundImage: `url(${form.coverUrl})` } : undefined}
+          aria-hidden
+        />
         <div className="ticket-main">
-          {form.coverUrl && (
-            <div className="ticket-cover" style={{ backgroundImage: `url(${form.coverUrl})` }} aria-hidden />
-          )}
           <div className="ticket-head">
             <CategoryPill category={form.category || 'unknown'} />
-            <span className="ticket-city">
-              <PinIcon />
-              {form.city || '待填写'}
-            </span>
+            <span className="ticket-city">{form.city || '待填写'}</span>
           </div>
           <h2 className="ticket-title">{form.title || '未命名活动'}</h2>
           {form.summary && <p className="ticket-summary">{form.summary}</p>}
@@ -40,8 +39,10 @@ export function EventFormPreview({ form }: { form: EventFormState }) {
         </div>
         <div className="ticket-stub">
           <span className="stub-price">{cents === 0 ? '免费' : formatMoney(cents)}</span>
-          <span className="stub-caption">预订</span>
-          <ArrowRightIcon className="stub-arrow" />
+          <span className="stub-caption">
+            预订
+            <ArrowRightIcon className="stub-arrow" />
+          </span>
         </div>
       </div>
 
