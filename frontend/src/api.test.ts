@@ -16,10 +16,10 @@ describe('api()', () => {
   })
 
   it('throws ApiError when code is 0', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ code: 0, msg: '余票不足' }), { status: 200 })))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ code: 0, msg: 'Sold out' }), { status: 200 })))
     const err = (await api('POST', '/api/bookings', {}).catch((e: unknown) => e)) as ApiError
     expect(err).toBeInstanceOf(ApiError)
-    expect(err.message).toBe('余票不足')
+    expect(err.message).toBe('Sold out')
   })
 
   it('falls back when the body is not JSON', async () => {

@@ -104,7 +104,7 @@ public class OrganiserEventService {
     public EventVo update(Long id, OrganiserEventRequest request) {
         Event event = requireOwn(id);
         if (request.version() != null && request.version() != event.getVersion()) {
-            throw BusinessException.conflict("活动已被其他人修改，请刷新后重试");
+            throw BusinessException.conflict("Event was modified by someone else, refresh and try again");
         }
         validate(request);
         String before = snapshot(event);
@@ -118,7 +118,7 @@ public class OrganiserEventService {
     public EventVo publish(Long id) {
         Event event = requireOwn(id);
         if (!EventStatus.canTransition(event.getStatus(), EventStatus.PUBLISHED)) {
-            throw BusinessException.conflict("当前状态不能发布");
+            throw BusinessException.conflict("Event cannot be published in its current state");
         }
         String before = snapshot(event);
         event.setStatus(EventStatus.PUBLISHED);
@@ -132,7 +132,7 @@ public class OrganiserEventService {
     public EventVo cancel(Long id, CancelEventRequest request) {
         Event event = requireOwn(id);
         if (!EventStatus.canTransition(event.getStatus(), EventStatus.CANCELLED)) {
-            throw BusinessException.conflict("当前状态不能取消");
+            throw BusinessException.conflict("Event cannot be cancelled in its current state");
         }
         String before = snapshot(event);
         event.setStatus(EventStatus.CANCELLED);
@@ -156,8 +156,8 @@ public class OrganiserEventService {
                                 "userId", booking.getUserId(),
                                 "eventId", id,
                                 "bookingId", booking.getId(),
-                                "title", "活动已取消",
-                                "message", event.getTitle() + " 已取消：" + request.reason()));
+                                "title", "Event cancelled",
+                                "message", event.getTitle() + " was cancelled: " + request.reason()));
             }
         }
         audit(event.getId(), "CANCEL", before, snapshot(event));
@@ -168,7 +168,7 @@ public class OrganiserEventService {
     public EventVo archive(Long id, ArchiveEventRequest request) {
         Event event = requireOwn(id);
         if (!EventStatus.canTransition(event.getStatus(), EventStatus.ARCHIVED)) {
-            throw BusinessException.conflict("只有已结束或已取消的活动可以归档");
+            throw BusinessException.conflict("Only finished or cancelled events can be archived");
         }
         String before = snapshot(event);
         event.setStatus(EventStatus.ARCHIVED);
@@ -184,7 +184,7 @@ public class OrganiserEventService {
     public EventVo duplicate(Long id) {
         Event source = requireOwn(id);
         Event copy = new Event();
-        copy.setTitle(source.getTitle() + "（副本）");
+        copy.setTitle(source.getTitle() + " (copy)");
         copy.setSummary(source.getSummary());
         copy.setDescription(source.getDescription());
         copy.setCategory(source.getCategory());
@@ -218,11 +218,11 @@ public class OrganiserEventService {
     public void delete(Long id) {
         Event event = requireOwn(id);
         if (!EventStatus.DRAFT.equals(event.getStatus())) {
-            throw BusinessException.conflict("只有草稿可以删除");
+            throw BusinessException.conflict("Only drafts can be deleted");
         }
         boolean hasOrders = !bookings.findByEventIdOrderByCreatedAtDesc(id).isEmpty();
         if (hasOrders) {
-            throw BusinessException.conflict("已有订单的活动不能物理删除");
+            throw BusinessException.conflict("Events with bookings cannot be deleted");
         }
         audit(id, "DELETE", snapshot(event), null);
         events.delete(event);
@@ -233,9 +233,9 @@ public class OrganiserEventService {
         return events.findByIdAndOrganiserId(id, BaseContext.getUserId())
                 .orElseThrow(() -> {
                     if (events.findById(id).isPresent()) {
-                        return BusinessException.forbidden("只能操作自己的活动");
+                        return BusinessException.forbidden("You can only manage your own events");
                     }
-                    return BusinessException.notFound("活动不存在");
+                    return BusinessException.notFound("Event not found");
                 });
     }
 
@@ -278,7 +278,7 @@ public class OrganiserEventService {
                 event.setUpdatedAt(Instant.now());
                 return;
             }
-            throw BusinessException.conflict("当前状态不可编辑");
+            throw BusinessException.conflict("Event cannot be edited in its current state");
         }
         if (EventStatus.ONGOING.equals(status)) {
             event.setContactInfo(request.contactInfo());
@@ -287,7 +287,7 @@ public class OrganiserEventService {
             return;
         }
         if (request.capacity() < event.getSold()) {
-            throw new BusinessException("容量不能小于已售出票数");
+            throw new BusinessException("Capacity cannot be below tickets already sold");
         }
         apply(event, request);
     }
@@ -319,16 +319,16 @@ public class OrganiserEventService {
     private void validate(OrganiserEventRequest request) {
         Instant ends = request.endsAt() != null ? request.endsAt() : request.startsAt().plus(3, ChronoUnit.HOURS);
         if (!request.startsAt().isBefore(ends)) {
-            throw new BusinessException("开始时间必须早于结束时间");
+            throw new BusinessException("Start time must be before end time");
         }
         if (request.salesEndAt() != null && request.salesEndAt().isAfter(request.startsAt())) {
-            throw new BusinessException("售票截止时间不能晚于活动开始时间");
+            throw new BusinessException("Sales end time cannot be after the event start");
         }
         if (request.capacity() <= 0) {
-            throw new BusinessException("容量必须大于零");
+            throw new BusinessException("Capacity must be greater than zero");
         }
         if (request.priceCents() < 0) {
-            throw new BusinessException("票价不能为负数");
+            throw new BusinessException("Ticket price cannot be negative");
         }
     }
 

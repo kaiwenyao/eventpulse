@@ -1,13 +1,12 @@
-import {
-  BOOKING_STATUS_LABELS,
-  CATEGORY_LABELS,
-  EVENT_STATUS_LABELS,
-  TICKET_STATUS_LABELS,
-} from '../types'
+import { useTranslation } from 'react-i18next'
+import { CATEGORIES } from '../types'
+
+const CATEGORY_KEYS = new Set<string>(CATEGORIES.map((c) => c.key))
 
 export function CategoryPill({ category }: { category?: string }) {
-  const known = Boolean(category) && category! in CATEGORY_LABELS
-  const label = known ? CATEGORY_LABELS[category!] : category || '未分类'
+  const { t } = useTranslation()
+  const known = Boolean(category) && CATEGORY_KEYS.has(category!)
+  const label = known ? t(`category.${category}`) : category || t('common.uncategorized')
   return <span className={`pill pill-${known ? category : 'unknown'}`}>{label}</span>
 }
 
@@ -21,27 +20,34 @@ function statusSlug(status?: string) {
 }
 
 export function EventStatusBadge({ status }: { status?: string }) {
-  return <span className={`badge badge-${statusSlug(status)}`}>{EVENT_STATUS_LABELS[status ?? ''] ?? status ?? '未知'}</span>
+  const { t } = useTranslation()
+  const label = status ? t(`status.event.${status}`, { defaultValue: status }) : t('common.unknown')
+  return <span className={`badge badge-${statusSlug(status)}`}>{label}</span>
 }
 
 export function BookingStatusBadge({ status }: { status?: string }) {
+  const { t } = useTranslation()
+  const label = status ? t(`status.booking.${status}`, { defaultValue: status }) : t('common.unknown')
   return (
     <span className={`badge badge-booking-${statusSlug(status)}`}>
-      {BOOKING_STATUS_LABELS[status ?? ''] ?? status ?? '未知'}
+      {label}
     </span>
   )
 }
 
 export function TicketStatusBadge({ status }: { status?: string }) {
+  const { t } = useTranslation()
+  const label = status ? t(`status.ticket.${status}`, { defaultValue: status }) : t('common.unknown')
   return (
     <span className={`badge badge-ticket-${statusSlug(status)}`}>
-      {TICKET_STATUS_LABELS[status ?? ''] ?? status ?? '未知'}
+      {label}
     </span>
   )
 }
 
 /** Remaining-stock meter. Turns amber then red as an event sells through. */
 export function SoldBar({ sold, capacity }: { sold?: number; capacity?: number }) {
+  const { t } = useTranslation()
   const total = Number.isFinite(capacity) ? capacity! : 0
   const taken = Number.isFinite(sold) ? sold! : 0
   const ratio = total > 0 ? Math.min(taken / total, 1) : 0
@@ -51,7 +57,7 @@ export function SoldBar({ sold, capacity }: { sold?: number; capacity?: number }
       <div className={`sold-track ${level}`}>
         <span className="sold-fill" style={{ width: `${ratio * 100}%` }} />
       </div>
-      <span className="sold-label">{Math.max(total - taken, 0)} 张余票</span>
+      <span className="sold-label">{t('common.remainingTickets', { count: Math.max(total - taken, 0) })}</span>
     </div>
   )
 }

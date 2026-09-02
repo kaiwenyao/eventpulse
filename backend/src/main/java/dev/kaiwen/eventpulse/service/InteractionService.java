@@ -42,7 +42,7 @@ public class InteractionService {
      */
     public void record(Long userId, Long eventId, String type, int quantity) {
         if (quantity <= 0) {
-            throw new IllegalArgumentException("quantity 必须大于 0，实际为 " + quantity);
+            throw new IllegalArgumentException("quantity must be greater than 0, got " + quantity);
         }
         Interaction interaction = new Interaction();
         interaction.setUserId(userId);

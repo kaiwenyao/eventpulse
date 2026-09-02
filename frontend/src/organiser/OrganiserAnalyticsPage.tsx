@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, ApiError } from '../api'
 import { EventVo, PageVo } from '../types'
 import { EmptyState, ErrorNote } from '../ui/Badges'
@@ -22,9 +23,10 @@ interface AnalyticsVo {
 
 /** Daily-views column chart. Plain divs — a chart library is not worth 40 KB here. */
 function ViewsChart({ series }: { series: MetricRow[] }) {
+  const { t } = useTranslation()
   const peak = Math.max(1, ...series.map((row) => row.views))
   return (
-    <div className="chart" role="img" aria-label={`最近 ${series.length} 天的每日浏览量`}>
+    <div className="chart" role="img" aria-label={t('organiser.trendAria', { days: series.length })}>
       {series.map((row) => (
         <div key={row.metricDate} className={`chart-col ${row.views === peak ? 'chart-col-peak' : ''}`}>
           <span className="chart-bar" style={{ height: `${Math.max(2, (row.views / peak) * 100)}%` }} />
@@ -36,6 +38,7 @@ function ViewsChart({ series }: { series: MetricRow[] }) {
 }
 
 export function OrganiserAnalyticsPage() {
+  const { t } = useTranslation()
   const [data, setData] = useState<AnalyticsVo | null>(null)
   const [events, setEvents] = useState<EventVo[]>([])
   const [eventId, setEventId] = useState('')
@@ -55,23 +58,23 @@ export function OrganiserAnalyticsPage() {
         setData(next)
         setError('')
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : '加载失败'))
+      .catch((e) => setError(e instanceof ApiError ? e.message : t('common.loadFailed')))
       .finally(() => setLoading(false))
-  }, [eventId])
+  }, [eventId, t])
 
   const tiles = useMemo(
     () => [
-      { label: '浏览', value: String(data?.views ?? 0), caption: '活动详情页曝光', tone: '' },
-      { label: '点击', value: String(data?.clicks ?? 0), caption: '进入预订流程', tone: '' },
-      { label: '预订', value: String(data?.bookings ?? 0), caption: '成功创建的订单', tone: '' },
+      { label: t('organiser.views'), value: String(data?.views ?? 0), caption: t('organiser.viewsCaption'), tone: '' },
+      { label: t('organiser.clicks'), value: String(data?.clicks ?? 0), caption: t('organiser.clicksCaption'), tone: '' },
+      { label: t('organiser.bookings'), value: String(data?.bookings ?? 0), caption: t('organiser.bookingsCaption'), tone: '' },
       {
-        label: '转化',
+        label: t('organiser.conversion'),
         value: `${Number(data?.conversion ?? 0).toFixed(1)}%`,
-        caption: '预订 / 浏览',
+        caption: t('organiser.conversionCaption'),
         tone: 'stat-accent',
       },
     ],
-    [data],
+    [data, t],
   )
 
   const series = data?.series ?? []
@@ -80,16 +83,16 @@ export function OrganiserAnalyticsPage() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>数据分析</h1>
-          <p className="muted">默认展示最近 14 天，选择具体活动可查看单场趋势。</p>
+          <h1>{t('organiser.analyticsTitle')}</h1>
+          <p className="muted">{t('organiser.analyticsSub')}</p>
         </div>
         <select
-          aria-label="选择活动"
+          aria-label={t('organiser.pickEvent')}
           value={eventId}
           onChange={(e) => setEventId(e.target.value)}
           className="analytics-picker"
         >
-          <option value="">全部活动</option>
+          <option value="">{t('organiser.allEvents')}</option>
           {events.map((event) => (
             <option key={event.id} value={event.id}>
               {event.title}
@@ -115,9 +118,9 @@ export function OrganiserAnalyticsPage() {
           </div>
 
           <section>
-            <h2 className="section-title">每日浏览趋势</h2>
+            <h2 className="section-title">{t('organiser.trend')}</h2>
             {series.length === 0 ? (
-              <EmptyState title="暂无趋势数据" hint="选择一场具体活动，或等待今天的指标落库。" />
+              <EmptyState title={t('organiser.noTrendTitle')} hint={t('organiser.noTrendHint')} />
             ) : (
               <ViewsChart series={series} />
             )}

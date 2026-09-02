@@ -21,13 +21,13 @@ public class GlobalExceptionHandler {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
                 .map(error -> error.getField() + " " + error.getDefaultMessage())
-                .orElse("参数不合法");
+                .orElse("Invalid request");
         return ResponseEntity.badRequest().body(Result.error(message));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleOther(Exception ex) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Result.error(ex.getMessage() == null ? "服务器错误" : ex.getMessage()));
+                .body(Result.error(ex.getMessage() == null ? "Server error" : ex.getMessage()));
     }
 }

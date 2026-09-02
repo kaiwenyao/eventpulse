@@ -46,7 +46,7 @@ class BookingConcurrencyIT {
             try (PreparedStatement insert = connection.prepareStatement("""
                     INSERT INTO events (title, description, category, city, starts_at, ends_at, price_cents,
                         capacity, sold, organiser_id, status, created_at, updated_at, max_quantity_per_booking)
-                    VALUES ('并发', 'd', 'music', '上海', ?, ?, 100, 10, 0, 1, 'PUBLISHED', now(), now(), 10)
+                    VALUES ('并发', 'd', 'music', 'Shanghai', ?, ?, 100, 10, 0, 1, 'PUBLISHED', now(), now(), 10)
                     """)) {
                 Instant start = Instant.now().plusSeconds(86400);
                 insert.setTimestamp(1, Timestamp.from(start));
@@ -127,7 +127,7 @@ class BookingConcurrencyIT {
             try (PreparedStatement insert = connection.prepareStatement("""
                     INSERT INTO events (title, description, category, city, starts_at, ends_at, price_cents,
                         capacity, sold, organiser_id, status, created_at, updated_at, max_quantity_per_booking)
-                    VALUES ('余额回滚', 'd', 'music', '上海', ?, ?, 100, 10, 0, ?, 'PUBLISHED', now(), now(), 10)
+                    VALUES ('余额回滚', 'd', 'music', 'Shanghai', ?, ?, 100, 10, 0, ?, 'PUBLISHED', now(), now(), 10)
                     """, java.sql.Statement.RETURN_GENERATED_KEYS)) {
                 Instant start = Instant.now().plusSeconds(86400);
                 insert.setTimestamp(1, Timestamp.from(start));
@@ -288,7 +288,7 @@ class BookingConcurrencyIT {
             try (PreparedStatement insert = connection.prepareStatement("""
                     INSERT INTO events (title, description, category, city, starts_at, ends_at, price_cents,
                         capacity, sold, organiser_id, status, created_at, updated_at, max_quantity_per_booking)
-                    VALUES ('统计并发', 'd', 'music', '上海', ?, ?, 100, 100, 0, 1, 'PUBLISHED', now(), now(), 100)
+                    VALUES ('统计并发', 'd', 'music', 'Shanghai', ?, ?, 100, 100, 0, 1, 'PUBLISHED', now(), now(), 100)
                     """)) {
                 Instant start = Instant.now().plusSeconds(86400);
                 insert.setTimestamp(1, Timestamp.from(start));

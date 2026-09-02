@@ -173,7 +173,7 @@ class DemoSeedTest {
             assertThat(event.getSalesEndAt()).isBefore(event.getStartsAt());
         });
         assertThat(saved).extracting(Event::getCategory).containsOnly("music", "tech", "sports", "art");
-        assertThat(saved).extracting(Event::getCity).contains("上海", "北京", "杭州", "深圳", "成都", "广州");
+        assertThat(saved).extracting(Event::getCity).contains("Shanghai", "Beijing", "Hangzhou", "Shenzhen", "Chengdu", "Guangzhou");
         assertThat(saved).extracting(Event::getStatus).contains(
                 EventStatus.DRAFT, EventStatus.PUBLISHED, EventStatus.ONGOING,
                 EventStatus.FINISHED, EventStatus.CANCELLED, EventStatus.ARCHIVED);

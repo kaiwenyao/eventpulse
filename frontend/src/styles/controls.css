@@ -30,14 +30,14 @@ button,
 }
 
 .btn-primary,
-button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle) {
+button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle, .lang-toggle) {
   background: var(--accent);
   border: 1px solid var(--accent);
   color: #fff;
 }
 
 .btn-primary:hover,
-button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle):hover {
+button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle, .lang-toggle):hover {
   background: var(--accent-600);
   border-color: var(--accent-600);
   color: #fff;
@@ -496,6 +496,12 @@ label {
 .theme-toggle .icon {
   width: 17px;
   height: 17px;
+}
+
+.lang-toggle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 /* ------------------------------------------------------------------ modal */

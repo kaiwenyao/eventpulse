@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 import { api, ApiError, formatMoney } from '../api'
 import { formatDayTime } from '../lib/datetime'
@@ -8,6 +9,7 @@ import { PlusIcon } from '../ui/Icons'
 import { SkeletonCard } from '../ui/Skeleton'
 
 export function OrganiserEventsPage() {
+  const { t } = useTranslation()
   const [mine, setMine] = useState<EventVo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -20,9 +22,9 @@ export function OrganiserEventsPage() {
         setMine(page?.records ?? [])
         setError('')
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : '加载活动失败'))
+      .catch((e) => setError(e instanceof ApiError ? e.message : t('organiser.loadFailed')))
       .finally(() => setLoading(false))
-  }, [q, status])
+  }, [q, status, t])
 
   const summary = useMemo(() => {
     const sold = mine.reduce((sum, e) => sum + e.sold, 0)
@@ -34,13 +36,11 @@ export function OrganiserEventsPage() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>活动管理</h1>
-          <p className="muted">
-            共 {mine.length} 场活动 · 已售 {summary.sold}/{summary.capacity} 张
-          </p>
+          <h1>{t('organiser.events')}</h1>
+          <p className="muted">{t('organiser.eventsCount', { count: mine.length, sold: summary.sold, capacity: summary.capacity })}</p>
         </div>
         <NavLink to="/organiser/events/new" className="btn-primary btn-link">
-          <PlusIcon /> 新建活动
+          <PlusIcon /> {t('organiser.newEvent')}
         </NavLink>
       </header>
 
@@ -49,16 +49,16 @@ export function OrganiserEventsPage() {
       <div className="search-row toolbar">
         <input
           className="search"
-          placeholder="搜索我的活动…"
+          placeholder={t('organiser.searchMine')}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          aria-label="搜索我的活动"
+          aria-label={t('organiser.searchMineAria')}
         />
-        <select aria-label="状态筛选" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">全部状态</option>
+        <select aria-label={t('organiser.statusFilter')} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="">{t('organiser.allStatuses')}</option>
           {EVENT_STATUSES.map((s) => (
             <option key={s.key} value={s.key}>
-              {s.label}
+              {t(`status.event.${s.key}`)}
             </option>
           ))}
         </select>
@@ -68,11 +68,11 @@ export function OrganiserEventsPage() {
         <SkeletonCard />
       ) : mine.length === 0 ? (
         <EmptyState
-          title="没有匹配的活动"
-          hint="换个关键词或状态筛选，也可以直接创建一场新活动。"
+          title={t('organiser.noMatchTitle')}
+          hint={t('organiser.noMatchHint')}
           action={
             <NavLink to="/organiser/events/new" className="btn-primary btn-link">
-              新建活动
+              {t('organiser.newEvent')}
             </NavLink>
           }
         />
@@ -81,12 +81,12 @@ export function OrganiserEventsPage() {
           <table className="data-table">
             <thead>
               <tr>
-                <th scope="col">活动</th>
-                <th scope="col">状态</th>
-                <th scope="col">开始时间</th>
-                <th scope="col">票价</th>
-                <th scope="col">售出</th>
-                <th scope="col">操作</th>
+                <th scope="col">{t('organiser.colEvent')}</th>
+                <th scope="col">{t('organiser.colStatus')}</th>
+                <th scope="col">{t('organiser.colStart')}</th>
+                <th scope="col">{t('organiser.colPrice')}</th>
+                <th scope="col">{t('organiser.colSold')}</th>
+                <th scope="col">{t('organiser.colActions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -105,15 +105,15 @@ export function OrganiserEventsPage() {
                     <EventStatusBadge status={event.status} />
                   </td>
                   <td className="num">{formatDayTime(event.startsAt)}</td>
-                  <td className="num">{event.priceCents === 0 ? '免费' : formatMoney(event.priceCents)}</td>
+                  <td className="num">{event.priceCents === 0 ? t('common.free') : formatMoney(event.priceCents)}</td>
                   <td className="cell-sold">
                     <SoldBar sold={event.sold} capacity={event.capacity} />
                   </td>
                   <td>
                     <div className="row table-actions">
-                      <NavLink to={`/organiser/events/${event.id}`}>查看</NavLink>
-                      <NavLink to={`/organiser/events/${event.id}/edit`}>编辑</NavLink>
-                      <NavLink to={`/organiser/events/${event.id}/attendees`}>参与者</NavLink>
+                      <NavLink to={`/organiser/events/${event.id}`}>{t('organiser.view')}</NavLink>
+                      <NavLink to={`/organiser/events/${event.id}/edit`}>{t('organiser.edit')}</NavLink>
+                      <NavLink to={`/organiser/events/${event.id}/attendees`}>{t('organiser.attendees')}</NavLink>
                     </div>
                   </td>
                 </tr>

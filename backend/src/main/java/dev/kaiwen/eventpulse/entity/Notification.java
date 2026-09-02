@@ -51,7 +51,7 @@ public class Notification {
     public Notification(Long bookingId, String message) {
         this.bookingId = bookingId;
         this.type = "BOOKING";
-        this.title = "预订通知";
+        this.title = "Booking update";
         this.message = message;
         this.createdAt = Instant.now();
     }

@@ -145,7 +145,7 @@ class CrudEnhancementTest {
         assertThat(service.archive(9L, new ArchiveEventRequest("备注")).status()).isEqualTo(EventStatus.ARCHIVED);
         Event source = event(3L, EventStatus.FINISHED, 2L);
         when(events.findByIdAndOrganiserId(3L, 2L)).thenReturn(Optional.of(source));
-        assertThat(service.duplicate(3L).title()).contains("副本");
+        assertThat(service.duplicate(3L).title()).contains("copy");
         Event deletable = event(4L, EventStatus.DRAFT, 2L);
         when(events.findByIdAndOrganiserId(4L, 2L)).thenReturn(Optional.of(deletable));
         service.delete(4L);
@@ -155,11 +155,11 @@ class CrudEnhancementTest {
         assertThat(service.update(5L, upsert("改", start, false)).title()).isEqualTo("改");
         assertThatThrownBy(() -> service.update(5L, new OrganiserEventRequest(
                 "改", "s", "d", "art", null, null, start, start.plusSeconds(3600),
-                "北京", "v", "a", null, null, 1, 10, null, start, 2, "c", "n", 99L, false)))
+                "Beijing", "v", "a", null, null, 1, 10, null, start, 2, "c", "n", 99L, false)))
                 .isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> service.create(new OrganiserEventRequest(
                 "坏", null, null, "music", null, null, start, start.minusSeconds(10),
-                "上海", null, null, null, null, 1, 10, null, null, 1, null, null, null, false)))
+                "Shanghai", null, null, null, null, 1, 10, null, null, 1, null, null, null, false)))
                 .isInstanceOf(BusinessException.class);
         assertThat(service.allowedActions(event(1L, EventStatus.DRAFT, 2L))).contains("publish", "delete");
         assertThat(service.allowedActions(event(1L, EventStatus.PUBLISHED, 2L))).contains("cancel");
@@ -254,7 +254,7 @@ class CrudEnhancementTest {
         when(recs.save(any())).thenAnswer(inv -> inv.getArgument(0));
         UserPreference pref = new UserPreference();
         pref.setCategories("music");
-        pref.setCities("上海");
+        pref.setCities("Shanghai");
         when(preferences.findById(2L)).thenReturn(Optional.of(pref));
         when(interactions.findByUserIdOrderByCreatedAtDesc(2L)).thenReturn(List.of());
         assertThat(platform.recommend()).isNotNull();
@@ -274,7 +274,7 @@ class CrudEnhancementTest {
         when(metrics.findByEventIdAndMetricDateBetween(any(), any(), any())).thenReturn(List.of(row));
         assertThat(platform.analytics(20L, null, null).get("views")).isEqualTo(4);
         assertThat(platform.isFavourite(20L)).isFalse();
-        platform.savePreference("music", "上海", 31.2, 121.5, 10d);
+        platform.savePreference("music", "Shanghai", 31.2, 121.5, 10d);
         Notification n = new Notification(1L, "hi");
         n.setId(3L);
         n.setUserId(2L);
@@ -315,7 +315,7 @@ class CrudEnhancementTest {
         api.analytics(20L, LocalDate.now().minusDays(1), LocalDate.now());
         api.eventAnalytics(20L, null, null);
         api.stream(1L);
-        api.preferences(java.util.Map.of("categories", "music", "cities", "上海", "latitude", 31.2, "longitude", 121.5, "radiusKm", 8));
+        api.preferences(java.util.Map.of("categories", "music", "cities", "Shanghai", "latitude", 31.2, "longitude", 121.5, "radiusKm", 8));
         when(events.save(any())).thenAnswer(inv -> inv.getArgument(0));
         OrganiserEventController orgApi = new OrganiserEventController(organiser);
         orgApi.create(upsert("夜", Instant.now().plusSeconds(86400), false));
@@ -420,7 +420,7 @@ class CrudEnhancementTest {
     private static OrganiserEventRequest upsert(String title, Instant start, boolean publish) {
         return new OrganiserEventRequest(
                 title, "摘要", "介绍", "music", null, null, start, start.plusSeconds(7200),
-                "上海", "场馆", "地址", 31.2, 121.5, 9900, 80, null, start, 4, "联系", "须知", null, publish);
+                "Shanghai", "场馆", "地址", 31.2, 121.5, 9900, 80, null, start, 4, "联系", "须知", null, publish);
     }
 
     private static Event event(Long id, String status, Long organiserId) {
@@ -430,7 +430,7 @@ class CrudEnhancementTest {
         event.setSummary("s");
         event.setDescription("d");
         event.setCategory("music");
-        event.setCity("上海");
+        event.setCity("Shanghai");
         event.setVenueName("场馆");
         event.setAddress("地址");
         event.setLatitude(31.2);
@@ -533,7 +533,7 @@ class CrudEnhancementTest {
         UserPreference p = new UserPreference();
         p.setUserId(1L);
         p.setCategories("music");
-        p.setCities("上海");
+        p.setCities("Shanghai");
         p.setLatitude(1d);
         p.setLongitude(2d);
         p.setRadiusKm(3d);

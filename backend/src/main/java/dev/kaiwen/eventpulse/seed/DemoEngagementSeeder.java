@@ -142,10 +142,10 @@ public class DemoEngagementSeeder {
         notification.setEventId(event.getId());
         notification.setBookingId(booking.getId());
         notification.setType(confirmed ? "BOOKING_CREATED" : "BOOKING_CANCELLED");
-        notification.setTitle(confirmed ? "预订成功" : "预订已取消");
+        notification.setTitle(confirmed ? "Booking confirmed" : "Booking cancelled");
         notification.setMessage(confirmed
-                ? "你已预订「" + event.getTitle() + "」" + spec.quantity() + " 张票"
-                : "你已取消「" + event.getTitle() + "」的预订，票款已退回钱包");
+                ? "You booked " + spec.quantity() + " ticket(s) for \"" + event.getTitle() + "\""
+                : "You cancelled your booking for \"" + event.getTitle() + "\". The fare was returned to your wallet");
         notification.setDedupKey("SEED:" + notification.getType() + ":" + booking.getId());
         notification.setCreatedAt(booking.getCreatedAt());
         // 一周以前的消息当作已读，未读角标才不会挂着十几条历史消息。

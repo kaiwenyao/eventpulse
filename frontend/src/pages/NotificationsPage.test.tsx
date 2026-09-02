@@ -15,8 +15,8 @@ vi.mock('../api', async (importOriginal) => {
 const user: SessionUser = { id: 1, email: 'u@t.dev', name: 'U', role: 'USER' }
 
 const notifications = [
-  { id: 1, title: '预订确认', message: '摇滚夜 x2', createdAt: '2026-09-01T00:00:00Z' },
-  { id: 2, message: '活动时间已更新', createdAt: '2026-09-02T00:00:00Z' },
+  { id: 1, title: 'Booking confirmed', message: 'You booked 2 ticket(s) for "Indie Rock Night"', createdAt: '2026-09-01T00:00:00Z' },
+  { id: 2, message: 'Event time has been updated', createdAt: '2026-09-02T00:00:00Z' },
 ]
 
 function renderNotifications() {
@@ -42,8 +42,8 @@ describe('NotificationsPage', () => {
       return Promise.resolve([])
     })
     renderNotifications()
-    expect(await screen.findByText('预订确认 · 摇滚夜 x2')).toBeInTheDocument()
-    expect(screen.getByText('活动时间已更新')).toBeInTheDocument()
+    expect(await screen.findByText('Booking confirmed · You booked 2 ticket(s) for "Indie Rock Night"')).toBeInTheDocument()
+    expect(screen.getByText('Event time has been updated')).toBeInTheDocument()
   })
 
   it('removes a single message once the server accepts the read receipt', async () => {
@@ -53,12 +53,12 @@ describe('NotificationsPage', () => {
       return Promise.resolve({})
     })
     renderNotifications()
-    await screen.findByText('活动时间已更新')
+    await screen.findByText('Event time has been updated')
 
     await userEvent.click(screen.getAllByRole('button', { name: '标为已读' })[0])
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/notifications/1/read'))
-    await waitFor(() => expect(screen.queryByText('预订确认 · 摇滚夜 x2')).not.toBeInTheDocument())
-    expect(screen.getByText('活动时间已更新')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Booking confirmed · You booked 2 ticket(s) for "Indie Rock Night"')).not.toBeInTheDocument())
+    expect(screen.getByText('Event time has been updated')).toBeInTheDocument()
   })
 
   it('clears the whole inbox with 全部已读', async () => {
@@ -68,7 +68,7 @@ describe('NotificationsPage', () => {
       return Promise.resolve({})
     })
     renderNotifications()
-    await screen.findByText('活动时间已更新')
+    await screen.findByText('Event time has been updated')
 
     await userEvent.click(screen.getByRole('button', { name: '全部已读' }))
     await waitFor(() => expect(screen.getByText('还没有消息')).toBeInTheDocument())
@@ -79,14 +79,14 @@ describe('NotificationsPage', () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(user)
       if (path === '/api/notifications') return Promise.resolve([notifications[0]])
-      return Promise.reject(new ApiError(500, '服务暂时不可用'))
+      return Promise.reject(new ApiError(500, 'Service temporarily unavailable'))
     })
     renderNotifications()
-    await screen.findByText('预订确认 · 摇滚夜 x2')
+    await screen.findByText('Booking confirmed · You booked 2 ticket(s) for "Indie Rock Night"')
 
     await userEvent.click(screen.getByRole('button', { name: '标为已读' }))
-    expect(await screen.findByText('服务暂时不可用')).toBeInTheDocument()
-    expect(screen.getByText('预订确认 · 摇滚夜 x2')).toBeInTheDocument()
+    expect(await screen.findByText('Service temporarily unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Booking confirmed · You booked 2 ticket(s) for "Indie Rock Night"')).toBeInTheDocument()
   })
 
   it('falls back to an empty inbox when the request fails', async () => {

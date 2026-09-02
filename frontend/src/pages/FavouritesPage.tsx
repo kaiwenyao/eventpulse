@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 import { api } from '../api'
 import { EventTicket } from '../components/EventTicket'
@@ -7,6 +8,7 @@ import { EmptyState } from '../ui/Badges'
 import { SkeletonGrid } from '../ui/Skeleton'
 
 export function FavouritesPage() {
+  const { t } = useTranslation()
   const [items, setItems] = useState<EventVo[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -21,19 +23,19 @@ export function FavouritesPage() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>我的收藏</h1>
-          <p className="muted">收藏的活动开票或变更时，你会第一时间收到消息。</p>
+          <h1>{t('favourites.pageTitle')}</h1>
+          <p className="muted">{t('favourites.sub')}</p>
         </div>
       </header>
       {loading ? (
-        <SkeletonGrid count={3} label="正在加载收藏" />
+        <SkeletonGrid count={3} label={t('favourites.loading')} />
       ) : items.length === 0 ? (
         <EmptyState
-          title="还没有收藏"
-          hint="在活动详情页点击收藏，方便下次找回来。"
+          title={t('favourites.emptyTitle')}
+          hint={t('favourites.emptyHint')}
           action={
             <NavLink to="/" className="btn-primary btn-link">
-              去发现活动
+              {t('favourites.goDiscover')}
             </NavLink>
           }
         />

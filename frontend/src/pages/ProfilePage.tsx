@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 import { api, ApiError, formatMoney } from '../api'
 import { UserProfile } from '../types'
@@ -16,6 +17,7 @@ function initials(name?: string, email?: string) {
  * 充值仍为演示功能，不接真实支付渠道；余额可用于站内预订与退款。
  */
 export function ProfilePage() {
+  const { t } = useTranslation()
   const { notify } = useToast()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -37,9 +39,9 @@ export function ProfilePage() {
     try {
       const updated = await api<UserProfile>('POST', '/api/auth/wallet/recharge', { amountCents: Number(amount) * 100 })
       setProfile(updated)
-      notify(`充值成功，余额 ${formatMoney(updated.walletCents)}`, 'success')
+      notify(t('profile.rechargeOk', { amount: formatMoney(updated.walletCents) }), 'success')
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : '充值失败'
+      const message = err instanceof ApiError ? err.message : t('profile.rechargeFailed')
       setError(message)
       notify(message, 'error')
     } finally {
@@ -60,17 +62,17 @@ export function ProfilePage() {
       <div className="page">
         <header className="page-head">
           <div>
-            <h1>个人中心</h1>
-            <p className="muted">登录后即可查看余额与账户统计。</p>
+            <h1>{t('profile.title')}</h1>
+            <p className="muted">{t('profile.needLogin')}</p>
           </div>
         </header>
         <div className="empty">
           <div className="empty-dot" aria-hidden />
-          <p className="empty-title">加载失败</p>
-          <p className="muted">暂时无法获取个人资料，请稍后重试。</p>
+          <p className="empty-title">{t('common.loadFailed')}</p>
+          <p className="muted">{t('profile.loadHint')}</p>
           <div className="empty-action">
             <NavLink to="/" className="btn-primary btn-link">
-              回到首页
+              {t('profile.home')}
             </NavLink>
           </div>
         </div>
@@ -79,13 +81,14 @@ export function ProfilePage() {
   }
 
   const quickAmounts = [50, 100, 200, 500]
+  const roleLabel = profile.role === 'ORGANISER' ? t('profile.roleOrganiser') : t('profile.roleAudience')
 
   return (
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>个人中心</h1>
-          <p className="muted">你的账户、余额与活动足迹都在这里。</p>
+          <h1>{t('profile.title')}</h1>
+          <p className="muted">{t('profile.sub')}</p>
         </div>
       </header>
 
@@ -96,45 +99,43 @@ export function ProfilePage() {
         <div className="profile-copy">
           <h2>{profile.name}</h2>
           <p className="muted">{profile.email}</p>
-          <p className="muted small">
-            角色：{profile.role === 'ORGANISER' ? '主办方' : '观众'}
-          </p>
+          <p className="muted small">{t('profile.role', { role: roleLabel })}</p>
         </div>
         <div className="profile-balance">
-          <span className="muted small">钱包余额</span>
+          <span className="muted small">{t('profile.wallet')}</span>
           <strong className="balance-num">{formatMoney(profile.walletCents)}</strong>
-          <span className="muted small">累计消费 {formatMoney(profile.totalSpentCents)}</span>
+          <span className="muted small">{t('profile.spent', { amount: formatMoney(profile.totalSpentCents) })}</span>
         </div>
       </section>
 
       <section className="section-head">
-        <h2 className="section-title">账户统计</h2>
+        <h2 className="section-title">{t('profile.stats')}</h2>
       </section>
 
       <div className="stats-grid">
         <NavLink to="/bookings" className="stat-card">
           <strong>{profile.bookingCount}</strong>
-          <span>订单</span>
+          <span>{t('profile.orders')}</span>
         </NavLink>
         <NavLink to="/bookings" className="stat-card">
           <strong>{profile.ticketCount}</strong>
-          <span>电子票</span>
+          <span>{t('profile.tickets')}</span>
         </NavLink>
         <NavLink to="/favourites" className="stat-card">
           <strong>{profile.favouriteCount}</strong>
-          <span>收藏</span>
+          <span>{t('profile.favourites')}</span>
         </NavLink>
         <NavLink to="/notifications" className="stat-card">
           <strong>{profile.notificationCount}</strong>
-          <span>消息</span>
+          <span>{t('profile.messages')}</span>
         </NavLink>
       </div>
 
-      <section className="section-head section-title">钱包充值</section>
+      <section className="section-head section-title">{t('profile.recharge')}</section>
 
       <form className="card recharge-box" onSubmit={recharge}>
         <div className="field recharge-field">
-          <label htmlFor="recharge-amount">充值金额（元）</label>
+          <label htmlFor="recharge-amount">{t('profile.amount')}</label>
           <input
             id="recharge-amount"
             type="number"
@@ -147,7 +148,7 @@ export function ProfilePage() {
             required
           />
         </div>
-        <div className="row quick-chips" role="group" aria-label="快捷充值金额">
+        <div className="row quick-chips" role="group" aria-label={t('profile.quickAria')}>
           {quickAmounts.map((v) => (
             <button
               key={v}
@@ -161,9 +162,9 @@ export function ProfilePage() {
         </div>
         <ErrorNote message={error} />
         <button type="submit" className="btn-primary" disabled={busy}>
-          {busy ? '充值中…' : '充值'}
+          {busy ? t('profile.recharging') : t('profile.doRecharge')}
         </button>
-        <p className="muted small recharge-hint">演示功能：充值不接入真实支付渠道；余额可用于站内预订。</p>
+        <p className="muted small recharge-hint">{t('profile.hint')}</p>
       </form>
     </div>
   )

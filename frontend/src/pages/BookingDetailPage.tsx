@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink, useParams } from 'react-router-dom'
 import { api, ApiError, formatTime } from '../api'
 import { BookingVo, TicketVo } from '../types'
@@ -14,6 +15,7 @@ import { useToast } from '../ui/Toast'
  * looks stable across reloads.
  */
 function TicketQr({ code }: { code: string }) {
+  const { t } = useTranslation()
   const cells = 17
   const bits: boolean[] = []
   let h = 0
@@ -23,7 +25,7 @@ function TicketQr({ code }: { code: string }) {
     bits.push(h % 3 === 0)
   }
   return (
-    <svg className="qr" viewBox={`0 0 ${cells} ${cells}`} role="img" aria-label={`票码 ${code}`}>
+    <svg className="qr" viewBox={`0 0 ${cells} ${cells}`} role="img" aria-label={t('bookings.ticketCode', { code })}>
       {bits.map((on, i) =>
         on ? <rect key={i} x={i % cells} y={Math.floor(i / cells)} width="1" height="1" fill="currentColor" /> : null,
       )}
@@ -32,6 +34,7 @@ function TicketQr({ code }: { code: string }) {
 }
 
 export function BookingDetailPage() {
+  const { t } = useTranslation()
   const { id } = useParams()
   const { notify } = useToast()
   const [booking, setBooking] = useState<BookingVo | null>(null)
@@ -42,43 +45,43 @@ export function BookingDetailPage() {
     if (!id) return
     api<BookingVo>('GET', `/api/bookings/${id}`)
       .then(setBooking)
-      .catch(() => setError('订单不存在'))
+      .catch(() => setError(t('bookings.missing')))
     api<TicketVo[]>('GET', `/api/bookings/${id}/tickets`)
       .then((data) => setTickets(Array.isArray(data) ? data : []))
       .catch(() => setTickets([]))
-  }, [id])
+  }, [id, t])
 
   async function cancel(current: BookingVo) {
     try {
       const updated = await api<BookingVo>('POST', `/api/bookings/${current.id}/cancel`)
       setBooking(updated)
-      notify('订单已取消', 'success')
+      notify(t('bookings.cancelled'), 'success')
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : '取消失败', 'error')
+      notify(e instanceof ApiError ? e.message : t('bookings.cancelFailed'), 'error')
     }
   }
 
-  if (error) return <EmptyState title={error} hint="这个订单可能不属于你。" />
+  if (error) return <EmptyState title={error} hint={t('bookings.missingHint')} />
   if (!booking) return <SkeletonCard />
 
   return (
     <div className="page">
       <nav className="crumbs">
-        <NavLink to="/bookings">我的预订</NavLink>
+        <NavLink to="/bookings">{t('bookings.title')}</NavLink>
         <span aria-hidden>/</span>
-        <span>订单 #{booking.id}</span>
+        <span>{t('bookings.orderNum', { id: booking.id })}</span>
       </nav>
 
       <header className="page-head">
         <div>
-          <h1>订单详情</h1>
+          <h1>{t('bookings.detailTitle')}</h1>
           <p className="muted">{booking.eventTitle}</p>
         </div>
         <div className="row">
           <BookingStatusBadge status={booking.status} />
           {booking.status === 'CONFIRMED' && (
             <button className="btn-secondary" onClick={() => cancel(booking)}>
-              取消订单
+              {t('bookings.cancelOrder')}
             </button>
           )}
         </div>
@@ -86,29 +89,29 @@ export function BookingDetailPage() {
 
       <dl className="fact-grid card">
         <div>
-          <dt>票数</dt>
-          <dd>{booking.quantity} 张</dd>
+          <dt>{t('bookings.qty')}</dt>
+          <dd>{t('bookings.qtyValue', { count: booking.quantity })}</dd>
         </div>
         <div>
-          <dt>下单时间</dt>
+          <dt>{t('bookings.placedAt')}</dt>
           <dd>{formatTime(booking.createdAt)}</dd>
         </div>
         <div>
-          <dt>订单号</dt>
+          <dt>{t('bookings.orderId')}</dt>
           <dd>#{booking.id}</dd>
         </div>
       </dl>
 
-      <h2 className="section-title">电子票</h2>
+      <h2 className="section-title">{t('bookings.eTickets')}</h2>
       {tickets.length === 0 ? (
-        <EmptyState title="暂无电子票" hint="订单确认后电子票会自动生成。" />
+        <EmptyState title={t('bookings.noTickets')} hint={t('bookings.noTicketsHint')} />
       ) : (
         <div className="ticket-wallet">
           {tickets.map((ticket) => (
             <div key={ticket.id} className="card ticket-pass">
               {ticket.code && <TicketQr code={ticket.code} />}
               <div className="ticket-pass-meta">
-                <p className="ticket-pass-id">票 #{ticket.id}</p>
+                <p className="ticket-pass-id">{t('bookings.ticketId', { id: ticket.id })}</p>
                 <TicketStatusBadge status={ticket.status} />
                 {ticket.code && <p className="muted mono">{ticket.code}</p>}
               </div>

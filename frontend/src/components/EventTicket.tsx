@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 import { formatMoney, formatTime } from '../api'
 import { EventVo } from '../types'
@@ -11,6 +12,7 @@ import { ArrowRightIcon, ClockIcon } from '../ui/Icons'
  * scannable rather than decorative.
  */
 export function EventTicket({ event }: { event: EventVo }) {
+  const { t } = useTranslation()
   return (
     <NavLink to={`/events/${event.id}`} className="ticket">
       <div
@@ -32,9 +34,9 @@ export function EventTicket({ event }: { event: EventVo }) {
         <SoldBar sold={event.sold} capacity={event.capacity} />
       </div>
       <div className="ticket-stub">
-        <span className="stub-price">{event.priceCents === 0 ? '免费' : formatMoney(event.priceCents)}</span>
+        <span className="stub-price">{event.priceCents === 0 ? t('common.free') : formatMoney(event.priceCents)}</span>
         <span className="stub-caption">
-          预订
+          {t('events.book')}
           <ArrowRightIcon className="stub-arrow" />
         </span>
       </div>

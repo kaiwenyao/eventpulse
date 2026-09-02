@@ -49,7 +49,7 @@ public class AuthService {
     @Transactional
     public LoginVo register(RegisterRequest request) {
         if (users.existsByEmail(request.email())) {
-            throw new BusinessException("邮箱已被注册");
+            throw new BusinessException("Email is already registered");
         }
         User user = new User();
         user.setEmail(request.email());
@@ -63,9 +63,9 @@ public class AuthService {
 
     public LoginVo login(LoginRequest request) {
         User user = users.findByEmail(request.email())
-                .orElseThrow(() -> new BusinessException("邮箱或密码错误"));
+                .orElseThrow(() -> new BusinessException("Invalid email or password"));
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            throw new BusinessException("邮箱或密码错误");
+            throw new BusinessException("Invalid email or password");
         }
         return toLoginVo(user);
     }
@@ -102,16 +102,16 @@ public class AuthService {
     public ProfileVo recharge(Long userId, WalletRechargeRequest request) {
         requireUser(userId);
         if (users.rechargeWalletWithinLimit(userId, request.amountCents(), MAX_WALLET_CENTS) == 0) {
-            throw new BusinessException("余额超出上限");
+            throw new BusinessException("Wallet balance exceeds the limit");
         }
         return profile(userId);
     }
 
     private User requireUser(Long userId) {
         if (userId == null) {
-            throw new BusinessException("请先登录");
+            throw new BusinessException("Please sign in");
         }
-        return users.findById(userId).orElseThrow(() -> BusinessException.notFound("用户不存在"));
+        return users.findById(userId).orElseThrow(() -> BusinessException.notFound("User not found"));
     }
 
     private LoginVo toLoginVo(User user) {

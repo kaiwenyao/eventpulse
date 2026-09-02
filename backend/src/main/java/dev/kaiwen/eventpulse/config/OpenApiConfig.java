@@ -14,6 +14,6 @@ public class OpenApiConfig {
         return new OpenAPI().info(new Info()
                 .title("EventPulse API")
                 .version("0.1.0")
-                .description("活动预订：Spring Boot CRUD + Kafka 通知"));
+                .description("Event booking: Spring Boot CRUD + Kafka notifications"));
     }
 }

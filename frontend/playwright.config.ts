@@ -15,6 +15,7 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:5173',
+    locale: 'zh-CN',
     trace: 'on-first-retry',
   },
   projects: [

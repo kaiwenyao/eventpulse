@@ -55,11 +55,11 @@ public class BookingService {
         Event event = eventService.require(request.eventId());
         String reason = EventService.unbookableReason(event, Instant.now());
         if (reason != null) {
-            throw "余票不足".equals(reason) ? BusinessException.conflict(reason) : new BusinessException(reason);
+            throw "Sold out".equals(reason) ? BusinessException.conflict(reason) : new BusinessException(reason);
         }
         int maxQty = event.getMaxQuantityPerBooking() <= 0 ? 10 : event.getMaxQuantityPerBooking();
         if (request.quantity() > maxQty) {
-            throw new BusinessException("单次最多预订 " + maxQty + " 张");
+            throw new BusinessException("Maximum " + maxQty + " tickets per booking");
         }
         long paidCents = Math.multiplyExact((long) event.getPriceCents(), request.quantity());
         // Keep the activity-before-wallet order used by both cancellation flows to avoid deadlocks.
@@ -67,10 +67,10 @@ public class BookingService {
         if (updated == 0) {
             Event latest = eventService.require(request.eventId());
             String latestReason = EventService.unbookableReason(latest, Instant.now());
-            throw BusinessException.conflict(latestReason == null ? "余票不足" : latestReason);
+            throw BusinessException.conflict(latestReason == null ? "Sold out" : latestReason);
         }
         if (users.debitWalletIfEnough(userId, paidCents) == 0) {
-            throw BusinessException.conflict("余额不足");
+            throw BusinessException.conflict("Insufficient wallet balance");
         }
 
         Booking booking = new Booking();
@@ -89,8 +89,8 @@ public class BookingService {
                         "eventId", event.getId(),
                         "bookingId", booking.getId(),
                         "quantity", request.quantity(),
-                        "title", "预订成功",
-                        "message", "你已预订「" + event.getTitle() + "」" + request.quantity() + " 张票"));
+                        "title", "Booking confirmed",
+                        "message", "You booked " + request.quantity() + " ticket(s) for \"" + event.getTitle() + "\""));
         return toVo(booking, event.getTitle());
     }
 
@@ -118,14 +118,14 @@ public class BookingService {
         Event event = eventService.require(booking.getEventId());
         // Keep the activity -> ticket -> booking -> wallet order used when an organiser cancels an event.
         if (events.decrementSoldForCustomerCancellation(event.getId(), booking.getQuantity()) == 0) {
-            throw BusinessException.conflict("活动已开始或当前状态不能取消");
+            throw BusinessException.conflict("Event has started or cannot be cancelled in its current state");
         }
         List<dev.kaiwen.eventpulse.entity.Ticket> lockedTickets = ticketService.lockForBooking(booking.getId());
         if (lockedTickets.stream().anyMatch(ticket -> TicketStatus.CHECKED_IN.equals(ticket.getStatus()))) {
-            throw BusinessException.conflict("已有电子票完成核销，不能退款");
+            throw BusinessException.conflict("A ticket has already been checked in, refund is not allowed");
         }
         if (bookings.cancelConfirmed(booking.getId()) == 0) {
-            throw new BusinessException("订单已取消");
+            throw new BusinessException("Booking already cancelled");
         }
         booking.setStatus("CANCELLED");
         booking.setCancelledAt(Instant.now());
@@ -138,16 +138,16 @@ public class BookingService {
                         "eventId", event.getId(),
                         "bookingId", booking.getId(),
                         "quantity", booking.getQuantity(),
-                        "title", "预订已取消",
-                        "message", "你已取消「" + event.getTitle() + "」的预订"));
+                        "title", "Booking cancelled",
+                        "message", "You cancelled your booking for \"" + event.getTitle() + "\""));
         return toVo(booking, event.getTitle());
     }
 
     private Booking requireOwn(Long id) {
         Long userId = requireLogin();
-        Booking booking = bookings.findById(id).orElseThrow(() -> BusinessException.notFound("订单不存在"));
+        Booking booking = bookings.findById(id).orElseThrow(() -> BusinessException.notFound("Booking not found"));
         if (!booking.getUserId().equals(userId)) {
-            throw BusinessException.forbidden("只能查看自己的订单");
+            throw BusinessException.forbidden("You can only view your own bookings");
         }
         return booking;
     }
@@ -155,7 +155,7 @@ public class BookingService {
     private static Long requireLogin() {
         Long userId = BaseContext.getUserId();
         if (userId == null) {
-            throw new BusinessException("请先登录");
+            throw new BusinessException("Please sign in");
         }
         return userId;
     }

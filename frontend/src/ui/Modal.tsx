@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -35,14 +36,17 @@ function ConfirmDialogBody({
   description,
   reasonLabel,
   reasonPlaceholder,
-  confirmLabel = '确认',
-  cancelLabel = '返回',
+  confirmLabel,
+  cancelLabel,
   tone = 'default',
   busy = false,
   onCancel,
   onConfirm,
 }: ConfirmDialogBodyProps) {
+  const { t } = useTranslation()
   const [reason, setReason] = useState('')
+  const resolvedConfirm = confirmLabel ?? t('common.confirm')
+  const resolvedCancel = cancelLabel ?? t('common.back')
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -89,7 +93,7 @@ function ConfirmDialogBody({
         )}
         <div className="modal-actions">
           <button type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>
-            {cancelLabel}
+            {resolvedCancel}
           </button>
           <button
             type="submit"
@@ -97,7 +101,7 @@ function ConfirmDialogBody({
             disabled={confirmDisabled}
             autoFocus={!reasonLabel}
           >
-            {busy ? '处理中…' : confirmLabel}
+            {busy ? t('common.processing') : resolvedConfirm}
           </button>
         </div>
       </form>

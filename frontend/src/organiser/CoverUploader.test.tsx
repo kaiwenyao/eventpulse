@@ -69,12 +69,12 @@ describe('CoverUploader', () => {
   })
 
   it('surfaces a server-side upload failure', async () => {
-    uploadMock.mockRejectedValue(new ApiError(413, '文件太大'))
+    uploadMock.mockRejectedValue(new ApiError(413, 'Image must be 2MB or smaller'))
     const { onError } = renderUploader()
 
     await userEvent.upload(screen.getByLabelText('封面'), new File(['x'], 'cover.png', { type: 'image/png' }))
 
-    await waitFor(() => expect(onError).toHaveBeenCalledWith('文件太大'))
+    await waitFor(() => expect(onError).toHaveBeenCalledWith('Image must be 2MB or smaller'))
   })
 
   it('previews an existing cover and can clear it', async () => {

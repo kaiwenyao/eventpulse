@@ -239,6 +239,10 @@
   color: var(--n-600);
 }
 
+html[lang="en"] .ticket-cover-empty::after {
+  content: 'Cover · 16:9';
+}
+
 .ticket-head {
   display: flex;
   align-items: center;

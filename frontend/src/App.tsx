@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from './auth'
 import { TopBar } from './components/TopBar'
 import { OrganiserAnalyticsPage } from './organiser/OrganiserAnalyticsPage'
@@ -23,33 +24,41 @@ import { ToastProvider } from './ui/Toast'
 /** Organiser-only shell: authenticated non-organisers get an explanation, not a 404. */
 function OrganiserGate() {
   const { user } = useAuth()
+  const { t } = useTranslation()
   if (user?.role !== 'ORGANISER') {
-    return <EmptyState title="没有主办方权限" hint="请使用主办方账号登录后再进入工作台。" />
+    return <EmptyState title={t('app.noOrganiserTitle')} hint={t('app.noOrganiserHint')} />
   }
   return <OrganiserLayout />
 }
 
 function SiteFooter() {
+  const { t } = useTranslation()
   return (
     <footer className="site-footer">
       <div className="site-footer-inner">
         <p className="brand">
           Event<span>Pulse</span>
         </p>
-        <p className="muted small">城市活动预订演示系统 · Spring Boot + Kafka + React</p>
+        <p className="muted small">{t('footer.tagline')}</p>
         <p className="muted small">© {new Date().getFullYear()} EventPulse</p>
       </div>
     </footer>
   )
 }
 
+function NotFound() {
+  const { t } = useTranslation()
+  return <EmptyState title={t('app.notFoundTitle')} hint={t('app.notFoundHint')} />
+}
+
 export default function App() {
   const { user, ready } = useAuth()
+  const { t } = useTranslation()
 
   if (!ready) {
     return (
       <div className="container">
-        <SkeletonGrid count={3} label="正在准备会话" />
+        <SkeletonGrid count={3} label={t('app.preparingSession')} />
       </div>
     )
   }
@@ -80,7 +89,7 @@ export default function App() {
           </Route>
           <Route
             path="*"
-            element={<EmptyState title="页面不存在" hint="链接可能已经失效，回到首页继续浏览活动。" />}
+            element={<NotFound />}
           />
         </Routes>
       </div>

@@ -12,6 +12,7 @@
 
 import { EventVo } from '../types'
 import { addHoursToLocalInput, isoToLocalInput, localInputInDays, localInputToIso } from '../lib/datetime'
+import i18n from '../i18n'
 
 export interface EventFormState {
   title: string
@@ -52,11 +53,11 @@ const DEFAULT_DURATION_HOURS = 3
 export function createInitialForm(): EventFormState {
   const startsAt = localInputInDays(DEFAULT_LEAD_DAYS)
   return {
-    title: '新活动',
+    title: i18n.t('organiser.form.defaultTitle'),
     summary: '',
-    description: '主办方创建的活动',
+    description: i18n.t('organiser.form.defaultDescription'),
     category: 'music',
-    city: '上海',
+    city: 'Shanghai',
     venueName: '',
     address: '',
     startsAt,
@@ -130,46 +131,46 @@ function tooLong(value: string, limit: number) {
 export function validateEventForm(form: EventFormState): EventFormErrors {
   const errors: EventFormErrors = {}
 
-  if (!form.title.trim()) errors.title = '请填写活动标题'
-  else if (tooLong(form.title, FIELD_LIMITS.title)) errors.title = `标题不能超过 ${FIELD_LIMITS.title} 个字`
+  if (!form.title.trim()) errors.title = i18n.t('organiser.form.needTitle')
+  else if (tooLong(form.title, FIELD_LIMITS.title)) errors.title = i18n.t('organiser.form.titleTooLong', { max: FIELD_LIMITS.title })
 
-  if (tooLong(form.summary, FIELD_LIMITS.summary)) errors.summary = `摘要不能超过 ${FIELD_LIMITS.summary} 个字`
+  if (tooLong(form.summary, FIELD_LIMITS.summary)) errors.summary = i18n.t('organiser.form.summaryTooLong', { max: FIELD_LIMITS.summary })
 
-  if (!form.category.trim()) errors.category = '请选择或填写分类'
-  else if (tooLong(form.category, FIELD_LIMITS.category)) errors.category = `分类不能超过 ${FIELD_LIMITS.category} 个字`
+  if (!form.category.trim()) errors.category = i18n.t('organiser.form.needCategory')
+  else if (tooLong(form.category, FIELD_LIMITS.category)) errors.category = i18n.t('organiser.form.categoryTooLong', { max: FIELD_LIMITS.category })
 
-  if (!form.city.trim()) errors.city = '请填写城市'
-  else if (tooLong(form.city, FIELD_LIMITS.city)) errors.city = `城市不能超过 ${FIELD_LIMITS.city} 个字`
+  if (!form.city.trim()) errors.city = i18n.t('organiser.form.needCity')
+  else if (tooLong(form.city, FIELD_LIMITS.city)) errors.city = i18n.t('organiser.form.cityTooLong', { max: FIELD_LIMITS.city })
 
-  if (tooLong(form.venueName, FIELD_LIMITS.venueName)) errors.venueName = `场地名称不能超过 ${FIELD_LIMITS.venueName} 个字`
-  if (tooLong(form.address, FIELD_LIMITS.address)) errors.address = `详细地址不能超过 ${FIELD_LIMITS.address} 个字`
+  if (tooLong(form.venueName, FIELD_LIMITS.venueName)) errors.venueName = i18n.t('organiser.form.venueTooLong', { max: FIELD_LIMITS.venueName })
+  if (tooLong(form.address, FIELD_LIMITS.address)) errors.address = i18n.t('organiser.form.addressTooLong', { max: FIELD_LIMITS.address })
   if (tooLong(form.contactInfo, FIELD_LIMITS.contactInfo))
-    errors.contactInfo = `联系方式不能超过 ${FIELD_LIMITS.contactInfo} 个字`
+    errors.contactInfo = i18n.t('organiser.form.contactTooLong', { max: FIELD_LIMITS.contactInfo })
 
   const startsAt = localInputToIso(form.startsAt)
-  if (!startsAt) errors.startsAt = '请选择活动开始时间'
+  if (!startsAt) errors.startsAt = i18n.t('organiser.form.needStart')
 
   const endsAt = localInputToIso(form.endsAt)
-  if (form.endsAt && !endsAt) errors.endsAt = '结束时间格式不正确'
-  else if (startsAt && endsAt && endsAt <= startsAt) errors.endsAt = '结束时间必须晚于开始时间'
+  if (form.endsAt && !endsAt) errors.endsAt = i18n.t('organiser.form.endInvalid')
+  else if (startsAt && endsAt && endsAt <= startsAt) errors.endsAt = i18n.t('organiser.form.endAfterStart')
 
   const salesStartAt = localInputToIso(form.salesStartAt)
   const salesEndAt = localInputToIso(form.salesEndAt)
-  if (salesStartAt && salesEndAt && salesEndAt <= salesStartAt) errors.salesEndAt = '停售时间必须晚于开售时间'
-  else if (salesEndAt && startsAt && salesEndAt > startsAt) errors.salesEndAt = '停售时间不能晚于活动开始时间'
+  if (salesStartAt && salesEndAt && salesEndAt <= salesStartAt) errors.salesEndAt = i18n.t('organiser.form.salesOrder')
+  else if (salesEndAt && startsAt && salesEndAt > startsAt) errors.salesEndAt = i18n.t('organiser.form.salesBeforeStart')
 
   const cents = yuanToCents(form.priceYuan)
-  if (cents === null) errors.priceYuan = '请填写票价，免费活动填 0'
-  else if (cents < 0) errors.priceYuan = '票价不能为负数'
+  if (cents === null) errors.priceYuan = i18n.t('organiser.form.needPrice')
+  else if (cents < 0) errors.priceYuan = i18n.t('organiser.form.priceNegative')
 
   const capacity = parseInteger(form.capacity)
-  if (capacity === null) errors.capacity = '请填写库存容量'
-  else if (capacity < 1) errors.capacity = '容量必须大于零'
+  if (capacity === null) errors.capacity = i18n.t('organiser.form.needCapacity')
+  else if (capacity < 1) errors.capacity = i18n.t('organiser.form.capacityMin')
 
   if (form.maxQuantityPerBooking.trim()) {
     const limit = parseInteger(form.maxQuantityPerBooking)
-    if (limit === null || limit < 1) errors.maxQuantityPerBooking = '单笔限购至少为 1 张'
-    else if (capacity !== null && limit > capacity) errors.maxQuantityPerBooking = '单笔限购不能超过总容量'
+    if (limit === null || limit < 1) errors.maxQuantityPerBooking = i18n.t('organiser.form.limitMin')
+    else if (capacity !== null && limit > capacity) errors.maxQuantityPerBooking = i18n.t('organiser.form.limitOver')
   }
 
   return errors
@@ -237,9 +238,9 @@ export function toOrganiserRequest(
 /** Publish readiness beyond raw validity — surfaced as soft warnings, never blocking. */
 export function publishWarnings(form: EventFormState): string[] {
   const warnings: string[] = []
-  if (!form.coverUrl.trim()) warnings.push('还没有上传封面图，活动卡片会显示占位背景')
-  if (!form.summary.trim()) warnings.push('补一句摘要，列表页会更吸引人')
-  if (form.description.trim().length < 20) warnings.push('活动介绍偏短，建议补充亮点与流程')
-  if (!form.venueName.trim()) warnings.push('填写场地名称，观众更容易找到现场')
+  if (!form.coverUrl.trim()) warnings.push(i18n.t('organiser.form.warnCover'))
+  if (!form.summary.trim()) warnings.push(i18n.t('organiser.form.warnSummary'))
+  if (form.description.trim().length < 20) warnings.push(i18n.t('organiser.form.warnDesc'))
+  if (!form.venueName.trim()) warnings.push(i18n.t('organiser.form.warnVenue'))
   return warnings
 }

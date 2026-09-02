@@ -36,7 +36,7 @@ describe('yuanToCents / centsToYuanInput', () => {
 
   it('returns null for empty or non-numeric text', () => {
     expect(yuanToCents('')).toBeNull()
-    expect(yuanToCents('免费')).toBeNull()
+    expect(yuanToCents('free')).toBeNull()
   })
 
   it('renders cents without trailing .00 noise', () => {
@@ -114,12 +114,12 @@ describe('validateEventForm', () => {
 describe('formFromEvent', () => {
   const event: EventVo = {
     id: 8,
-    title: '摇滚夜',
-    summary: '一场演出',
+    title: 'Indie Rock Night',
+    summary: 'A live show',
     description: 'd',
     category: 'music',
-    city: '上海',
-    venueName: '声空间',
+    city: 'Shanghai',
+    venueName: 'Sound Space',
     address: '一号路',
     startsAt: new Date(2027, 2, 1, 19, 30).toISOString(),
     endsAt: new Date(2027, 2, 1, 22, 0).toISOString(),
@@ -134,7 +134,7 @@ describe('formFromEvent', () => {
 
   it('hydrates every field the editor exposes', () => {
     const form = formFromEvent(event)
-    expect(form.title).toBe('摇滚夜')
+    expect(form.title).toBe('Indie Rock Night')
     expect(form.priceYuan).toBe('180')
     expect(form.capacity).toBe('100')
     expect(form.maxQuantityPerBooking).toBe('4')
@@ -154,9 +154,9 @@ describe('toOrganiserRequest', () => {
   it('maps the form onto the API contract, trimming and nulling blanks', () => {
     const body = toOrganiserRequest(
       formWith({
-        title: '  摇滚夜  ',
+        title: '  Indie Rock Night  ',
         summary: '   ',
-        city: '上海',
+        city: 'Shanghai',
         priceYuan: '9.99',
         capacity: '80',
         maxQuantityPerBooking: '',
@@ -166,7 +166,7 @@ describe('toOrganiserRequest', () => {
       { publish: true, version: 7 },
     )
 
-    expect(body.title).toBe('摇滚夜')
+    expect(body.title).toBe('Indie Rock Night')
     expect(body.summary).toBeNull()
     expect(body.priceCents).toBe(999)
     expect(body.capacity).toBe(80)
@@ -192,9 +192,9 @@ describe('publishWarnings', () => {
     const warnings = publishWarnings(
       formWith({
         coverUrl: '/api/media/images/1',
-        summary: '一场演出',
-        description: '这是一段足够长的活动介绍文字，用来说明流程与亮点。',
-        venueName: '声空间',
+        summary: 'A live show',
+        description: 'A long enough description of the lineup, flow, and what to expect.',
+        venueName: 'Sound Space',
       }),
     )
     expect(warnings).toEqual([])

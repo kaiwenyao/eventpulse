@@ -1,16 +1,18 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth'
+import { changeLocale, currentLocale } from '../i18n'
 import { currentTheme, toggleTheme, type Theme } from '../theme'
 import { MoonIcon, SunIcon } from '../ui/Icons'
 
 const NAV_LINKS = [
-  { to: '/', label: '活动', end: true, auth: false },
-  { to: '/bookings', label: '我的预订', end: false, auth: true },
-  { to: '/favourites', label: '收藏', end: false, auth: true },
-  { to: '/notifications', label: '消息', end: false, auth: true },
-  { to: '/profile', label: '个人中心', end: false, auth: true },
-]
+  { to: '/', key: 'nav.events', end: true, auth: false },
+  { to: '/bookings', key: 'nav.bookings', end: false, auth: true },
+  { to: '/favourites', key: 'nav.favourites', end: false, auth: true },
+  { to: '/notifications', key: 'nav.notifications', end: false, auth: true },
+  { to: '/profile', key: 'nav.profile', end: false, auth: true },
+] as const
 
 function initials(name?: string, email?: string) {
   const source = name?.trim() || email?.trim() || '?'
@@ -18,10 +20,12 @@ function initials(name?: string, email?: string) {
 }
 
 export function TopBar() {
+  const { t } = useTranslation()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, setTheme] = useState<Theme>(() => currentTheme())
+  const locale = currentLocale()
   const links = NAV_LINKS.filter((link) => !link.auth || user)
 
   return (
@@ -35,7 +39,7 @@ export function TopBar() {
           type="button"
           className="nav-toggle"
           aria-expanded={menuOpen}
-          aria-label={menuOpen ? '收起导航' : '展开导航'}
+          aria-label={menuOpen ? t('nav.collapse') : t('nav.expand')}
           onClick={() => setMenuOpen((open) => !open)}
         >
           <span aria-hidden />
@@ -44,25 +48,35 @@ export function TopBar() {
         <nav className={menuOpen ? 'open' : ''} onClick={() => setMenuOpen(false)}>
           {links.map((link) => (
             <NavLink key={link.to} to={link.to} end={link.end}>
-              {link.label}
+              {t(link.key)}
             </NavLink>
           ))}
-          {user?.role === 'ORGANISER' && <NavLink to="/organiser">工作台</NavLink>}
+          {user?.role === 'ORGANISER' && <NavLink to="/organiser">{t('nav.console')}</NavLink>}
         </nav>
 
         <button
           type="button"
           className="theme-toggle"
           onClick={() => setTheme(toggleTheme())}
-          aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
-          title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
+          aria-label={theme === 'dark' ? t('nav.themeToLight') : t('nav.themeToDark')}
+          title={theme === 'dark' ? t('nav.themeToLight') : t('nav.themeToDark')}
         >
           {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
         </button>
 
+        <button
+          type="button"
+          className="theme-toggle lang-toggle"
+          onClick={() => void changeLocale(locale === 'zh' ? 'en' : 'zh')}
+          aria-label={locale === 'zh' ? t('nav.switchToEn') : t('nav.switchToZh')}
+          title={locale === 'zh' ? t('nav.switchToEn') : t('nav.switchToZh')}
+        >
+          {locale === 'zh' ? 'EN' : '中'}
+        </button>
+
         {user ? (
           <span className="row user-box">
-            <NavLink to="/profile" className="avatar" aria-label="个人中心" title="个人中心">
+            <NavLink to="/profile" className="avatar" aria-label={t('nav.profile')} title={t('nav.profile')}>
               {initials(user.name, user.email)}
             </NavLink>
             <span className="muted hide-sm">{user.email}</span>
@@ -73,12 +87,12 @@ export function TopBar() {
                 navigate('/')
               }}
             >
-              退出
+              {t('nav.logout')}
             </button>
           </span>
         ) : (
           <NavLink to="/login" className="btn-ghost btn-sm">
-            登录 / 注册
+            {t('nav.loginRegister')}
           </NavLink>
         )}
       </div>

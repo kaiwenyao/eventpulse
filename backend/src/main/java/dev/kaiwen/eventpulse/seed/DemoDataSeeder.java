@@ -123,7 +123,7 @@ public class DemoDataSeeder implements CommandLineRunner {
             event.setCancelledAt(now.minus(2, ChronoUnit.DAYS));
         }
         if (EventStatus.ARCHIVED.equals(spec.status())) {
-            event.setArchiveNote("往期活动，已归档留档。");
+            event.setArchiveNote("Past event, kept on file.");
             event.setArchivedAt(now.minus(7, ChronoUnit.DAYS));
         }
     }

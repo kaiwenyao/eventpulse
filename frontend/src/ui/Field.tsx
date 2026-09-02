@@ -1,4 +1,5 @@
 import { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface FieldProps {
   id: string
@@ -20,12 +21,13 @@ interface FieldProps {
  * exactly the field name; the required marker and counter sit beside it.
  */
 export function Field({ id, label, children, required, hint, error, counter, wide }: FieldProps) {
+  const { t } = useTranslation()
   const overLimit = counter ? counter.value > counter.max : false
   return (
     <div className={`field${wide ? ' field-wide' : ''}${error ? ' field-invalid' : ''}`}>
       <div className="field-head">
         <label htmlFor={id}>{label}</label>
-        {required && <span className="field-req">必填</span>}
+        {required && <span className="field-req">{t('common.required')}</span>}
         {counter && (
           <span className={`field-count${overLimit ? ' over' : ''}`}>
             {counter.value}/{counter.max}

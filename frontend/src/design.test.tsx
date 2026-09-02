@@ -25,10 +25,10 @@ function renderApp(route = '/') {
 
 const event = {
   id: 1,
-  title: '城市脉搏 · 独立摇滚之夜',
+  title: 'City Pulse · Indie Rock Night',
   description: 'd',
   category: 'music',
-  city: '上海',
+  city: 'Shanghai',
   startsAt: '2026-09-10T12:00:00Z',
   priceCents: 18000,
   capacity: 10,
@@ -46,10 +46,10 @@ describe('discovery page design elements', () => {
   it('renders category pill and sold-ratio meter on event tickets', async () => {
     apiMock.fn.mockResolvedValue([event])
     renderApp()
-    await waitFor(() => expect(screen.getByText('城市脉搏 · 独立摇滚之夜')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('City Pulse · Indie Rock Night')).toBeInTheDocument())
     // Category pill, city label and sold meter label render on the stub.
     expect(document.querySelector('.pill-music')).not.toBeNull()
-    expect(screen.getAllByText('上海').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Shanghai').length).toBeGreaterThan(0)
     expect(screen.getByText('1 张余票')).toBeInTheDocument()
     expect(document.querySelector('.sold-fill')).not.toBeNull()
   })
@@ -77,7 +77,7 @@ describe('discovery page design elements', () => {
       return Promise.resolve([event])
     })
     renderApp()
-    await waitFor(() => expect(screen.getByText('城市脉搏 · 独立摇滚之夜')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('City Pulse · Indie Rock Night')).toBeInTheDocument())
     await userEvent.type(screen.getByPlaceholderText('搜索活动…'), 'zzz')
     await waitFor(() => expect(screen.getByText('还没有活动')).toBeInTheDocument())
   })
@@ -87,7 +87,7 @@ describe('event detail', () => {
   it('renders price, remaining tickets and the booking CTA', async () => {
     apiMock.fn.mockResolvedValue(event)
     renderApp('/events/1')
-    await waitFor(() => expect(screen.getByText('城市脉搏 · 独立摇滚之夜')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('City Pulse · Indie Rock Night')).toBeInTheDocument())
     expect(screen.getByText('¥180.00')).toBeInTheDocument()
     expect(screen.getByText('1 张余票')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '登录后预订' })).toBeInTheDocument()
@@ -128,13 +128,13 @@ describe('list pages (signed in)', () => {
       if (path === '/api/auth/me') return Promise.resolve(user)
       if (path === '/api/notifications') {
         return Promise.resolve([
-          { id: 1, bookingId: 1, message: 'Kafka 已处理：BOOKING_CREATED', createdAt: '2026-09-01T00:00:00Z' },
+          { id: 1, bookingId: 1, message: 'Processed: BOOKING_CREATED', createdAt: '2026-09-01T00:00:00Z' },
         ])
       }
       return Promise.resolve([])
     })
     renderApp('/notifications')
-    await waitFor(() => expect(screen.getByText('Kafka 已处理：BOOKING_CREATED')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Processed: BOOKING_CREATED')).toBeInTheDocument())
   })
 
   it('renders booking detail tickets and organiser analytics', async () => {
@@ -142,7 +142,7 @@ describe('list pages (signed in)', () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(user)
       if (path === '/api/bookings/1') {
-        return Promise.resolve({ id: 1, eventId: 1, eventTitle: '摇滚夜', quantity: 2, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z' })
+        return Promise.resolve({ id: 1, eventId: 1, eventTitle: 'Indie Rock Night', quantity: 2, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z' })
       }
       if (path === '/api/bookings/1/tickets') {
         return Promise.resolve([{ id: 11, code: 'abc123', status: 'VALID' }])

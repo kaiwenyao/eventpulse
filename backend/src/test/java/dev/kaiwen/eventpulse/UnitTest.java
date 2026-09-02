@@ -215,12 +215,12 @@ class UnitTest {
     @Test
     void eventCrud() {
         EventService service = new EventService(events);
-        Event published = event(1L, "摇滚夜", "music", "上海", 0, 10, 1L, "PUBLISHED");
-        Event other = event(2L, "晨跑", "sports", "北京", 0, 5, 1L, "PUBLISHED");
+        Event published = event(1L, "Indie Rock Night", "music", "Shanghai", 0, 10, 1L, "PUBLISHED");
+        Event other = event(2L, "Morning run", "sports", "Beijing", 0, 5, 1L, "PUBLISHED");
         when(events.findByStatusInOrderByStartsAtAsc(any())).thenReturn(List.of(published, other));
-        assertThat(service.list("上海", "music", "摇")).hasSize(1);
+        assertThat(service.list("Shanghai", "music", "Indie")).hasSize(1);
         assertThat(service.list(null, null, "   ")).hasSize(2);
-        assertThat(service.search("上海", "music", "摇", Instant.EPOCH, Instant.now().plusSeconds(40L * 86400),
+        assertThat(service.search("Shanghai", "music", "Indie", Instant.EPOCH, Instant.now().plusSeconds(40L * 86400),
                 0, 99999, true, "price", true).getTotal()).isEqualTo(1);
         assertThat(service.search(null, null, null, null, null, null, null, false, "sold", true).getTotal()).isEqualTo(2);
         assertThat(service.search(null, null, null, null, null, null, null, null, "updatedAt", false).getTotal()).isEqualTo(2);
@@ -238,7 +238,7 @@ class UnitTest {
         when(events.findByOrganiserIdOrderByStartsAtDesc(1L)).thenReturn(List.of(published));
         assertThat(service.mine()).hasSize(1);
 
-        EventRequest req = new EventRequest("新活动", "desc", "art", "上海", Instant.now(), 100, 20);
+        EventRequest req = new EventRequest("New event", "desc", "art", "Shanghai", Instant.now(), 100, 20);
         when(events.save(any())).thenAnswer(inv -> {
             Event e = inv.getArgument(0);
             e.setId(9L);
@@ -247,9 +247,9 @@ class UnitTest {
         assertThat(service.create(req).id()).isEqualTo(9L);
 
         published.setSold(3);
-        assertThatThrownBy(() -> service.update(1L, new EventRequest("x", "", "art", "上海", Instant.now(), 1, 1)))
+        assertThatThrownBy(() -> service.update(1L, new EventRequest("x", "", "art", "Shanghai", Instant.now(), 1, 1)))
                 .isInstanceOf(BusinessException.class);
-        assertThat(service.update(1L, req).title()).isEqualTo("新活动");
+        assertThat(service.update(1L, req).title()).isEqualTo("New event");
 
         BaseContext.setUserId(2L);
         assertThatThrownBy(() -> service.update(1L, req)).isInstanceOf(BusinessException.class);
@@ -273,17 +273,17 @@ class UnitTest {
 
         BaseContext.setUserId(7L);
         BaseContext.setRole("USER");
-        Event cancelled = event(1L, "已取消", "music", "上海", 0, 10, 1L, "CANCELLED");
+        Event cancelled = event(1L, "Cancelled event", "music", "Shanghai", 0, 10, 1L, "CANCELLED");
         when(events.findById(1L)).thenReturn(Optional.of(cancelled));
         assertThatThrownBy(() -> service.create(new CreateBookingRequest(1L, 1)))
                 .isInstanceOf(BusinessException.class);
 
-        Event full = event(2L, "满员", "music", "上海", 10, 10, 1L, "PUBLISHED");
+        Event full = event(2L, "Sold-out event", "music", "Shanghai", 10, 10, 1L, "PUBLISHED");
         when(events.findById(2L)).thenReturn(Optional.of(full));
         assertThatThrownBy(() -> service.create(new CreateBookingRequest(2L, 1)))
                 .isInstanceOf(BusinessException.class);
 
-        Event open = event(3L, "可订", "music", "上海", 1, 10, 1L, "PUBLISHED");
+        Event open = event(3L, "Bookable", "music", "Shanghai", 1, 10, 1L, "PUBLISHED");
         when(events.findById(3L)).thenReturn(Optional.of(open));
         when(bookings.save(any())).thenAnswer(inv -> {
             Booking b = inv.getArgument(0);
@@ -301,7 +301,7 @@ class UnitTest {
         when(bookings.findByUserIdOrderByCreatedAtDesc(7L)).thenReturn(List.of(mine));
         assertThat(service.listMine()).hasSize(1);
         when(bookings.findById(11L)).thenReturn(Optional.of(mine));
-        assertThat(service.get(11L).eventTitle()).isEqualTo("可订");
+        assertThat(service.get(11L).eventTitle()).isEqualTo("Bookable");
 
         when(bookings.findById(12L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.get(12L)).isInstanceOf(BusinessException.class);
@@ -315,7 +315,7 @@ class UnitTest {
         assertThatThrownBy(() -> service.cancel(11L)).isInstanceOf(BusinessException.class);
 
         when(events.incrementSold(any(), anyInt())).thenReturn(0);
-        Event stillOpen = event(3L, "可订", "music", "上海", 9, 10, 1L, "PUBLISHED");
+        Event stillOpen = event(3L, "Bookable", "music", "Shanghai", 9, 10, 1L, "PUBLISHED");
         when(events.findById(3L)).thenReturn(Optional.of(stillOpen));
         assertThatThrownBy(() -> service.create(new CreateBookingRequest(3L, 2)))
                 .isInstanceOf(BusinessException.class);
@@ -330,7 +330,7 @@ class UnitTest {
         EventService eventService = new EventService(events);
         BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
         BaseContext.setUserId(7L);
-        Event open = event(3L, "可订", "music", "上海", 0, 10, 1L, "PUBLISHED");
+        Event open = event(3L, "Bookable", "music", "Shanghai", 0, 10, 1L, "PUBLISHED");
         when(events.findById(3L)).thenReturn(Optional.of(open));
         when(events.incrementSold(3L, 2)).thenReturn(1);
         when(users.debitWalletIfEnough(7L, 200L)).thenReturn(0);
@@ -351,7 +351,7 @@ class UnitTest {
         BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
         BaseContext.setUserId(7L);
         Booking booking = booking(11L, 7L, 3L, 1, "CONFIRMED");
-        Event event = event(3L, "可订", "music", "上海", 1, 10, 1L, "PUBLISHED");
+        Event event = event(3L, "Bookable", "music", "Shanghai", 1, 10, 1L, "PUBLISHED");
         Ticket checkedIn = new Ticket();
         checkedIn.setStatus(TicketStatus.CHECKED_IN);
         when(bookings.findById(11L)).thenReturn(Optional.of(booking));
@@ -374,7 +374,7 @@ class UnitTest {
         BookingService service = new BookingService(bookings, eventService, events, ticketService, tickets, users, outbox);
         BaseContext.setUserId(7L);
         Booking booking = booking(11L, 7L, 3L, 1, "CONFIRMED");
-        Event event = event(3L, "已开始", "music", "上海", 1, 10, 1L, "ONGOING");
+        Event event = event(3L, "Started event", "music", "Shanghai", 1, 10, 1L, "ONGOING");
         when(bookings.findById(11L)).thenReturn(Optional.of(booking));
         when(events.findById(3L)).thenReturn(Optional.of(event));
         when(events.decrementSoldForCustomerCancellation(3L, 1)).thenReturn(0);
@@ -445,7 +445,7 @@ class UnitTest {
         assertThat(handler.handleValid(invalid).getBody().getMsg()).contains("email");
         BeanPropertyBindingResult empty = new BeanPropertyBindingResult(new Object(), "req");
         assertThat(handler.handleValid(new MethodArgumentNotValidException(null, empty)).getBody().getMsg())
-                .isEqualTo("参数不合法");
+                .isEqualTo("Invalid request");
         assertThat(handler.handleOther(new RuntimeException()).getStatusCode())
                 .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(handler.handleOther(new RuntimeException("boom")).getBody().getMsg()).isEqualTo("boom");
@@ -466,7 +466,7 @@ class UnitTest {
         event.setTitle("t");
         event.setDescription("d");
         event.setCategory("c");
-        event.setCity("上海");
+        event.setCity("Shanghai");
         Instant now = Instant.parse("2026-09-01T00:00:00Z");
         event.setStartsAt(now);
         event.setPriceCents(100);
@@ -521,14 +521,14 @@ class UnitTest {
         EventController eventsApi = new EventController(eventService);
         when(events.findByStatusInOrderByStartsAtAsc(any())).thenReturn(List.of());
         assertThat(eventsApi.list(null, null, null, null, null, null, null, null, null, null, null, null).getData()).isEmpty();
-        Event published = event(1L, "t", "music", "上海", 0, 10, 1L, "PUBLISHED");
+        Event published = event(1L, "t", "music", "Shanghai", 0, 10, 1L, "PUBLISHED");
         when(events.findById(1L)).thenReturn(Optional.of(published));
         assertThat(eventsApi.get(1L).getData().id()).isEqualTo(1L);
         BaseContext.setRole("ORGANISER");
         BaseContext.setUserId(1L);
         when(events.findByOrganiserIdOrderByStartsAtDesc(1L)).thenReturn(List.of(published));
         assertThat(eventsApi.mine().getData()).hasSize(1);
-        EventRequest req = new EventRequest("新", "d", "art", "上海", Instant.now().plusSeconds(7L * 86400), 1, 10);
+        EventRequest req = new EventRequest("New", "d", "art", "Shanghai", Instant.now().plusSeconds(7L * 86400), 1, 10);
         when(events.save(any())).thenAnswer(inv -> {
             Event e = inv.getArgument(0);
             e.setId(2L);
@@ -569,7 +569,7 @@ class UnitTest {
         when(platform.myNotifications()).thenReturn(List.of());
         assertThat(notes.list().getData()).isEmpty();
         var note = new dev.kaiwen.eventpulse.dto.BookingDtos.NotificationVo(
-                1L, 1L, 1L, 4L, "BOOKING", "预订成功", "Kafka 已处理：BOOKING_CREATED", null, null,
+                1L, 1L, 1L, 4L, "BOOKING", "Booking confirmed", "Processed: BOOKING_CREATED", null, null,
                 Instant.parse("2026-08-31T00:00:00Z"));
         when(platform.myNotifications()).thenReturn(List.of(note));
         assertThat(notes.list().getData()).hasSize(1);

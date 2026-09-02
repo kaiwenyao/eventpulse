@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { formatDayTime } from '../lib/datetime'
@@ -27,6 +28,7 @@ function StatCard({ label, value, caption, tone = 'default' }: StatCardProps) {
 }
 
 export function OrganiserDashboardPage() {
+  const { t } = useTranslation()
   const [dash, setDash] = useState<OrganiserDashboardVo | null>(null)
   const [recent, setRecent] = useState<EventVo[]>([])
   const [loading, setLoading] = useState(true)
@@ -36,7 +38,7 @@ export function OrganiserDashboardPage() {
     Promise.all([
       api<OrganiserDashboardVo>('GET', '/api/organiser/dashboard').catch(() => null),
       api<PageVo<EventVo>>('GET', '/api/organiser/events?sort=startsAt').catch((e) => {
-        setError(e instanceof ApiError ? e.message : '加载活动失败')
+        setError(e instanceof ApiError ? e.message : t('organiser.loadFailed'))
         return null
       }),
     ])
@@ -45,7 +47,7 @@ export function OrganiserDashboardPage() {
         setRecent((page?.records ?? []).slice(0, RECENT_LIMIT))
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [t])
 
   const sellThrough = dash?.sellThrough ?? 0
   const lowStock = dash?.lowStock ?? []
@@ -54,11 +56,11 @@ export function OrganiserDashboardPage() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>主办方工作台</h1>
-          <p className="muted">票务健康度、待办与最近活动的一站式概览。</p>
+          <h1>{t('organiser.dashboardTitle')}</h1>
+          <p className="muted">{t('organiser.dashboardSub')}</p>
         </div>
         <NavLink to="/organiser/events/new" className="btn-primary btn-link">
-          <PlusIcon /> 新建活动
+          <PlusIcon /> {t('organiser.newEvent')}
         </NavLink>
       </header>
 
@@ -76,16 +78,21 @@ export function OrganiserDashboardPage() {
       ) : (
         <div className="stat-grid">
           <StatCard
-            label="活动总数"
+            label={t('organiser.totalEvents')}
             value={String(dash?.eventCount ?? 0)}
-            caption={`其中 ${dash?.publishedCount ?? 0} 场已发布`}
+            caption={t('organiser.publishedOf', { count: dash?.publishedCount ?? 0 })}
           />
-          <StatCard label="已售票数" value={String(dash?.sold ?? 0)} caption={`总库存 ${dash?.capacity ?? 0} 张`} tone="accent" />
-          <StatCard label="售票率" value={`${sellThrough.toFixed(1)}%`} caption="已售 / 总库存" />
           <StatCard
-            label="待投递事件"
+            label={t('organiser.soldCount')}
+            value={String(dash?.sold ?? 0)}
+            caption={t('organiser.capacityOf', { count: dash?.capacity ?? 0 })}
+            tone="accent"
+          />
+          <StatCard label={t('organiser.sellThrough')} value={`${sellThrough.toFixed(1)}%`} caption={t('organiser.sellThroughCaption')} />
+          <StatCard
+            label={t('organiser.outbox')}
             value={String(dash?.outboxPending ?? 0)}
-            caption="Outbox 中未推送的领域事件"
+            caption={t('organiser.outboxCaption')}
             tone={(dash?.outboxPending ?? 0) > 0 ? 'warn' : 'default'}
           />
         </div>
@@ -93,23 +100,23 @@ export function OrganiserDashboardPage() {
 
       {lowStock.length > 0 && (
         <div className="callout callout-warn">
-          <p className="callout-title">余票告急（≤ 5 张）</p>
+          <p className="callout-title">{t('organiser.lowStock')}</p>
           <p className="muted">{lowStock.join('、')}</p>
         </div>
       )}
 
       <section>
         <div className="section-head">
-          <h2 className="section-title">最近活动</h2>
-          <NavLink to="/organiser/events">查看全部</NavLink>
+          <h2 className="section-title">{t('organiser.recent')}</h2>
+          <NavLink to="/organiser/events">{t('organiser.viewAll')}</NavLink>
         </div>
         {recent.length === 0 ? (
           <EmptyState
-            title="还没有活动"
-            hint="创建第一场活动，可以先保存草稿再发布。"
+            title={t('organiser.emptyEventsTitle')}
+            hint={t('organiser.emptyEventsHint')}
             action={
               <NavLink to="/organiser/events/new" className="btn-primary btn-link">
-                新建活动
+                {t('organiser.newEvent')}
               </NavLink>
             }
           />
@@ -122,7 +129,7 @@ export function OrganiserDashboardPage() {
                     <NavLink to={`/organiser/events/${event.id}`}>{event.title}</NavLink>
                   </h3>
                   <p className="muted small">
-                    {event.city} · {formatDayTime(event.startsAt)} · 已售 {event.sold}/{event.capacity}
+                    {event.city} · {formatDayTime(event.startsAt)} · {t('organiser.soldLine', { sold: event.sold, capacity: event.capacity })}
                   </p>
                   <SoldBar sold={event.sold} capacity={event.capacity} />
                 </div>

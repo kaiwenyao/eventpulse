@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../api'
 import { EventTicket } from '../components/EventTicket'
 import { CATEGORIES, EventVo } from '../types'
@@ -19,6 +20,7 @@ function buildPath(mode: DiscoveryMode, params: URLSearchParams) {
 }
 
 export function EventsPage() {
+  const { t } = useTranslation()
   const [events, setEvents] = useState<EventVo[]>([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
@@ -59,21 +61,21 @@ export function EventsPage() {
     <div>
       <section className="hero">
         <div className="hero-copy">
-          <p className="eyebrow">EventPulse · 城市活动预订</p>
-          <h1>发现今晚的城市脉搏</h1>
-          <p className="muted hero-sub">音乐、科技、运动、艺术 —— 找到你的下一张票。</p>
+          <p className="eyebrow">{t('events.eyebrow')}</p>
+          <h1>{t('events.hero')}</h1>
+          <p className="muted hero-sub">{t('events.sub')}</p>
         </div>
         <dl className="hero-stats">
           <div>
-            <dt>在售活动</dt>
+            <dt>{t('events.onSale')}</dt>
             <dd>{stats.count}</dd>
           </div>
           <div>
-            <dt>覆盖城市</dt>
+            <dt>{t('events.cities')}</dt>
             <dd>{stats.cities}</dd>
           </div>
           <div>
-            <dt>可购票数</dt>
+            <dt>{t('events.ticketsLeft')}</dt>
             <dd>{stats.remaining}</dd>
           </div>
         </dl>
@@ -82,53 +84,53 @@ export function EventsPage() {
       <div className="search-row">
         <input
           className="search"
-          placeholder="搜索活动…"
+          placeholder={t('events.search')}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          aria-label="搜索活动"
+          aria-label={t('events.searchAria')}
         />
-        <div className="chips" role="group" aria-label="按分类筛选">
+        <div className="chips" role="group" aria-label={t('events.filterCategory')}>
           <button className={`chip ${cat === '' ? 'active' : ''}`} onClick={() => setCat('')}>
-            全部
+            {t('common.all')}
           </button>
           {CATEGORIES.map((c) => (
             <button key={c.key} className={`chip ${cat === c.key ? 'active' : ''}`} onClick={() => setCat(c.key)}>
-              {c.label}
+              {t(`category.${c.key}`)}
             </button>
           ))}
         </div>
         <input
           className="search search-city"
-          placeholder="城市"
+          placeholder={t('events.city')}
           value={city}
           onChange={(e) => setCity(e.target.value)}
-          aria-label="城市"
+          aria-label={t('events.city')}
         />
-        <select aria-label="排序" value={sort} onChange={(e) => setSort(e.target.value)}>
-          <option value="startsAt">开始时间</option>
-          <option value="price">票价</option>
-          <option value="sold">热度</option>
+        <select aria-label={t('events.sort')} value={sort} onChange={(e) => setSort(e.target.value)}>
+          <option value="startsAt">{t('events.sortStarts')}</option>
+          <option value="price">{t('events.sortPrice')}</option>
+          <option value="sold">{t('events.sortSold')}</option>
         </select>
-        <div className="chips chips-loose" role="group" aria-label="切换发现模式">
+        <div className="chips chips-loose" role="group" aria-label={t('events.modeAria')}>
           <button
             className={`chip ${mode === 'nearby' ? 'active' : ''}`}
             onClick={() => setMode(mode === 'nearby' ? 'list' : 'nearby')}
           >
-            附近
+            {t('events.nearby')}
           </button>
           <button
             className={`chip ${mode === 'recommend' ? 'active' : ''}`}
             onClick={() => setMode(mode === 'recommend' ? 'list' : 'recommend')}
           >
-            推荐
+            {t('events.recommend')}
           </button>
         </div>
       </div>
 
       {loading ? (
-        <SkeletonGrid label="正在加载活动" />
+        <SkeletonGrid label={t('events.loading')} />
       ) : events.length === 0 ? (
-        <EmptyState title="还没有活动" hint="换个关键词或分类试试，也可以切换其他城市。" />
+        <EmptyState title={t('events.emptyTitle')} hint={t('events.emptyHint')} />
       ) : (
         <div className="grid">
           {events.map((event) => (

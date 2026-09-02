@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 import { api, ApiError, formatTime } from '../api'
 import { BookingVo } from '../types'
@@ -7,6 +8,7 @@ import { SkeletonCard } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
 
 export function BookingsPage() {
+  const { t } = useTranslation()
   const [items, setItems] = useState<BookingVo[]>([])
   const [loading, setLoading] = useState(true)
   const { notify } = useToast()
@@ -22,9 +24,9 @@ export function BookingsPage() {
     try {
       const updated = await api<BookingVo>('POST', `/api/bookings/${booking.id}/cancel`)
       setItems((prev) => prev.map((x) => (x.id === booking.id ? updated : x)))
-      notify('订单已取消', 'success')
+      notify(t('bookings.cancelled'), 'success')
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : '取消失败', 'error')
+      notify(e instanceof ApiError ? e.message : t('bookings.cancelFailed'), 'error')
     }
   }
 
@@ -32,8 +34,8 @@ export function BookingsPage() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>我的预订</h1>
-          <p className="muted">所有订单与电子票都在这里，取消后库存会立即释放。</p>
+          <h1>{t('bookings.title')}</h1>
+          <p className="muted">{t('bookings.sub')}</p>
         </div>
       </header>
 
@@ -41,11 +43,11 @@ export function BookingsPage() {
         <SkeletonCard />
       ) : items.length === 0 ? (
         <EmptyState
-          title="还没有预订"
-          hint="去活动页挑一张喜欢的票吧。"
+          title={t('bookings.emptyTitle')}
+          hint={t('bookings.emptyHint')}
           action={
             <NavLink to="/" className="btn-primary btn-link">
-              去看看活动
+              {t('bookings.goEvents')}
             </NavLink>
           }
         />
@@ -57,15 +59,13 @@ export function BookingsPage() {
                 <h3>
                   <NavLink to={`/bookings/${b.id}`}>{b.eventTitle}</NavLink>
                 </h3>
-                <p className="muted small">
-                  {b.quantity} 张 · 下单于 {formatTime(b.createdAt)}
-                </p>
+                <p className="muted small">{t('bookings.qtyLine', { count: b.quantity, time: formatTime(b.createdAt) })}</p>
               </div>
               <div className="row booking-actions">
                 <BookingStatusBadge status={b.status} />
                 {b.status === 'CONFIRMED' && (
                   <button className="btn-secondary btn-sm" onClick={() => cancel(b)}>
-                    取消
+                    {t('bookings.cancel')}
                   </button>
                 )}
               </div>

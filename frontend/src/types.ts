@@ -99,41 +99,19 @@ export interface PageVo<T> {
 }
 
 export const CATEGORIES = [
-  { key: 'music', label: '音乐' },
-  { key: 'tech', label: '科技' },
-  { key: 'sports', label: '运动' },
-  { key: 'art', label: '艺术' },
+  { key: 'music' },
+  { key: 'tech' },
+  { key: 'sports' },
+  { key: 'art' },
 ] as const
-
-export const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
-  CATEGORIES.map((c) => [c.key, c.label]),
-)
 
 /** Event lifecycle: DRAFT → PUBLISHED → ONGOING → FINISHED → ARCHIVED (CANCELLED is terminal). */
 export const EVENT_STATUSES = [
-  { key: 'DRAFT', label: '草稿' },
-  { key: 'PUBLISHED', label: '已发布' },
-  { key: 'ONGOING', label: '进行中' },
-  { key: 'FINISHED', label: '已结束' },
-  { key: 'CANCELLED', label: '已取消' },
-  { key: 'ARCHIVED', label: '已归档' },
+  { key: 'DRAFT' },
+  { key: 'PUBLISHED' },
+  { key: 'ONGOING' },
+  { key: 'FINISHED' },
+  { key: 'CANCELLED' },
+  { key: 'ARCHIVED' },
 ] as const
 
-export const EVENT_STATUS_LABELS: Record<string, string> = Object.fromEntries(
-  EVENT_STATUSES.map((s) => [s.key, s.label]),
-)
-
-export const BOOKING_STATUS_LABELS: Record<string, string> = {
-  PENDING: '待确认',
-  CONFIRMED: '已确认',
-  CANCELLED: '已取消',
-  REFUNDED: '已退款',
-  FAILED: '失败',
-}
-
-export const TICKET_STATUS_LABELS: Record<string, string> = {
-  VALID: '未使用',
-  CHECKED_IN: '已核销',
-  CANCELLED: '已作废',
-  EXPIRED: '已过期',
-}

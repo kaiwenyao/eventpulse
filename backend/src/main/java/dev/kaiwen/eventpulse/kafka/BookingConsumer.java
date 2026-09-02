@@ -79,13 +79,13 @@ public class BookingConsumer {
             return objectMapper.readValue(json, BookingEvent.class);
         }
         catch (Exception e) {
-            throw new IllegalStateException("无法解析 Kafka 消息: " + json, e);
+            throw new IllegalStateException("Unable to parse Kafka message: " + json, e);
         }
     }
 
     private static void requireInteractionFields(BookingEvent event) {
         if (!event.validForInteraction()) {
-            throw new IllegalStateException("预订消息缺少 dedupKey / userId / eventId / bookingId: " + event);
+            throw new IllegalStateException("Booking message missing dedupKey / userId / eventId / bookingId: " + event);
         }
     }
 
@@ -95,7 +95,7 @@ public class BookingConsumer {
      */
     private static void requirePositiveQuantity(BookingEvent event) {
         if (event.quantity() == null || event.quantity() <= 0) {
-            throw new IllegalStateException("BOOKING_CREATED 缺少有效 quantity（须 > 0）: " + event);
+            throw new IllegalStateException("BOOKING_CREATED missing a valid quantity (must be > 0): " + event);
         }
     }
 
@@ -103,12 +103,12 @@ public class BookingConsumer {
         Notification notice = new Notification(
                 event.bookingId(),
                 event.message() == null || event.message().isBlank()
-                        ? "已处理：" + event.type()
+                        ? "Processed: " + event.type()
                         : event.message());
         notice.setUserId(event.userId());
         notice.setEventId(event.eventId());
         notice.setType(event.type());
-        notice.setTitle(event.title() == null || event.title().isBlank() ? "消息通知" : event.title());
+        notice.setTitle(event.title() == null || event.title().isBlank() ? "Notification" : event.title());
         notice.setDedupKey(event.dedupKey());
         return notice;
     }

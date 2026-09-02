@@ -5,6 +5,8 @@
  * organiser schedules an event in the venue's wall-clock time, not in UTC.
  */
 
+import i18n from '../i18n'
+
 const MINUTE_MS = 60_000
 
 function pad(value: number) {
@@ -55,12 +57,12 @@ export function relativeTime(iso?: string | null, now = Date.now()): string {
   const magnitude = Math.abs(diffMinutes)
   const [value, unit] =
     magnitude < 60
-      ? [magnitude, '分钟']
+      ? [magnitude, i18n.t('time.minute')]
       : magnitude < 60 * 24
-        ? [Math.round(magnitude / 60), '小时']
-        : [Math.round(magnitude / (60 * 24)), '天']
-  if (value === 0) return '刚刚'
-  return future ? `${value} ${unit}后` : `${value} ${unit}前`
+        ? [Math.round(magnitude / 60), i18n.t('time.hour')]
+        : [Math.round(magnitude / (60 * 24)), i18n.t('time.day')]
+  if (value === 0) return i18n.t('time.justNow')
+  return i18n.t(future ? 'time.inFuture' : 'time.inPast', { count: value, unit })
 }
 
 /** Short calendar label, e.g. `9月10日 20:00`. */
@@ -68,5 +70,6 @@ export function formatDayTime(iso?: string | null): string {
   if (!iso) return ''
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const locale = i18n.language === 'en' ? 'en' : 'zh-CN'
+  return date.toLocaleString(locale, { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }

@@ -55,7 +55,7 @@ public class TicketService {
     public Ticket lookup(String code) {
         EventService.requireOrganiser();
         Ticket ticket = tickets.findByTicketCodeHash(TicketCodes.hash(code))
-                .orElseThrow(() -> BusinessException.notFound("票据不存在"));
+                .orElseThrow(() -> BusinessException.notFound("Ticket not found"));
         organiserEvents.requireOwn(ticket.getEventId());
         return ticket;
     }
@@ -64,10 +64,10 @@ public class TicketService {
     public Ticket checkIn(String code, String source) {
         Ticket ticket = lockForCheckIn(code);
         if (TicketStatus.CHECKED_IN.equals(ticket.getStatus())) {
-            throw BusinessException.conflict("该票已于 " + ticket.getCheckedInAt() + " 核销");
+            throw BusinessException.conflict("Ticket already checked in at " + ticket.getCheckedInAt());
         }
         if (!TicketStatus.VALID.equals(ticket.getStatus())) {
-            throw BusinessException.conflict("票据已失效，无法核销");
+            throw BusinessException.conflict("Ticket is no longer valid for check-in");
         }
         ticket.setStatus(TicketStatus.CHECKED_IN);
         ticket.setCheckedInAt(Instant.now());
@@ -79,10 +79,10 @@ public class TicketService {
     @Transactional
     public Ticket undoCheckIn(Long ticketId, String reason) {
         EventService.requireOrganiser();
-        Ticket ticket = tickets.findById(ticketId).orElseThrow(() -> BusinessException.notFound("票据不存在"));
+        Ticket ticket = tickets.findById(ticketId).orElseThrow(() -> BusinessException.notFound("Ticket not found"));
         organiserEvents.requireOwn(ticket.getEventId());
         if (!TicketStatus.CHECKED_IN.equals(ticket.getStatus())) {
-            throw BusinessException.conflict("只有已核销的票可以撤销");
+            throw BusinessException.conflict("Only checked-in tickets can be undone");
         }
         ticket.setStatus(TicketStatus.VALID);
         ticket.setRevokedAt(Instant.now());
@@ -117,7 +117,7 @@ public class TicketService {
     private Ticket lockForCheckIn(String code) {
         EventService.requireOrganiser();
         Ticket ticket = tickets.findByTicketCodeHashForUpdate(TicketCodes.hash(code))
-                .orElseThrow(() -> BusinessException.notFound("票据不存在"));
+                .orElseThrow(() -> BusinessException.notFound("Ticket not found"));
         organiserEvents.requireOwn(ticket.getEventId());
         return ticket;
     }

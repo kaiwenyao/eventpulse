@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { CATEGORIES, EventVo } from '../types'
@@ -18,25 +19,26 @@ import {
   validateEventForm,
 } from './eventForm'
 
-const CITY_SUGGESTIONS = ['上海', '北京', '广州', '深圳', '成都', '杭州', '武汉', '西安']
+const CITY_SUGGESTIONS = ['Shanghai', 'Beijing', 'Guangzhou', 'Shenzhen', 'Chengdu', 'Hangzhou', 'Wuhan', "Xi'an"]
 
-const FIELD_LABELS: Partial<Record<keyof EventFormState, string>> = {
-  title: '标题',
-  summary: '摘要',
-  category: '分类',
-  city: '城市',
-  venueName: '场地',
-  address: '详细地址',
-  startsAt: '开始时间',
-  endsAt: '结束时间',
-  salesEndAt: '停售时间',
-  priceYuan: '票价（元）',
-  capacity: '容量',
-  maxQuantityPerBooking: '单笔限购',
-  contactInfo: '联系方式',
+const FIELD_LABEL_KEYS: Partial<Record<keyof EventFormState, string>> = {
+  title: 'organiser.form.title',
+  summary: 'organiser.form.summary',
+  category: 'organiser.form.category',
+  city: 'organiser.form.city',
+  venueName: 'organiser.form.venue',
+  address: 'organiser.form.address',
+  startsAt: 'organiser.form.startsAt',
+  endsAt: 'organiser.form.endsAt',
+  salesEndAt: 'organiser.form.salesEnd',
+  priceYuan: 'organiser.form.price',
+  capacity: 'organiser.form.capacity',
+  maxQuantityPerBooking: 'organiser.form.limit',
+  contactInfo: 'organiser.form.contact',
 }
 
 export function OrganiserFormPage() {
+  const { t } = useTranslation()
   const { id } = useParams()
   const navigate = useNavigate()
   const { notify } = useToast()
@@ -57,9 +59,9 @@ export function OrganiserFormPage() {
         setExisting(event)
         setForm(formFromEvent(event))
       })
-      .catch((e) => setLoadError(e instanceof ApiError ? e.message : '加载活动失败'))
+      .catch((e) => setLoadError(e instanceof ApiError ? e.message : t('organiser.form.loadEventFailed')))
       .finally(() => setLoading(false))
-  }, [id])
+  }, [id, t])
 
   /** Immutable field update; re-validates only after the first submit attempt. */
   function update<K extends keyof EventFormState>(key: K, value: EventFormState[K]) {
@@ -72,8 +74,8 @@ export function OrganiserFormPage() {
     () =>
       (Object.keys(errors) as (keyof EventFormState)[])
         .filter((key) => errors[key])
-        .map((key) => ({ key, label: FIELD_LABELS[key] ?? key, message: errors[key]! })),
-    [errors],
+        .map((key) => ({ key, label: FIELD_LABEL_KEYS[key] ? t(FIELD_LABEL_KEYS[key]!) : String(key), message: errors[key]! })),
+    [errors, t],
   )
 
   async function submit(publish: boolean) {
@@ -82,7 +84,7 @@ export function OrganiserFormPage() {
     const found = validateEventForm(form)
     setErrors(found)
     if (Object.keys(found).length > 0) {
-      notify('还有必填项没有填好，请检查表单', 'error')
+      notify(t('organiser.form.incomplete'), 'error')
       return
     }
     setSaving(publish ? 'publish' : 'draft')
@@ -90,12 +92,12 @@ export function OrganiserFormPage() {
       const body = toOrganiserRequest(form, { publish, version: existing?.version })
       if (id) await api('PUT', `/api/organiser/events/${id}`, body)
       else await api('POST', '/api/organiser/events', body)
-      notify(publish ? '活动已发布' : '草稿已保存', 'success')
+      notify(publish ? t('organiser.form.published') : t('organiser.form.draftSaved'), 'success')
       navigate('/organiser/events')
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : '保存失败'
+      const message = e instanceof ApiError ? e.message : t('common.failed')
       setError(message)
-      notify(`保存失败：${message}`, 'error')
+      notify(t('organiser.form.saveFailed', { message }), 'error')
     } finally {
       setSaving(null)
     }
@@ -106,26 +108,24 @@ export function OrganiserFormPage() {
     void submit(false)
   }
 
-  if (loadError) return <EmptyState title={loadError} hint="只能编辑属于自己的活动。" />
+  if (loadError) return <EmptyState title={loadError} hint={t('organiser.editOwnOnly')} />
 
   const busy = saving !== null
 
   return (
     <div className="page form-page">
       <nav className="crumbs">
-        <NavLink to="/organiser">工作台</NavLink>
+        <NavLink to="/organiser">{t('nav.console')}</NavLink>
         <span aria-hidden>/</span>
-        <NavLink to="/organiser/events">活动管理</NavLink>
+        <NavLink to="/organiser/events">{t('organiser.events')}</NavLink>
         <span aria-hidden>/</span>
-        <span>{id ? '编辑活动' : '新建活动'}</span>
+        <span>{id ? t('organiser.form.edit') : t('organiser.form.create')}</span>
       </nav>
 
       <header className="page-head">
         <div>
-          <h1>{id ? '编辑活动' : '新建活动'}</h1>
-          <p className="muted">
-            填写基本信息后可先保存草稿，确认无误再发布；发布后观众即可在发现页看到这场活动。
-          </p>
+          <h1>{id ? t('organiser.form.edit') : t('organiser.form.create')}</h1>
+          <p className="muted">{t('organiser.form.intro')}</p>
         </div>
         {existing && <EventStatusBadge status={existing.status} />}
       </header>
@@ -138,7 +138,7 @@ export function OrganiserFormPage() {
             <div className="form-fields">
               {submitted && errorList.length > 0 && (
                 <div className="callout callout-error" role="alert">
-                  <p className="callout-title">还有 {errorList.length} 项需要修改</p>
+                  <p className="callout-title">{t('organiser.form.fixCount', { count: errorList.length })}</p>
                   <ul>
                     {errorList.map((item) => (
                       <li key={String(item.key)}>
@@ -152,15 +152,15 @@ export function OrganiserFormPage() {
               <ErrorNote message={error} />
 
               <fieldset className="form-section">
-                <legend>基本信息</legend>
+                <legend>{t('organiser.form.basics')}</legend>
                 <div className="form-grid">
                   <Field
                     id="f-title"
-                    label="标题"
+                    label={t('organiser.form.title')}
                     required
                     wide
                     error={errors.title}
-                    hint="一句话说清是什么活动，会显示在列表和详情页。"
+                    hint={t('organiser.form.titleHint')}
                     counter={{ value: form.title.length, max: FIELD_LIMITS.title }}
                   >
                     <input
@@ -172,10 +172,10 @@ export function OrganiserFormPage() {
 
                   <Field
                     id="f-summary"
-                    label="摘要"
+                    label={t('organiser.form.summary')}
                     wide
                     error={errors.summary}
-                    hint="列表卡片上的补充说明，留空则不显示。"
+                    hint={t('organiser.form.summaryHint')}
                     counter={{ value: form.summary.length, max: FIELD_LIMITS.summary }}
                   >
                     <input
@@ -185,7 +185,7 @@ export function OrganiserFormPage() {
                     />
                   </Field>
 
-                  <Field id="f-desc" label="介绍" wide hint="活动亮点、流程、嘉宾阵容等详细说明。">
+                  <Field id="f-desc" label={t('organiser.form.description')} wide hint={t('organiser.form.descriptionHint')}>
                     <textarea
                       {...fieldAria('f-desc', undefined, 'hint')}
                       rows={6}
@@ -194,7 +194,7 @@ export function OrganiserFormPage() {
                     />
                   </Field>
 
-                  <Field id="f-cat" label="分类" required error={errors.category} hint="可选内置分类，也能自定义。">
+                  <Field id="f-cat" label={t('organiser.form.category')} required error={errors.category} hint={t('organiser.form.categoryHint')}>
                     <input
                       {...fieldAria('f-cat', errors.category, 'hint')}
                       list="category-options"
@@ -204,7 +204,7 @@ export function OrganiserFormPage() {
                     <datalist id="category-options">
                       {CATEGORIES.map((c) => (
                         <option key={c.key} value={c.key}>
-                          {c.label}
+                          {t(`category.${c.key}`)}
                         </option>
                       ))}
                     </datalist>
@@ -213,9 +213,9 @@ export function OrganiserFormPage() {
               </fieldset>
 
               <fieldset className="form-section">
-                <legend>时间安排</legend>
+                <legend>{t('organiser.form.schedule')}</legend>
                 <div className="form-grid">
-                  <Field id="f-starts" label="开始时间" required error={errors.startsAt} hint="按场地当地时间填写。">
+                  <Field id="f-starts" label={t('organiser.form.startsAt')} required error={errors.startsAt} hint={t('organiser.form.startsHint')}>
                     <input
                       {...fieldAria('f-starts', errors.startsAt, 'hint')}
                       type="datetime-local"
@@ -223,7 +223,7 @@ export function OrganiserFormPage() {
                       onChange={(e) => update('startsAt', e.target.value)}
                     />
                   </Field>
-                  <Field id="f-ends" label="结束时间" error={errors.endsAt} hint="留空表示不限定结束时间。">
+                  <Field id="f-ends" label={t('organiser.form.endsAt')} error={errors.endsAt} hint={t('organiser.form.endsHint')}>
                     <input
                       {...fieldAria('f-ends', errors.endsAt, 'hint')}
                       type="datetime-local"
@@ -231,7 +231,7 @@ export function OrganiserFormPage() {
                       onChange={(e) => update('endsAt', e.target.value)}
                     />
                   </Field>
-                  <Field id="f-sales-start" label="开售时间" hint="留空表示保存后立即可购票。">
+                  <Field id="f-sales-start" label={t('organiser.form.salesStart')} hint={t('organiser.form.salesStartHint')}>
                     <input
                       {...fieldAria('f-sales-start', undefined, 'hint')}
                       type="datetime-local"
@@ -239,7 +239,7 @@ export function OrganiserFormPage() {
                       onChange={(e) => update('salesStartAt', e.target.value)}
                     />
                   </Field>
-                  <Field id="f-sales-end" label="停售时间" error={errors.salesEndAt} hint="不能晚于活动开始时间。">
+                  <Field id="f-sales-end" label={t('organiser.form.salesEnd')} error={errors.salesEndAt} hint={t('organiser.form.salesEndHint')}>
                     <input
                       {...fieldAria('f-sales-end', errors.salesEndAt, 'hint')}
                       type="datetime-local"
@@ -251,9 +251,9 @@ export function OrganiserFormPage() {
               </fieldset>
 
               <fieldset className="form-section">
-                <legend>地点</legend>
+                <legend>{t('organiser.form.place')}</legend>
                 <div className="form-grid">
-                  <Field id="f-city" label="城市" required error={errors.city}>
+                  <Field id="f-city" label={t('organiser.form.city')} required error={errors.city}>
                     <input
                       {...fieldAria('f-city', errors.city)}
                       list="city-options"
@@ -266,14 +266,14 @@ export function OrganiserFormPage() {
                       ))}
                     </datalist>
                   </Field>
-                  <Field id="f-venue" label="场地" error={errors.venueName} hint="例如：上海梅赛德斯-奔驰文化中心。">
+                  <Field id="f-venue" label={t('organiser.form.venue')} error={errors.venueName} hint={t('organiser.form.venueHint')}>
                     <input
                       {...fieldAria('f-venue', errors.venueName, 'hint')}
                       value={form.venueName}
                       onChange={(e) => update('venueName', e.target.value)}
                     />
                   </Field>
-                  <Field id="f-address" label="详细地址" wide error={errors.address}>
+                  <Field id="f-address" label={t('organiser.form.address')} wide error={errors.address}>
                     <input
                       {...fieldAria('f-address', errors.address)}
                       value={form.address}
@@ -284,9 +284,9 @@ export function OrganiserFormPage() {
               </fieldset>
 
               <fieldset className="form-section">
-                <legend>票务</legend>
+                <legend>{t('organiser.form.tickets')}</legend>
                 <div className="form-grid">
-                  <Field id="f-price" label="票价（元）" required error={errors.priceYuan} hint="免费活动填 0。">
+                  <Field id="f-price" label={t('organiser.form.price')} required error={errors.priceYuan} hint={t('organiser.form.priceHint')}>
                     <input
                       {...fieldAria('f-price', errors.priceYuan, 'hint')}
                       type="number"
@@ -297,7 +297,7 @@ export function OrganiserFormPage() {
                       onChange={(e) => update('priceYuan', e.target.value)}
                     />
                   </Field>
-                  <Field id="f-cap" label="容量" required error={errors.capacity} hint="总放票数量，售完即止。">
+                  <Field id="f-cap" label={t('organiser.form.capacity')} required error={errors.capacity} hint={t('organiser.form.capacityHint')}>
                     <input
                       {...fieldAria('f-cap', errors.capacity, 'hint')}
                       type="number"
@@ -308,9 +308,9 @@ export function OrganiserFormPage() {
                   </Field>
                   <Field
                     id="f-max-qty"
-                    label="单笔限购"
+                    label={t('organiser.form.limit')}
                     error={errors.maxQuantityPerBooking}
-                    hint="留空表示使用平台默认上限。"
+                    hint={t('organiser.form.limitHint')}
                   >
                     <input
                       {...fieldAria('f-max-qty', errors.maxQuantityPerBooking, 'hint')}
@@ -324,21 +324,21 @@ export function OrganiserFormPage() {
               </fieldset>
 
               <fieldset className="form-section">
-                <legend>媒体与观众须知</legend>
+                <legend>{t('organiser.form.media')}</legend>
                 <div className="form-grid">
                   <CoverUploader
                     value={form.coverUrl}
                     onChange={(url) => update('coverUrl', url)}
                     onError={(message) => notify(message, 'error')}
                   />
-                  <Field id="f-contact" label="联系方式" error={errors.contactInfo} hint="观众遇到问题时如何联系主办方。">
+                  <Field id="f-contact" label={t('organiser.form.contact')} error={errors.contactInfo} hint={t('organiser.form.contactHint')}>
                     <input
                       {...fieldAria('f-contact', errors.contactInfo, 'hint')}
                       value={form.contactInfo}
                       onChange={(e) => update('contactInfo', e.target.value)}
                     />
                   </Field>
-                  <Field id="f-notes" label="参与须知" wide hint="入场规则、退改政策、携带物品等。">
+                  <Field id="f-notes" label={t('organiser.form.notes')} wide hint={t('organiser.form.notesHint')}>
                     <textarea
                       {...fieldAria('f-notes', undefined, 'hint')}
                       rows={4}
@@ -355,14 +355,14 @@ export function OrganiserFormPage() {
 
           <div className="form-actions">
             <NavLink to="/organiser/events" className="btn-secondary btn-link">
-              返回列表
+              {t('organiser.form.backList')}
             </NavLink>
             <span className="form-actions-spacer" />
             <button type="submit" className="btn-secondary" disabled={busy}>
-              {saving === 'draft' ? '保存中…' : '保存草稿'}
+              {saving === 'draft' ? t('organiser.form.savingDraft') : t('organiser.form.saveDraft')}
             </button>
             <button type="button" className="btn-primary" disabled={busy} onClick={() => void submit(true)}>
-              {saving === 'publish' ? '发布中…' : '发布活动'}
+              {saving === 'publish' ? t('organiser.form.publishing') : t('organiser.form.publish')}
             </button>
           </div>
         </form>

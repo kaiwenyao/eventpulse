@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError, formatMoney, formatTime } from '../api'
 import { useAuth } from '../auth'
@@ -10,6 +11,7 @@ import { SkeletonCard } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
 
 function BookingPanel({ event, onError }: { event: EventVo; onError: (msg: string) => void }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { notify } = useToast()
   const maxQty = Math.max(1, Math.min(event.maxQuantityPerBooking || 10, event.remaining || 1))
@@ -20,10 +22,10 @@ function BookingPanel({ event, onError }: { event: EventVo; onError: (msg: strin
     setBusy(true)
     try {
       const booking = await api<{ id: number }>('POST', '/api/bookings', { eventId: event.id, quantity: qty })
-      notify('预订成功，正在打开订单', 'success')
+      notify(t('detail.booked'), 'success')
       navigate(`/bookings/${booking.id}`)
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : '预订失败'
+      const message = e instanceof ApiError ? e.message : t('detail.bookFailed')
       onError(message)
       notify(message, 'error')
     } finally {
@@ -35,11 +37,11 @@ function BookingPanel({ event, onError }: { event: EventVo; onError: (msg: strin
     <div className="book-box">
       <div className="field">
         <div className="field-head">
-          <label htmlFor="book-qty">预订数量</label>
-          <span className="field-count">最多 {maxQty} 张</span>
+          <label htmlFor="book-qty">{t('detail.qty')}</label>
+          <span className="field-count">{t('detail.maxQty', { count: maxQty })}</span>
         </div>
         <div className="stepper">
-          <button type="button" className="btn-secondary btn-icon" aria-label="减少一张" onClick={() => setQty((n) => Math.max(1, n - 1))}>
+          <button type="button" className="btn-secondary btn-icon" aria-label={t('detail.minus')} onClick={() => setQty((n) => Math.max(1, n - 1))}>
             −
           </button>
           <input
@@ -50,23 +52,24 @@ function BookingPanel({ event, onError }: { event: EventVo; onError: (msg: strin
             value={qty}
             onChange={(e) => setQty(Math.min(Math.max(1, Number(e.target.value) || 1), maxQty))}
           />
-          <button type="button" className="btn-secondary btn-icon" aria-label="增加一张" onClick={() => setQty((n) => Math.min(maxQty, n + 1))}>
+          <button type="button" className="btn-secondary btn-icon" aria-label={t('detail.plus')} onClick={() => setQty((n) => Math.min(maxQty, n + 1))}>
             +
           </button>
         </div>
       </div>
       <p className="book-total">
-        <span className="muted">合计</span>
-        <strong>{event.priceCents === 0 ? '免费' : formatMoney(event.priceCents * qty)}</strong>
+        <span className="muted">{t('detail.total')}</span>
+        <strong>{event.priceCents === 0 ? t('common.free') : formatMoney(event.priceCents * qty)}</strong>
       </p>
       <button className="btn-primary btn-block" disabled={busy} onClick={confirm}>
-        {busy ? '提交中…' : '确认预订'}
+        {busy ? t('detail.submitting') : t('detail.confirm')}
       </button>
     </div>
   )
 }
 
 export function EventDetailPage() {
+  const { t } = useTranslation()
   const { id } = useParams()
   const { user } = useAuth()
   const { notify } = useToast()
@@ -76,8 +79,8 @@ export function EventDetailPage() {
   useEffect(() => {
     api<EventVo>('GET', `/api/events/${id}`)
       .then(setEvent)
-      .catch(() => setError('活动不存在'))
-  }, [id])
+      .catch(() => setError(t('detail.missing')))
+  }, [id, t])
 
   async function toggleFavourite() {
     if (!event) return
@@ -85,13 +88,13 @@ export function EventDetailPage() {
       if (event.favourite) await api('DELETE', `/api/events/${event.id}/favourite`)
       else await api('POST', `/api/events/${event.id}/favourite`)
       setEvent({ ...event, favourite: !event.favourite })
-      notify(event.favourite ? '已取消收藏' : '已加入收藏', 'success')
+      notify(event.favourite ? t('detail.unfavourited') : t('detail.favourited'), 'success')
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : '操作失败', 'error')
+      notify(e instanceof ApiError ? e.message : t('common.operationFailed'), 'error')
     }
   }
 
-  if (error) return <EmptyState title={error} hint="这个活动可能已下架，或链接有误。" />
+  if (error) return <EmptyState title={error} hint={t('detail.missingHint')} />
   if (!event) return <SkeletonCard />
 
   return (
@@ -114,7 +117,7 @@ export function EventDetailPage() {
           <dl className="detail-facts">
             <div>
               <dt>
-                <ClockIcon /> 开始时间
+                <ClockIcon /> {t('detail.startsAt')}
               </dt>
               <dd>
                 {formatTime(event.startsAt)}
@@ -123,38 +126,38 @@ export function EventDetailPage() {
             </div>
             <div>
               <dt>
-                <PinIcon /> 地点
+                <PinIcon /> {t('detail.place')}
               </dt>
               <dd>{[event.city, event.venueName, event.address].filter(Boolean).join(' · ')}</dd>
             </div>
           </dl>
 
-          <h2 className="detail-section-title">活动介绍</h2>
+          <h2 className="detail-section-title">{t('detail.about')}</h2>
           <p className="detail-desc">{event.description}</p>
 
           {event.attendanceNotes && (
             <>
-              <h2 className="detail-section-title">参与须知</h2>
+              <h2 className="detail-section-title">{t('detail.notes')}</h2>
               <p className="detail-desc">{event.attendanceNotes}</p>
             </>
           )}
-          {event.contactInfo && <p className="muted small">主办方联系方式：{event.contactInfo}</p>}
-          {event.cancellationReason && <p className="error-text">活动已取消：{event.cancellationReason}</p>}
+          {event.contactInfo && <p className="muted small">{t('detail.contact', { contact: event.contactInfo })}</p>}
+          {event.cancellationReason && <p className="error-text">{t('detail.cancelled', { reason: event.cancellationReason })}</p>}
         </div>
 
         <aside className="detail-side">
-          <div className="detail-price">{event.priceCents === 0 ? '免费' : formatMoney(event.priceCents)}</div>
+          <div className="detail-price">{event.priceCents === 0 ? t('common.free') : formatMoney(event.priceCents)}</div>
           <SoldBar sold={event.sold} capacity={event.capacity} />
           {user ? (
             <BookingPanel event={event} onError={setError} />
           ) : (
             <NavLink to="/login" className="btn-primary btn-block btn-link">
-              登录后预订
+              {t('detail.loginToBook')}
             </NavLink>
           )}
           {user && (
             <button className={`btn-secondary btn-block${event.favourite ? ' is-active' : ''}`} onClick={toggleFavourite}>
-              <HeartIcon /> {event.favourite ? '取消收藏' : '收藏活动'}
+              <HeartIcon /> {event.favourite ? t('detail.unsave') : t('detail.save')}
             </button>
           )}
           <ErrorNote message={error} />

@@ -119,7 +119,7 @@ public class PlatformService {
     public void interact(Long eventId, String type) {
         Long userId = requireUser();
         if (!List.of("VIEW", "CLICK", "SAVE", "UNSAVE").contains(type)) {
-            throw new BusinessException("客户端只能提交浏览、点击和收藏类行为");
+            throw new BusinessException("Clients can only submit view, click, and favourite actions");
         }
         eventService.require(eventId);
         interactionService.record(userId, eventId, type);
@@ -211,9 +211,9 @@ public class PlatformService {
     @Transactional
     public void markRead(Long id) {
         Long userId = requireUser();
-        Notification n = notifications.findById(id).orElseThrow(() -> BusinessException.notFound("消息不存在"));
+        Notification n = notifications.findById(id).orElseThrow(() -> BusinessException.notFound("Notification not found"));
         if (n.getUserId() != null && !n.getUserId().equals(userId)) {
-            throw BusinessException.forbidden("只能阅读自己的消息");
+            throw BusinessException.forbidden("You can only read your own notifications");
         }
         n.setReadAt(Instant.now());
     }
@@ -241,7 +241,7 @@ public class PlatformService {
     public Map<String, Object> analytics(Long eventId, LocalDate from, LocalDate to) {
         EventService.requireOrganiser();
         Event event = eventId == null ? null : events.findByIdAndOrganiserId(eventId, BaseContext.getUserId())
-                .orElseThrow(() -> BusinessException.forbidden("只能查看自己的活动"));
+                .orElseThrow(() -> BusinessException.forbidden("You can only view your own events"));
         LocalDate start = from == null ? LocalDate.now().minusDays(14) : from;
         LocalDate end = to == null ? LocalDate.now() : to;
         List<EventDailyMetric> rows = event == null
@@ -358,7 +358,7 @@ public class PlatformService {
     private static Long requireUser() {
         Long userId = BaseContext.getUserId();
         if (userId == null) {
-            throw new BusinessException("请先登录");
+            throw new BusinessException("Please sign in");
         }
         return userId;
     }

@@ -91,4 +91,21 @@ describe('TopBar', () => {
     await userEvent.click(screen.getByRole('button', { name: '切换到浅色主题' }))
     expect(document.documentElement.dataset.theme).toBe('light')
   })
+
+  it('toggles the UI language and persists the choice', async () => {
+    localStorage.clear()
+    apiMock.fn.mockResolvedValue([])
+    renderApp()
+    await waitFor(() => expect(screen.getByRole('link', { name: '活动' })).toBeInTheDocument())
+
+    await userEvent.click(screen.getByRole('button', { name: '切换到英文' }))
+    expect(localStorage.getItem('locale')).toBe('en')
+    expect(document.documentElement.lang).toBe('en')
+    expect(await screen.findByRole('link', { name: 'Events' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '切换到中文' }))
+    expect(localStorage.getItem('locale')).toBe('zh')
+    expect(document.documentElement.lang).toBe('zh-CN')
+    expect(await screen.findByRole('link', { name: '活动' })).toBeInTheDocument()
+  })
 })

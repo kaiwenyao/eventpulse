@@ -35,7 +35,7 @@ public class MediaController {
             if (e instanceof BusinessException business) {
                 throw business;
             }
-            throw new BusinessException("上传失败");
+            throw new BusinessException("Upload failed");
         }
     }
 

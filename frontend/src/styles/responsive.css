@@ -152,7 +152,8 @@
     order: 3;
   }
 
-  .theme-toggle {
+  .theme-toggle,
+  .lang-toggle {
     order: 3;
   }
 

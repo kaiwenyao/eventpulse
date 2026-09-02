@@ -1,4 +1,11 @@
 import '@testing-library/jest-dom/vitest'
+import { beforeEach } from 'vitest'
+import { changeLocale } from '../i18n'
+import '../i18n'
+
+beforeEach(async () => {
+  await changeLocale('zh')
+})
 
 // jsdom lacks the crypto.getRandomValues backends some lib paths expect — the
 // browser crypto is available in Node >= 20, nothing to polyfill. Silence the

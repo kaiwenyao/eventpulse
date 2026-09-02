@@ -72,7 +72,7 @@ public class JwtInterceptor implements HandlerInterceptor {
     private boolean unauthorized(HttpServletResponse response) throws Exception {
         response.setStatus(401);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.getWriter().write("{\"code\":0,\"msg\":\"未登录或 token 无效\"}");
+        response.getWriter().write("{\"code\":0,\"msg\":\"Not signed in or token invalid\"}");
         return false;
     }
 }

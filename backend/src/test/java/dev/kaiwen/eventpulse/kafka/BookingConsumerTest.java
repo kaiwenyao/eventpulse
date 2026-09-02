@@ -37,7 +37,7 @@ class BookingConsumerTest {
 
     private static final String BOOKING_CREATED = """
             {"type":"BOOKING_CREATED","dedupKey":"BOOKING_CREATED:10","userId":3,"eventId":20,"bookingId":10,
-             "quantity":2,"title":"预订成功","message":"你已预订「夜」2 张票"}
+             "quantity":2,"title":"Booking confirmed","message":"You booked 2 ticket(s) for \\"Night\\""}
             """;
 
     @Test
@@ -53,7 +53,7 @@ class BookingConsumerTest {
         // 一次订 4 张：BOOK interaction 仍只记 1 条，但张数要传给统计（tickets +4）。
         String fourTickets = """
                 {"type":"BOOKING_CREATED","dedupKey":"BOOKING_CREATED:11","userId":3,"eventId":20,"bookingId":11,
-                 "quantity":4,"title":"预订成功","message":"你已预订「夜」4 张票"}
+                 "quantity":4,"title":"Booking confirmed","message":"You booked 4 ticket(s) for \\"Night\\""}
                 """;
         when(consumedEvents.tryInsert(eq(BookingConsumer.CONSUMER_GROUP), eq("BOOKING_CREATED:11"))).thenReturn(1);
         consumer().onMessage(fourTickets);
@@ -66,7 +66,7 @@ class BookingConsumerTest {
         // 缺少 quantity：无法统计张数，抛异常由 Error Handler 进 DLT，不写半成品互动。
         String noQuantity = """
                 {"type":"BOOKING_CREATED","dedupKey":"BOOKING_CREATED:12","userId":3,"eventId":20,"bookingId":12,
-                 "title":"预订成功"}
+                 "title":"Booking confirmed"}
                 """;
         when(consumedEvents.tryInsert(eq(BookingConsumer.CONSUMER_GROUP), eq("BOOKING_CREATED:12"))).thenReturn(1);
         assertThatThrownBy(() -> consumer().onMessage(noQuantity))
@@ -79,7 +79,7 @@ class BookingConsumerTest {
     void bookingWithNonPositiveQuantityGoesToDlt() {
         String zeroQuantity = """
                 {"type":"BOOKING_CREATED","dedupKey":"BOOKING_CREATED:13","userId":3,"eventId":20,"bookingId":13,
-                 "quantity":0,"title":"预订成功"}
+                 "quantity":0,"title":"Booking confirmed"}
                 """;
         when(consumedEvents.tryInsert(eq(BookingConsumer.CONSUMER_GROUP), eq("BOOKING_CREATED:13"))).thenReturn(1);
         assertThatThrownBy(() -> consumer().onMessage(zeroQuantity))
@@ -100,7 +100,7 @@ class BookingConsumerTest {
     void cancelledWritesCancelInteraction() {
         String cancelled = """
                 {"type":"BOOKING_CANCELLED","dedupKey":"BOOKING_CANCELLED:11","userId":3,"eventId":20,"bookingId":11,
-                 "title":"预订已取消"}
+                 "title":"Booking cancelled"}
                 """;
         when(consumedEvents.tryInsert(eq(BookingConsumer.CONSUMER_GROUP), eq("BOOKING_CANCELLED:11"))).thenReturn(1);
         consumer().onMessage(cancelled);
@@ -126,7 +126,7 @@ class BookingConsumerTest {
         assertThatThrownBy(() -> consumer().onMessage(
                 "{\"type\":\"BOOKING_CREATED\",\"dedupKey\":\"BOOKING_CREATED:1\",\"bookingId\":1}"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("缺少");
+                .hasMessageContaining("missing");
         verify(interactionService, never()).record(any(), any(), any());
     }
 

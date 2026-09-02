@@ -134,10 +134,10 @@ describe('App pages', () => {
   it('renders event cards and event detail', async () => {
     const event = {
       id: 1,
-      title: '摇滚夜',
+      title: 'Indie Rock Night',
       description: 'd',
       category: 'music',
-      city: '上海',
+      city: 'Shanghai',
       startsAt: '2026-09-10T12:00:00Z',
       priceCents: 18000,
       capacity: 10,
@@ -157,16 +157,16 @@ describe('App pages', () => {
         </AuthProvider>
       </MemoryRouter>,
     )
-    await waitFor(() => expect(screen.getByText('摇滚夜')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Indie Rock Night')).toBeInTheDocument())
   })
 
   it('renders event detail for guests', async () => {
     apiMock.fn.mockResolvedValue({
       id: 1,
-      title: '摇滚夜',
+      title: 'Indie Rock Night',
       description: 'd',
       category: 'music',
-      city: '上海',
+      city: 'Shanghai',
       startsAt: '2026-09-10T12:00:00Z',
       priceCents: 18000,
       capacity: 10,
@@ -189,18 +189,18 @@ describe('App pages', () => {
       if (path === '/api/auth/login') return Promise.resolve({ token: 't', user })
       if (path === '/api/bookings') {
         return Promise.resolve([
-          { id: 1, eventId: 1, eventTitle: '摇滚夜', quantity: 1, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z' },
+          { id: 1, eventId: 1, eventTitle: 'Indie Rock Night', quantity: 1, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z' },
         ])
       }
       if (path === '/api/notifications') {
-        return Promise.resolve([{ id: 1, bookingId: 1, message: 'Kafka 已处理：BOOKING_CREATED', createdAt: '2026-09-01T00:00:00Z' }])
+        return Promise.resolve([{ id: 1, bookingId: 1, message: 'Processed: BOOKING_CREATED', createdAt: '2026-09-01T00:00:00Z' }])
       }
       if (path.startsWith('/api/events')) return Promise.resolve([])
       if (path.includes('/cancel')) {
         return Promise.resolve({
           id: 1,
           eventId: 1,
-          eventTitle: '摇滚夜',
+          eventTitle: 'Indie Rock Night',
           quantity: 1,
           status: 'CANCELLED',
           createdAt: '2026-09-01T00:00:00Z',
@@ -221,10 +221,10 @@ describe('App pages', () => {
     await userEvent.click(screen.getByRole('button', { name: '登录' }))
     await waitFor(() => expect(screen.getByText('我的预订')).toBeInTheDocument())
     await userEvent.click(screen.getByText('我的预订'))
-    await waitFor(() => expect(screen.getByText('摇滚夜')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Indie Rock Night')).toBeInTheDocument())
     await userEvent.click(screen.getByText('取消'))
     await userEvent.click(screen.getByText('消息'))
-    await waitFor(() => expect(screen.getByText('Kafka 已处理：BOOKING_CREATED')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Processed: BOOKING_CREATED')).toBeInTheDocument())
   })
 
   it('restores a stored session and opens organiser page', async () => {

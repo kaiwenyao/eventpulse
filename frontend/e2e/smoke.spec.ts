@@ -10,17 +10,17 @@ import { expect, test } from '@playwright/test'
  * compose smoke test.
  */
 
-const ORGANISER = { id: 2, email: 'organiser@eventpulse.dev', name: '主办方', role: 'ORGANISER' }
+const ORGANISER = { id: 2, email: 'organiser@eventpulse.dev', name: 'Demo Organiser', role: 'ORGANISER' }
 
 function demoEvent(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
-    title: '摇滚夜',
-    summary: '六组乐队接力开唱。',
-    description: '一场演出',
+    title: 'Indie Rock Night',
+    summary: 'Six local bands, from post-punk to math rock.',
+    description: 'A live show',
     category: 'music',
-    city: '上海',
-    venueName: '声空间 LiveHouse',
+    city: 'Shanghai',
+    venueName: 'Sound Space Livehouse',
     startsAt: '2027-09-10T12:00:00Z',
     priceCents: 18000,
     capacity: 100,
@@ -89,9 +89,9 @@ test.describe('SPA smoke', () => {
   test('mocked audience discovery and booking CTA', async ({ page }) => {
     await mockApi(page)
     await page.goto('/')
-    await expect(page.getByText('摇滚夜')).toBeVisible()
-    await page.getByText('摇滚夜').click()
-    await expect(page.getByRole('heading', { name: '摇滚夜' })).toBeVisible()
+    await expect(page.getByText('Indie Rock Night')).toBeVisible()
+    await page.getByText('Indie Rock Night').click()
+    await expect(page.getByRole('heading', { name: 'Indie Rock Night' })).toBeVisible()
     await expect(page.getByRole('link', { name: '登录后预订' })).toBeVisible()
   })
 

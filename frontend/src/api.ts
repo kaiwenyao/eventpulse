@@ -1,3 +1,5 @@
+import i18n from './i18n'
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -29,7 +31,7 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
   })
   const json = (await response.json().catch(() => ({}))) as { code?: number; msg?: string; data?: T }
   if (!response.ok || json.code === 0) {
-    throw new ApiError(response.status, json.msg ?? '请求失败')
+    throw new ApiError(response.status, json.msg ?? i18n.t('common.requestFailed'))
   }
   return json.data as T
 }
@@ -39,7 +41,8 @@ export function formatMoney(cents: number) {
 }
 
 export function formatTime(iso: string) {
-  return new Date(iso).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
+  const locale = i18n.language === 'en' ? 'en' : 'zh-CN'
+  return new Date(iso).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 export async function uploadFile<T>(path: string, file: File): Promise<T> {
@@ -50,7 +53,7 @@ export async function uploadFile<T>(path: string, file: File): Promise<T> {
   const response = await fetch(path, { method: 'POST', headers, body })
   const json = (await response.json().catch(() => ({}))) as { code?: number; msg?: string; data?: T }
   if (!response.ok || json.code === 0) {
-    throw new ApiError(response.status, json.msg ?? '请求失败')
+    throw new ApiError(response.status, json.msg ?? i18n.t('common.requestFailed'))
   }
   return json.data as T
 }

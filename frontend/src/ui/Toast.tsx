@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 export type ToastTone = 'success' | 'error' | 'info'
 
@@ -21,6 +22,7 @@ const TOAST_TTL_MS = 4200
  * so a failed publish/cancel/check-in is never swallowed silently.
  */
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation()
   const [toasts, setToasts] = useState<Toast[]>([])
   const nextId = useRef(1)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
@@ -51,7 +53,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div key={toast.id} className={`toast toast-${toast.tone}`}>
             <span className="toast-mark" aria-hidden />
             <p>{toast.message}</p>
-            <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => dismiss(toast.id)}>
+            <button type="button" className="toast-close" aria-label={t('common.closeToast')} onClick={() => dismiss(toast.id)}>
               ×
             </button>
           </div>

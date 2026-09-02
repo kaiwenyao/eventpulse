@@ -65,7 +65,7 @@ describe('LoginPage', () => {
 
   it('shows the server error inline and lets the toast be dismissed', async () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
-      if (path === '/api/auth/login') return Promise.reject(new ApiError(401, '邮箱或密码不正确'))
+      if (path === '/api/auth/login') return Promise.reject(new ApiError(401, 'Invalid email or password'))
       return Promise.resolve([])
     })
     renderLogin()
@@ -76,15 +76,15 @@ describe('LoginPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '登录' }))
 
     // Inline (form) and transient (toast) surfaces both report the failure.
-    await waitFor(() => expect(screen.getAllByText('邮箱或密码不正确').length).toBe(2))
+    await waitFor(() => expect(screen.getAllByText('Invalid email or password').length).toBe(2))
 
     await userEvent.click(screen.getByRole('button', { name: '关闭提示' }))
-    await waitFor(() => expect(screen.getAllByText('邮箱或密码不正确').length).toBe(1))
+    await waitFor(() => expect(screen.getAllByText('Invalid email or password').length).toBe(1))
   })
 
   it('clears a previous error when switching between login and register', async () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
-      if (path === '/api/auth/login') return Promise.reject(new ApiError(401, '邮箱或密码不正确'))
+      if (path === '/api/auth/login') return Promise.reject(new ApiError(401, 'Invalid email or password'))
       return Promise.resolve([])
     })
     renderLogin()
@@ -93,7 +93,7 @@ describe('LoginPage', () => {
     await userEvent.type(screen.getByLabelText('邮箱'), 'u@t.dev')
     await userEvent.type(screen.getByLabelText('密码'), 'wrong')
     await userEvent.click(screen.getByRole('button', { name: '登录' }))
-    await waitFor(() => expect(screen.getAllByText('邮箱或密码不正确').length).toBe(2))
+    await waitFor(() => expect(screen.getAllByText('Invalid email or password').length).toBe(2))
 
     await userEvent.click(screen.getByRole('button', { name: '去注册' }))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

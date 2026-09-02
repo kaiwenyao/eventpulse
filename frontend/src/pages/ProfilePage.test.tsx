@@ -86,7 +86,7 @@ describe('ProfilePage', () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(user)
       if (path === '/api/auth/profile') return Promise.resolve(profile)
-      if (path === '/api/auth/wallet/recharge') return Promise.reject(new ApiError(400, '金额不合法'))
+      if (path === '/api/auth/wallet/recharge') return Promise.reject(new ApiError(400, 'Invalid amount'))
       return Promise.resolve([])
     })
     renderProfile()
@@ -94,7 +94,7 @@ describe('ProfilePage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '充值' }))
     // The message appears both as the inline error note and the toast.
-    expect((await screen.findAllByText('金额不合法')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Invalid amount')).length).toBeGreaterThan(0)
     expect(screen.getByText('¥888.00')).toBeInTheDocument()
   })
 

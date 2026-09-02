@@ -33,17 +33,17 @@ public class MediaService {
     public MediaAsset upload(String filename, String contentType, byte[] bytes) {
         Long ownerId = BaseContext.getUserId();
         if (ownerId == null) {
-            throw new BusinessException("请先登录");
+            throw new BusinessException("Please sign in");
         }
         if (bytes == null || bytes.length == 0) {
-            throw new BusinessException("请选择图片");
+            throw new BusinessException("Please choose an image");
         }
         if (bytes.length > MAX_BYTES) {
-            throw new BusinessException("图片不能超过 2MB");
+            throw new BusinessException("Image must be 2MB or smaller");
         }
         String type = contentType == null ? "" : contentType.toLowerCase();
         if (!ALLOWED.contains(type)) {
-            throw new BusinessException("仅支持 JPEG、PNG 或 WebP");
+            throw new BusinessException("Only JPEG, PNG, or WebP is supported");
         }
         String ext = type.endsWith("png") ? "png" : type.endsWith("webp") ? "webp" : "jpg";
         String key = UUID.randomUUID() + "-" + safeName(filename) + "." + ext;
@@ -53,7 +53,7 @@ public class MediaService {
             Files.write(dest, bytes);
         }
         catch (IOException e) {
-            throw new IllegalStateException("无法保存图片", e);
+            throw new IllegalStateException("Unable to save image", e);
         }
         MediaAsset asset = new MediaAsset();
         asset.setOwnerId(ownerId);
@@ -68,9 +68,9 @@ public class MediaService {
     }
 
     public MediaAsset requireActive(Long id) {
-        MediaAsset asset = assets.findById(id).orElseThrow(() -> BusinessException.notFound("图片不存在"));
+        MediaAsset asset = assets.findById(id).orElseThrow(() -> BusinessException.notFound("Image not found"));
         if (!"ACTIVE".equals(asset.getStatus())) {
-            throw BusinessException.notFound("图片不存在");
+            throw BusinessException.notFound("Image not found");
         }
         return asset;
     }
@@ -80,7 +80,7 @@ public class MediaService {
             return Files.readAllBytes(Path.of(properties.getMediaDir(), asset.getStorageKey()));
         }
         catch (IOException e) {
-            throw BusinessException.notFound("图片文件缺失");
+            throw BusinessException.notFound("Image file is missing");
         }
     }
 
@@ -88,11 +88,11 @@ public class MediaService {
     public void delete(Long id) {
         Long ownerId = BaseContext.getUserId();
         if (ownerId == null) {
-            throw new BusinessException("请先登录");
+            throw new BusinessException("Please sign in");
         }
-        MediaAsset asset = assets.findById(id).orElseThrow(() -> BusinessException.notFound("图片不存在"));
+        MediaAsset asset = assets.findById(id).orElseThrow(() -> BusinessException.notFound("Image not found"));
         if (!ownerId.equals(asset.getOwnerId())) {
-            throw BusinessException.forbidden("只能删除自己上传的图片");
+            throw BusinessException.forbidden("You can only delete images you uploaded");
         }
         asset.setStatus("DELETED");
         asset.setDeletedAt(java.time.Instant.now());

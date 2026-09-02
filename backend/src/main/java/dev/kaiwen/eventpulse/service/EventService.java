@@ -98,28 +98,28 @@ public class EventService {
     public EventVo update(Long id, EventRequest request) {
         Event event = requireOwn(id);
         if (request.capacity() < event.getSold()) {
-            throw new BusinessException("容量不能小于已售出票数");
+            throw new BusinessException("Capacity cannot be below tickets already sold");
         }
         apply(event, request);
         return toVo(event);
     }
 
     Event require(Long id) {
-        return events.findById(id).orElseThrow(() -> BusinessException.notFound("活动不存在"));
+        return events.findById(id).orElseThrow(() -> BusinessException.notFound("Event not found"));
     }
 
     private Event requireOwn(Long id) {
         requireOrganiser();
         Event event = require(id);
         if (!event.getOrganiserId().equals(BaseContext.getUserId())) {
-            throw BusinessException.forbidden("只能操作自己的活动");
+            throw BusinessException.forbidden("You can only manage your own events");
         }
         return event;
     }
 
     static void requireOrganiser() {
         if (!"ORGANISER".equals(BaseContext.getRole())) {
-            throw BusinessException.forbidden("只有主办方可以管理活动");
+            throw BusinessException.forbidden("Only organisers can manage events");
         }
     }
 
@@ -181,20 +181,20 @@ public class EventService {
 
     static String unbookableReason(Event event, Instant now) {
         if (!EventStatus.PUBLISHED.equals(event.getStatus())) {
-            return EventStatus.CANCELLED.equals(event.getStatus()) ? "活动已取消，无法预订" : "当前状态不可预订";
+            return EventStatus.CANCELLED.equals(event.getStatus()) ? "Event cancelled, booking closed" : "Event is not open for booking";
         }
         if (event.getSalesStartAt() != null && now.isBefore(event.getSalesStartAt())) {
-            return "售票尚未开始";
+            return "Sales have not started";
         }
         Instant salesEnd = event.getSalesEndAt() != null ? event.getSalesEndAt() : event.getStartsAt();
         if (!now.isBefore(salesEnd)) {
-            return "售票已截止";
+            return "Sales have ended";
         }
         if (!now.isBefore(event.getStartsAt())) {
-            return "活动已经开始";
+            return "Event has already started";
         }
         if (event.remaining() <= 0) {
-            return "余票不足";
+            return "Sold out";
         }
         return null;
     }

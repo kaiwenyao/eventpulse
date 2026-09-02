@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { formatMoney, formatTime } from '../api'
 import { localInputToIso } from '../lib/datetime'
 import { CategoryPill, SoldBar } from '../ui/Badges'
@@ -10,6 +11,7 @@ import { EventFormState, publishWarnings, yuanToCents } from './eventForm'
  * go back and fix" round-trips.
  */
 export function EventFormPreview({ form }: { form: EventFormState }) {
+  const { t } = useTranslation()
   const cents = yuanToCents(form.priceYuan) ?? 0
   const capacity = Number(form.capacity) || 0
   const startsAtIso = localInputToIso(form.startsAt)
@@ -17,7 +19,7 @@ export function EventFormPreview({ form }: { form: EventFormState }) {
 
   return (
     <aside className="form-preview">
-      <p className="eyebrow">实时预览</p>
+      <p className="eyebrow">{t('organiser.preview')}</p>
       <div className="ticket ticket-static">
         <div
           className={`ticket-cover ${form.coverUrl ? '' : 'ticket-cover-empty'}`}
@@ -27,29 +29,29 @@ export function EventFormPreview({ form }: { form: EventFormState }) {
         <div className="ticket-main">
           <div className="ticket-head">
             <CategoryPill category={form.category || 'unknown'} />
-            <span className="ticket-city">{form.city || '待填写'}</span>
+            <span className="ticket-city">{form.city || t('organiser.pending')}</span>
           </div>
-          <h2 className="ticket-title">{form.title || '未命名活动'}</h2>
+          <h2 className="ticket-title">{form.title || t('organiser.untitled')}</h2>
           {form.summary && <p className="ticket-summary">{form.summary}</p>}
           <p className="ticket-time">
             <ClockIcon />
-            {startsAtIso ? formatTime(startsAtIso) : '待选择时间'}
+            {startsAtIso ? formatTime(startsAtIso) : t('organiser.pickTime')}
           </p>
           <SoldBar sold={0} capacity={capacity} />
         </div>
         <div className="ticket-stub">
-          <span className="stub-price">{cents === 0 ? '免费' : formatMoney(cents)}</span>
+          <span className="stub-price">{cents === 0 ? t('common.free') : formatMoney(cents)}</span>
           <span className="stub-caption">
-            预订
+            {t('events.book')}
             <ArrowRightIcon className="stub-arrow" />
           </span>
         </div>
       </div>
 
       <div className="checklist">
-        <p className="checklist-title">发布前检查</p>
+        <p className="checklist-title">{t('organiser.checklist')}</p>
         {warnings.length === 0 ? (
-          <p className="ok-text">全部就绪，可以直接发布。</p>
+          <p className="ok-text">{t('organiser.allReady')}</p>
         ) : (
           <ul>
             {warnings.map((warning) => (

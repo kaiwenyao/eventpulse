@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api, ApiError, formatTime } from '../api'
 import { NotificationVo } from '../types'
 import { EmptyState } from '../ui/Badges'
@@ -6,6 +7,7 @@ import { SkeletonCard } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
 
 export function NotificationsPage() {
+  const { t } = useTranslation()
   const [items, setItems] = useState<NotificationVo[]>([])
   const [loading, setLoading] = useState(true)
   const { notify } = useToast()
@@ -22,7 +24,7 @@ export function NotificationsPage() {
       await api('POST', `/api/notifications/${id}/read`)
       setItems((prev) => prev.filter((x) => x.id !== id))
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : '操作失败', 'error')
+      notify(e instanceof ApiError ? e.message : t('common.operationFailed'), 'error')
     }
   }
 
@@ -30,19 +32,19 @@ export function NotificationsPage() {
     const ids = items.map((n) => n.id)
     await Promise.allSettled(ids.map((id) => api('POST', `/api/notifications/${id}/read`)))
     setItems([])
-    notify('已全部标为已读', 'success')
+    notify(t('notifications.allRead'), 'success')
   }
 
   return (
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>消息中心</h1>
-          <p className="muted">预订、变更、取消和提醒都会出现在这里。</p>
+          <h1>{t('notifications.pageTitle')}</h1>
+          <p className="muted">{t('notifications.sub')}</p>
         </div>
         {items.length > 0 && (
           <button className="btn-secondary btn-sm" onClick={markAllRead}>
-            全部已读
+            {t('notifications.markAll')}
           </button>
         )}
       </header>
@@ -50,7 +52,7 @@ export function NotificationsPage() {
       {loading ? (
         <SkeletonCard />
       ) : items.length === 0 ? (
-        <EmptyState title="还没有消息" hint="预订一场活动后，通知会送到这里。" />
+        <EmptyState title={t('notifications.emptyTitle')} hint={t('notifications.emptyHint')} />
       ) : (
         <ul className="stack-list">
           {items.map((n) => (
@@ -61,7 +63,7 @@ export function NotificationsPage() {
                 <p className="muted small">{formatTime(n.createdAt)}</p>
               </div>
               <button className="btn-secondary btn-sm" onClick={() => markRead(n.id)}>
-                标为已读
+                {t('notifications.markRead')}
               </button>
             </li>
           ))}

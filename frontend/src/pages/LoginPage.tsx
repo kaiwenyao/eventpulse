@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { useAuth } from '../auth'
@@ -13,11 +14,12 @@ import { useToast } from '../ui/Toast'
  * credentials — hence the scanner annotations.
  */
 const DEMO_ACCOUNTS = [
-  { label: '观众', email: 'user@eventpulse.dev', password: 'User123456' }, // gitleaks:allow
-  { label: '主办方', email: 'organiser@eventpulse.dev', password: 'Organiser123456' }, // gitleaks:allow
+  { key: 'login.audience' as const, email: 'user@eventpulse.dev', password: 'User123456' }, // gitleaks:allow
+  { key: 'login.organiser' as const, email: 'organiser@eventpulse.dev', password: 'Organiser123456' }, // gitleaks:allow
 ]
 
 export function LoginPage() {
+  const { t } = useTranslation()
   const { login, register } = useAuth()
   const navigate = useNavigate()
   const { notify } = useToast()
@@ -54,10 +56,10 @@ export function LoginPage() {
     try {
       if (mode === 'login') await login(email, password)
       else await register(email, password, name)
-      notify(mode === 'login' ? '登录成功' : '注册成功，欢迎加入', 'success')
+      notify(mode === 'login' ? t('login.successLogin') : t('login.successRegister'), 'success')
       navigate('/')
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : '失败'
+      const message = err instanceof ApiError ? err.message : t('common.failed')
       setError(message)
       notify(message, 'error')
     } finally {
@@ -71,30 +73,30 @@ export function LoginPage() {
           form column stays a plain working surface. */}
       <aside className="auth-aside">
         <p className="auth-aside-brand">EventPulse</p>
-        <h2>继续预订你收藏的城市现场</h2>
-        <p className="auth-aside-sub">收藏、订单、电子票与提醒都跟着账号走。</p>
+        <h2>{t('login.asideTitle')}</h2>
+        <p className="auth-aside-sub">{t('login.asideSub')}</p>
         <dl className="auth-aside-stats">
           <div>
             <dt>{events.length}</dt>
-            <dd>在售活动</dd>
+            <dd>{t('login.onSale')}</dd>
           </div>
           <div>
             <dt>{cityCount}</dt>
-            <dd>覆盖城市</dd>
+            <dd>{t('events.cities')}</dd>
           </div>
         </dl>
       </aside>
 
       <form className="auth-card" onSubmit={onSubmit}>
-        <h1>{mode === 'login' ? '登录' : '注册'}</h1>
+        <h1>{mode === 'login' ? t('login.headingLogin') : t('login.headingRegister')}</h1>
         <p className="muted auth-sub">
-          {mode === 'login' ? '继续预订你收藏的城市现场。' : '创建账号，第一时间抢到好位置。'}
+          {mode === 'login' ? t('login.subLogin') : t('login.subRegister')}
         </p>
 
-        <Field id="auth-email" label="邮箱" required>
+        <Field id="auth-email" label={t('login.email')} required>
           <input {...fieldAria('auth-email')} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </Field>
-        <Field id="auth-password" label="密码" required hint={mode === 'register' ? '至少 8 位，包含字母与数字。' : undefined}>
+        <Field id="auth-password" label={t('login.password')} required hint={mode === 'register' ? t('login.passwordHint') : undefined}>
           <input
             {...fieldAria('auth-password', undefined, mode === 'register' ? 'hint' : undefined)}
             type="password"
@@ -105,7 +107,7 @@ export function LoginPage() {
           />
         </Field>
         {mode === 'register' && (
-          <Field id="auth-name" label="昵称" required>
+          <Field id="auth-name" label={t('login.name')} required>
             <input {...fieldAria('auth-name')} value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
         )}
@@ -113,7 +115,7 @@ export function LoginPage() {
         <ErrorNote message={error} />
 
         <button type="submit" className="btn-primary btn-block" disabled={busy}>
-          {busy ? '处理中…' : mode === 'login' ? '登录' : '注册'}
+          {busy ? t('common.processing') : mode === 'login' ? t('login.headingLogin') : t('login.headingRegister')}
         </button>
         <button
           type="button"
@@ -123,11 +125,11 @@ export function LoginPage() {
             setError('')
           }}
         >
-          {mode === 'login' ? '去注册' : '去登录'}
+          {mode === 'login' ? t('login.goRegister') : t('login.goLogin')}
         </button>
 
         <div className="demo-block">
-          <p className="muted demo-hint">演示账号（点击自动填充）</p>
+          <p className="muted demo-hint">{t('login.demoHint')}</p>
           <div className="chips chips-loose">
             {DEMO_ACCOUNTS.map((account) => (
               <button
@@ -140,7 +142,7 @@ export function LoginPage() {
                   setMode('login')
                 }}
               >
-                {account.label}
+                {t(account.key)}
               </button>
             ))}
           </div>

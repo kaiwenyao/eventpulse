@@ -21,10 +21,10 @@ const organiser: SessionUser = { id: 2, email: 'o@t.dev', name: 'O', role: 'ORGA
 const user: SessionUser = { id: 1, email: 'u@t.dev', name: 'U', role: 'USER' }
 const event = {
   id: 1,
-  title: '摇滚夜',
+  title: 'Indie Rock Night',
   description: 'd',
   category: 'music',
-  city: '上海',
+  city: 'Shanghai',
   startsAt: '2026-09-10T12:00:00Z',
   priceCents: 18000,
   capacity: 10,
@@ -61,7 +61,7 @@ describe('organiser console overview', () => {
           sold: 12,
           capacity: 40,
           sellThrough: 30,
-          lowStock: ['摇滚夜'],
+          lowStock: ['Indie Rock Night'],
           outboxPending: 2,
         })
       }
@@ -75,7 +75,7 @@ describe('organiser console overview', () => {
     expect(screen.getByText('其中 2 场已发布')).toBeInTheDocument()
     expect(screen.getByText('30.0%')).toBeInTheDocument()
     expect(screen.getByText('余票告急（≤ 5 张）')).toBeInTheDocument()
-    expect(screen.getAllByText('摇滚夜').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Indie Rock Night').length).toBeGreaterThan(0)
   })
 
   it('blocks non-organiser accounts from the console', async () => {
@@ -99,11 +99,11 @@ describe('organiser event list', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: '活动管理' })).toBeInTheDocument())
     const table = await screen.findByRole('table')
-    expect(within(table).getByText('摇滚夜')).toBeInTheDocument()
+    expect(within(table).getByText('Indie Rock Night')).toBeInTheDocument()
     expect(within(table).getByText('草稿')).toBeInTheDocument()
 
-    await userEvent.type(screen.getByPlaceholderText('搜索我的活动…'), '夜')
-    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('GET', expect.stringContaining('q=%E5%A4%9C')))
+    await userEvent.type(screen.getByPlaceholderText('搜索我的活动…'), 'Night')
+    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('GET', expect.stringContaining('q=Night')))
 
     await userEvent.selectOptions(screen.getByLabelText('状态筛选'), 'DRAFT')
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('GET', expect.stringContaining('status=DRAFT')))
@@ -129,7 +129,7 @@ describe('organiser event form', () => {
     await userEvent.type(screen.getByLabelText('开始时间'), '2027-03-01T19:30')
     await userEvent.clear(screen.getByLabelText('结束时间'))
     await userEvent.type(screen.getByLabelText('结束时间'), '2027-03-01T22:00')
-    await userEvent.type(screen.getByLabelText('场地'), '声空间')
+    await userEvent.type(screen.getByLabelText('场地'), 'Sound Space')
     await userEvent.click(screen.getByRole('button', { name: '发布活动' }))
 
     await waitFor(() =>
@@ -138,7 +138,7 @@ describe('organiser event form', () => {
         '/api/organiser/events',
         expect.objectContaining({
           publish: true,
-          venueName: '声空间',
+          venueName: 'Sound Space',
           startsAt: new Date('2027-03-01T19:30').toISOString(),
           endsAt: new Date('2027-03-01T22:00').toISOString(),
         }),
@@ -188,7 +188,7 @@ describe('organiser event form', () => {
 
   it('hydrates the edit form, echoes the version, and surfaces a conflict', async () => {
     mockOrganiser((method, path) => {
-      if (path === '/api/organiser/events/8' && method === 'PUT') return Promise.reject(new ApiError(409, '冲突'))
+      if (path === '/api/organiser/events/8' && method === 'PUT') return Promise.reject(new ApiError(409, 'Event was modified by someone else, refresh and try again'))
       if (path === '/api/organiser/events/8') return Promise.resolve({ ...event, id: 8, status: 'PUBLISHED' })
       return undefined
     })
@@ -196,8 +196,8 @@ describe('organiser event form', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: '编辑活动' })).toBeInTheDocument())
 
     // Loaded values, not blank defaults — the old form always opened on "新活动".
-    await waitFor(() => expect(screen.getByLabelText('标题')).toHaveValue('摇滚夜'))
-    expect(screen.getByLabelText('城市')).toHaveValue('上海')
+    await waitFor(() => expect(screen.getByLabelText('标题')).toHaveValue('Indie Rock Night'))
+    expect(screen.getByLabelText('城市')).toHaveValue('Shanghai')
     expect(screen.getByLabelText('票价（元）')).toHaveValue(180)
 
     await userEvent.type(screen.getByLabelText('标题'), '加')
@@ -221,16 +221,16 @@ describe('organiser event form', () => {
         expect.objectContaining({ version: 3, maxQuantityPerBooking: 4, coverUrl: '/api/media/images/1' }),
       ),
     )
-    expect(await screen.findByText('冲突')).toBeInTheDocument()
+    expect(await screen.findByText('Event was modified by someone else, refresh and try again')).toBeInTheDocument()
   })
 
   it('reports a load failure instead of showing a blank form', async () => {
     mockOrganiser((_method, path) => {
-      if (path === '/api/organiser/events/9') return Promise.reject(new ApiError(403, '只能查看自己的活动'))
+      if (path === '/api/organiser/events/9') return Promise.reject(new ApiError(403, 'You can only manage your own events'))
       return undefined
     })
     renderApp('/organiser/events/9/edit')
-    await waitFor(() => expect(screen.getByText('只能查看自己的活动')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('You can only manage your own events')).toBeInTheDocument())
   })
 })
 
@@ -270,10 +270,10 @@ describe('organiser event detail lifecycle', () => {
     // The confirm stays disabled until an explicit reason is supplied.
     expect(within(dialog).getByRole('button', { name: '确认取消活动' })).toBeDisabled()
 
-    await userEvent.type(within(dialog).getByLabelText('取消原因'), '天气')
+    await userEvent.type(within(dialog).getByLabelText('取消原因'), 'weather')
     await userEvent.click(within(dialog).getByRole('button', { name: '确认取消活动' }))
     await waitFor(() =>
-      expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/organiser/events/1/cancel', { reason: '天气' }),
+      expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/organiser/events/1/cancel', { reason: 'weather' }),
     )
   })
 
@@ -307,13 +307,13 @@ describe('organiser event detail lifecycle', () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(organiser)
       if (path === '/api/organiser/events/1') return Promise.resolve(event)
-      if (path.includes('/publish')) return Promise.reject(new ApiError(409, '状态已变更'))
+      if (path.includes('/publish')) return Promise.reject(new ApiError(409, 'Event cannot be published in its current state'))
       return Promise.resolve({})
     })
     renderApp('/organiser/events/1')
     await waitFor(() => expect(screen.getByRole('button', { name: '发布' })).toBeInTheDocument())
     await userEvent.click(screen.getByRole('button', { name: '发布' }))
-    expect(await screen.findByText('状态已变更')).toBeInTheDocument()
+    expect(await screen.findByText('Event cannot be published in its current state')).toBeInTheDocument()
   })
 })
 
@@ -348,13 +348,13 @@ describe('organiser attendees and analytics', () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(organiser)
       if (path.startsWith('/api/organiser/events/8/attendees')) return Promise.resolve([])
-      if (path.includes('/check-in')) return Promise.reject(new ApiError(409, '票码已使用'))
+      if (path.includes('/check-in')) return Promise.reject(new ApiError(409, 'Ticket is no longer valid for check-in'))
       return Promise.resolve({})
     })
     renderApp('/organiser/events/8/attendees')
     await waitFor(() => expect(screen.getByRole('heading', { name: '参与者管理' })).toBeInTheDocument())
     await userEvent.click(screen.getByRole('button', { name: '签到' }))
-    expect(await screen.findByText('票码已使用')).toBeInTheDocument()
+    expect(await screen.findByText('Ticket is no longer valid for check-in')).toBeInTheDocument()
   })
 
   it('renders analytics tiles and the daily trend, and scopes to one event', async () => {
@@ -398,8 +398,8 @@ describe('audience flows', () => {
       return Promise.resolve([])
     })
     renderApp('/')
-    await waitFor(() => expect(screen.getByText('摇滚夜')).toBeInTheDocument())
-    await userEvent.type(screen.getByLabelText('城市'), '上海')
+    await waitFor(() => expect(screen.getByText('Indie Rock Night')).toBeInTheDocument())
+    await userEvent.type(screen.getByLabelText('城市'), 'Shanghai')
     await userEvent.selectOptions(screen.getByLabelText('排序'), 'price')
     await userEvent.click(screen.getByRole('button', { name: '附近' }))
     await userEvent.click(screen.getByRole('button', { name: '推荐' }))
@@ -407,7 +407,7 @@ describe('audience flows', () => {
 
     renderApp('/favourites')
     await waitFor(() => expect(screen.getByRole('heading', { name: '我的收藏' })).toBeInTheDocument())
-    await waitFor(() => expect(screen.getAllByText('摇滚夜').length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getAllByText('Indie Rock Night').length).toBeGreaterThan(0))
     cleanup()
 
     renderApp('/events/1')
@@ -425,11 +425,11 @@ describe('audience flows', () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(user)
       if (path === '/api/bookings/1') {
-        return Promise.resolve({ id: 1, eventId: 1, eventTitle: '摇滚夜', quantity: 2, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z' })
+        return Promise.resolve({ id: 1, eventId: 1, eventTitle: 'Indie Rock Night', quantity: 2, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z' })
       }
       if (path === '/api/bookings/1/tickets') return Promise.resolve([{ id: 11, code: 'abc123', status: 'VALID' }])
       if (path.includes('/cancel')) {
-        return Promise.resolve({ id: 1, eventId: 1, eventTitle: '摇滚夜', quantity: 2, status: 'CANCELLED', createdAt: '2026-09-01T00:00:00Z' })
+        return Promise.resolve({ id: 1, eventId: 1, eventTitle: 'Indie Rock Night', quantity: 2, status: 'CANCELLED', createdAt: '2026-09-01T00:00:00Z' })
       }
       return Promise.resolve([])
     })
