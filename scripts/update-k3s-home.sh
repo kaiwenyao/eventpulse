@@ -10,14 +10,15 @@ fi
 
 component=${1:?Usage: update-k3s-home.sh backend|frontend|ai-service}
 case "$component" in
-    backend) manifests='apps/eventpulse/api-deployment.yaml apps/eventpulse/worker-deployment.yaml' ;;
+    backend) manifests='apps/eventpulse/api-deployment.yaml apps/eventpulse/worker-deployment.yaml apps/eventpulse/seeder-job.yaml' ;;
     frontend) manifests='apps/eventpulse/frontend-deployment.yaml' ;;
     ai-service) manifests='apps/eventpulse/ai-service-deployment.yaml' ;;
     *) echo "Unknown component: $component" >&2; exit 1 ;;
 esac
 
 # Use the exact image from the preceding build stage, never recompute its tag
-# after cloning the configuration repository. Seeder Jobs are updated separately.
+# after cloning the configuration repository. API, worker, and seeder must share
+# the same backend image (and Flyway migrations), updated in a single commit.
 : "${FULL_IMAGE:?The image build stage must set FULL_IMAGE}"
 image_repository="ghcr.io/kaiwenyao/eventpulse-$component"
 image_tag=${FULL_IMAGE##*:}

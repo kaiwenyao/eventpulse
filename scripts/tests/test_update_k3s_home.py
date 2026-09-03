@@ -34,9 +34,24 @@ class GitOpsTest(unittest.TestCase):
         manifests = self.editor / "apps/eventpulse"
         manifests.mkdir(parents=True)
         for filename, component in FILES.items():
+            is_seeder = filename == "seeder-job.yaml"
+            header = (
+                "apiVersion: batch/v1\nkind: Job\nmetadata:\n"
+                "  name: eventpulse-seeder\n  annotations:\n"
+                "    argocd.argoproj.io/sync-wave: '0'\n"
+                "spec:\n  activeDeadlineSeconds: 600\n"
+                if is_seeder else "apiVersion: apps/v1\nkind: Deployment\nspec:\n"
+            )
+            init_containers = (
+                "      restartPolicy: Never\n      initContainers:\n"
+                "        - name: wait-for-postgres\n"
+                "          image: postgres:18-alpine\n"
+                if is_seeder else ""
+            )
             (manifests / filename).write_text(
-                "apiVersion: apps/v1\nkind: Deployment\nspec:\n  template:\n"
-                "    spec:\n      enableServiceLinks: false\n      containers:\n"
+                header + "  template:\n"
+                "    spec:\n      enableServiceLinks: false\n"
+                + init_containers + "      containers:\n"
                 f"        - name: {component}\n"
                 f"          image: ghcr.io/kaiwenyao/eventpulse-{component}:1111111\n"
             )
@@ -82,27 +97,51 @@ class GitOpsTest(unittest.TestCase):
         self.assertEqual(list(self.root.glob("eventpulse-gitops.*")), [])
         return result
 
-    def test_each_component_updates_only_its_deployments_and_is_idempotent(self):
+    def test_each_component_updates_only_its_manifests_and_is_idempotent(self):
         for component in ("backend", "frontend", "ai-service"):
             with self.subTest(component=component):
                 before = self.head()
+                originals = {name: self.contents(name) for name in FILES}
                 self.run_update(component)
                 files = self.git(
                     "--git-dir", str(self.remote), "diff", "--name-only", before, "main"
                 ).splitlines()
                 expected = {
                     f"apps/eventpulse/{name}" for name, owner in FILES.items()
-                    if owner == component and name != "seeder-job.yaml"
+                    if owner == component
                 }
                 self.assertEqual(set(files), expected)
-                for filename in expected:
-                    body = self.contents(Path(filename).name)
-                    self.assertIn(f"eventpulse-{component}:abcdef0", body)
-                    self.assertIn("enableServiceLinks: false", body)
+                self.assertEqual(
+                    self.git("--git-dir", str(self.remote), "rev-list", "--count", f"{before}..main"),
+                    "1",
+                )
+                for filename, owner in FILES.items():
+                    body = originals[filename]
+                    if owner == component:
+                        body = body.replace(f"eventpulse-{component}:1111111",
+                                            f"eventpulse-{component}:abcdef0")
+                    self.assertEqual(self.contents(filename), body)
                 updated = self.head()
                 self.run_update(component)
                 self.assertEqual(self.head(), updated)
-        self.assertIn("eventpulse-backend:1111111", self.contents("seeder-job.yaml"))
+        self.assertIn("eventpulse-backend:abcdef0", self.contents("seeder-job.yaml"))
+
+    def test_backend_update_repairs_stale_seeder_when_deployments_are_current(self):
+        for filename in ("api-deployment.yaml", "worker-deployment.yaml"):
+            path = self.editor / "apps/eventpulse" / filename
+            path.write_text(path.read_text().replace("1111111", "abcdef0"))
+        self.publish_fixture()
+        before = self.head()
+        original_seeder = self.contents("seeder-job.yaml")
+        self.run_update()
+        self.assertEqual(
+            self.git("--git-dir", str(self.remote), "diff", "--name-only", before, "main"),
+            "apps/eventpulse/seeder-job.yaml",
+        )
+        self.assertEqual(self.contents("seeder-job.yaml"),
+                         original_seeder.replace("1111111", "abcdef0"))
+        for filename in ("api-deployment.yaml", "worker-deployment.yaml", "seeder-job.yaml"):
+            self.assertIn("eventpulse-backend:abcdef0", self.contents(filename))
 
     def test_no_change_does_not_add_final_newline(self):
         path = self.editor / "apps/eventpulse/frontend-deployment.yaml"
@@ -127,25 +166,31 @@ class GitOpsTest(unittest.TestCase):
                 self.assertEqual(self.head(), before)
 
     def test_missing_or_ambiguous_manifest_never_pushes_partial_backend_update(self):
-        path = self.editor / "apps/eventpulse/worker-deployment.yaml"
-        original = path.read_text()
-        for content in (None, original.replace("eventpulse-backend", "other-backend"),
-                        original + "          image: ghcr.io/kaiwenyao/eventpulse-backend:2222222\n"):
-            with self.subTest(content=content):
-                if content is None:
-                    path.unlink()
-                else:
-                    path.write_text(content)
-                self.publish_fixture()
-                before = self.head()
-                self.run_update(expected=1)
-                self.assertEqual(self.head(), before)
+        for filename in ("worker-deployment.yaml", "seeder-job.yaml"):
+            path = self.editor / "apps/eventpulse" / filename
+            original = path.read_text()
+            for content in (None, original.replace("eventpulse-backend", "other-backend"),
+                            original + "          image: ghcr.io/kaiwenyao/eventpulse-backend:2222222\n"):
+                with self.subTest(filename=filename, content=content):
+                    if content is None:
+                        path.unlink()
+                    else:
+                        path.write_text(content)
+                    self.publish_fixture()
+                    before = self.head()
+                    self.run_update(expected=1)
+                    self.assertEqual(self.head(), before)
+            path.write_text(original)
+            self.publish_fixture()
 
     def test_rejected_push_retries_on_latest_main_and_preserves_other_changes(self):
         # Inject another writer immediately before the helper's first push.
         # This guarantees a real non-fast-forward rejection, without timing races.
         path = self.editor / "apps/eventpulse/frontend-deployment.yaml"
         path.write_text(path.read_text().replace("1111111", "7654321"))
+        seeder = self.editor / "apps/eventpulse/seeder-job.yaml"
+        seeder.write_text(seeder.read_text().replace("1111111", "7654321")
+                          .replace("activeDeadlineSeconds: 600", "activeDeadlineSeconds: 900"))
         (self.editor / "unrelated.txt").write_text("Changed by another pipeline.\n")
         self.git("-C", str(self.editor), "add", ".")
         self.git("-C", str(self.editor), "commit", "-m", "Concurrent frontend update")
@@ -168,6 +213,8 @@ class GitOpsTest(unittest.TestCase):
         self.assertIn("eventpulse-frontend:7654321", self.contents("frontend-deployment.yaml"))
         self.assertIn("eventpulse-backend:abcdef0", self.contents("api-deployment.yaml"))
         self.assertIn("eventpulse-backend:abcdef0", self.contents("worker-deployment.yaml"))
+        self.assertIn("eventpulse-backend:abcdef0", self.contents("seeder-job.yaml"))
+        self.assertIn("activeDeadlineSeconds: 900", self.contents("seeder-job.yaml"))
         self.assertEqual(self.git("--git-dir", str(self.remote), "show", "main:unrelated.txt"),
                          "Changed by another pipeline.")
 
