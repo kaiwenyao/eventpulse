@@ -40,7 +40,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
                 .allowedOrigins(properties.corsOriginArray())
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                // PATCH 必须显式列出：经 TLS 终止代理转发时 Spring 看到的是 http，
+                // 浏览器 Origin 是 https，带 Origin 的请求都会走 CORS 校验，而
+                // Spring 7 对实际请求（不只预检）也校验方法，缺失即 403。
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*");
     }
 }
