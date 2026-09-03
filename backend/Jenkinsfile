@@ -1,11 +1,11 @@
 // EventPulse backend CI — modeled on dublin-bikes/backend/Jenkinsfile.
 // Kubernetes cloud agent (Jenkins kubernetes-plugin injects the jnlp sidecar):
-//   - maven:  tests (unit + Testcontainers ITs, one invocation), coverage (JDK 21 + Maven).
+//   - maven: tests (unit + Testcontainers ITs), coverage and packaging in one verify invocation.
 //   - docker: on main, build & push ghcr.io/<user>/eventpulse-backend:<short-sha>
 //     (same tagging as nightdeal: commit short SHA, no latest).
 //   - gitops: after a successful main image push, update k3s-home/main.
 //
-// Cluster assumptions: cloud name `kubernetes`, RWX PVC `jenkins-maven-cache`,
+// Cluster assumptions: cloud name `kubernetes`, writable node-local cache storage,
 // and a Docker-enabled node exposing /var/run/docker.sock (not plain containerd).
 pipeline {
     agent {
@@ -23,8 +23,8 @@ pipeline {
             //   - TESTCONTAINERS_RYUK_DISABLED: Ryuk needs --privileged, which restricted
             //     clusters usually cannot pull off; falls back to JVM shutdown hooks, and
             //     post { always } removes leftover postgres:18-alpine Testcontainers.
-            //   - Mounted volumes: shared RWX PVC for the Maven repository (persistent
-            //     dependency cache) and the host-node Docker socket for Testcontainers.
+            //   - Mounted volumes: node-local persistent Maven cache (one repository per
+            //     Jenkins job) and the host-node Docker socket for Testcontainers.
             //
             // docker container (docker:27-cli is Alpine and has /bin/sh):
             //   - on main, builds and pushes the backend image to GHCR.
@@ -65,9 +65,9 @@ spec:
         - name: TESTCONTAINERS_RYUK_DISABLED
           value: "true"
       volumeMounts:
-        # Maven local repository — shared NFS PVC so every build on every node reuses
-        # the same dependency cache (the image's default user is root, home is /root).
-        - mountPath: /root/.m2/repository
+        # Keep dependency resolution and JAR reads off NFS. The Maven image runs as root.
+        # The verify step selects a job-specific repository beneath this mount.
+        - mountPath: /var/cache/maven
           name: maven-repo
         # Host-node Docker socket: Testcontainers needs it to run the PostgreSQL container.
         - mountPath: /var/run/docker.sock
@@ -108,10 +108,11 @@ spec:
           cpu: "500m"
           memory: 256Mi
   volumes:
-    # Maven repository backed by the cluster NFS PVC (jenkins-maven-cache, RWX).
+    # Survives Pod deletion; each node warms its own cache on first use.
     - name: maven-repo
-      persistentVolumeClaim:
-        claimName: jenkins-maven-cache
+      hostPath:
+        path: /var/cache/jenkins/eventpulse-backend/maven
+        type: DirectoryOrCreate
     - name: docker-sock
       hostPath:
         path: /var/run/docker.sock
@@ -124,7 +125,7 @@ spec:
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
         skipStagesAfterUnstable()
-        // Serialize against the shared Maven PVC and the host Docker socket.
+        // Serialize builds of this job; other branches use separate Maven repositories.
         disableConcurrentBuilds()
     }
 
@@ -149,16 +150,25 @@ spec:
                 }
             }
             stages {
-                stage('2. Maven Test') {
+                stage('2. Maven Verify') {
                     steps {
                         container('maven') {
                             dir('backend') {
-                                // 单测与 Testcontainers IT 合并为一次 mvn 调用：每多一次启动，
-                                // 就多 1~2.5 分钟的 JVM/依赖解析开销（依赖在 NFS PVC 上）。
+                                // One lifecycle runs unit/IT tests, generates the coverage
+                                // report, packages the JAR and enforces the coverage gate.
                                 sh '''
+                                set -eu
                                 java -version
-                                mvn -version
-                                mvn -B -ntp test
+                                # JOB_NAME includes the multibranch job path. Hash it to keep
+                                # branch names out of filesystem paths and isolate writers.
+                                : "${JOB_NAME:?Jenkins must provide JOB_NAME}"
+                                cache_key=$(printf '%s' "$JOB_NAME" | sha256sum | cut -d ' ' -f 1)
+                                maven_repo="/var/cache/maven/$cache_key"
+                                mkdir -p "$maven_repo"
+                                echo "Maven repository: $maven_repo (node-local, per job)"
+                                started_at=$(date +%s)
+                                trap 'echo "Maven verify elapsed: $(($(date +%s) - started_at))s"' EXIT
+                                mvn -B -ntp -Dmaven.repo.local="$maven_repo" verify
                                 '''
                             }
                         }
@@ -170,20 +180,8 @@ spec:
                     }
                 }
 
-                stage('3. Coverage & Package') {
+                stage('3. Publish Coverage') {
                     steps {
-                        container('maven') {
-                            dir('backend') {
-                                sh '''
-                                echo "Generating merged JaCoCo report and enforcing coverage gate"
-                                # The test run appended into target/jacoco.exec. jacoco:report
-                                # is bound to test (re-run over cumulative data) and jacoco:check
-                                # to verify. -DskipTests avoids re-running tests while still
-                                # packaging the jar.
-                                mvn -B -ntp verify -DskipTests
-                                '''
-                            }
-                        }
                         archiveArtifacts artifacts: 'backend/target/site/jacoco/**', allowEmptyArchive: false
                         script {
                             try {

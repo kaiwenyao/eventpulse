@@ -171,6 +171,17 @@ kubectl apply -f deploy/k8s/api-deployment.yml -f deploy/k8s/api-service.yml \
 
 ### Jenkins 自动更新 k3s-home
 
+Backend 流水线通过一次 `mvn verify` 完成单测、Testcontainers 集成测试、JaCoCo
+报告、90% 行覆盖率检查及 JAR 打包；随后的 Coverage 阶段只发布报告。
+Maven 仓库使用节点本地 `hostPath`，宿主机路径为
+`/var/cache/jenkins/eventpulse-backend/maven`，不再挂载共享 NFS Maven PVC。
+Kubelet 通过 `DirectoryOrCreate` 创建目录，Maven 容器沿用镜像默认的 root 用户写入；
+构建节点需允许该 hostPath，并将该路径保留在本地磁盘上。
+仓库按完整 `JOB_NAME` 的 SHA-256 分目录，同一任务通过 `disableConcurrentBuilds()`
+串行执行，避免不同分支同时写同一个仓库。缓存跨 Pod 保留；新节点或新分支首次构建
+需要下载依赖，`cleanWs()` 不清除此缓存。删除旧分支任务后可在没有相关构建运行时
+清理对应节点的缓存目录。构建日志输出所用仓库路径和 Maven verify 耗时。
+
 AI 流水线使用节点本地的 `emptyDir` 工作卷，把 uv 缓存和 `.venv` 放在同一
 文件系统，通过硬链接安装依赖，避免从 NFS 逐个复制大量小文件。缓存随构建 Pod
 删除，每次新构建会重新下载依赖；不再使用共享 Maven PVC 保存 uv 缓存。
