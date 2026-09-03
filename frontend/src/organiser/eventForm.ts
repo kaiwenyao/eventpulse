@@ -26,7 +26,7 @@ export interface EventFormState {
   endsAt: string
   salesStartAt: string
   salesEndAt: string
-  priceYuan: string
+  priceEuro: string
   capacity: string
   maxQuantityPerBooking: string
   coverUrl: string
@@ -57,14 +57,14 @@ export function createInitialForm(): EventFormState {
     summary: '',
     description: i18n.t('organiser.form.defaultDescription'),
     category: 'music',
-    city: 'Shanghai',
+    city: 'Berlin',
     venueName: '',
     address: '',
     startsAt,
     endsAt: addHoursToLocalInput(startsAt, DEFAULT_DURATION_HOURS),
     salesStartAt: '',
     salesEndAt: '',
-    priceYuan: '99',
+    priceEuro: '99',
     capacity: '50',
     maxQuantityPerBooking: '',
     coverUrl: '',
@@ -87,7 +87,7 @@ export function formFromEvent(event: EventVo): EventFormState {
     endsAt: isoToLocalInput(event.endsAt),
     salesStartAt: isoToLocalInput(event.salesStartAt),
     salesEndAt: isoToLocalInput(event.salesEndAt),
-    priceYuan: centsToYuanInput(event.priceCents),
+    priceEuro: centsToEuroInput(event.priceCents),
     capacity: event.capacity == null ? '' : String(event.capacity),
     maxQuantityPerBooking:
       event.maxQuantityPerBooking == null || event.maxQuantityPerBooking <= 0
@@ -99,20 +99,20 @@ export function formFromEvent(event: EventVo): EventFormState {
   }
 }
 
-/** Cents → a yuan string without trailing `.00` noise (`18000` → `180`). */
-export function centsToYuanInput(cents?: number): string {
+/** Cents → a euro string without trailing `.00` noise (`18000` → `180`). */
+export function centsToEuroInput(cents?: number): string {
   if (cents == null || Number.isNaN(cents)) return ''
-  const yuan = cents / 100
-  return Number.isInteger(yuan) ? String(yuan) : yuan.toFixed(2)
+  const euro = cents / 100
+  return Number.isInteger(euro) ? String(euro) : euro.toFixed(2)
 }
 
-/** Yuan string → integer cents. `null` when the text is not a number. */
-export function yuanToCents(value: string): number | null {
+/** Euro string → integer cents. `null` when the text is not a number. */
+export function euroToCents(value: string): number | null {
   const trimmed = value.trim()
   if (trimmed === '') return null
-  const yuan = Number(trimmed)
-  if (!Number.isFinite(yuan)) return null
-  return Math.round(yuan * 100)
+  const euro = Number(trimmed)
+  if (!Number.isFinite(euro)) return null
+  return Math.round(euro * 100)
 }
 
 function parseInteger(value: string): number | null {
@@ -159,9 +159,9 @@ export function validateEventForm(form: EventFormState): EventFormErrors {
   if (salesStartAt && salesEndAt && salesEndAt <= salesStartAt) errors.salesEndAt = i18n.t('organiser.form.salesOrder')
   else if (salesEndAt && startsAt && salesEndAt > startsAt) errors.salesEndAt = i18n.t('organiser.form.salesBeforeStart')
 
-  const cents = yuanToCents(form.priceYuan)
-  if (cents === null) errors.priceYuan = i18n.t('organiser.form.needPrice')
-  else if (cents < 0) errors.priceYuan = i18n.t('organiser.form.priceNegative')
+  const cents = euroToCents(form.priceEuro)
+  if (cents === null) errors.priceEuro = i18n.t('organiser.form.needPrice')
+  else if (cents < 0) errors.priceEuro = i18n.t('organiser.form.priceNegative')
 
   const capacity = parseInteger(form.capacity)
   if (capacity === null) errors.capacity = i18n.t('organiser.form.needCapacity')
@@ -225,7 +225,7 @@ export function toOrganiserRequest(
     endsAt: localInputToIso(form.endsAt),
     salesStartAt: localInputToIso(form.salesStartAt),
     salesEndAt: localInputToIso(form.salesEndAt),
-    priceCents: yuanToCents(form.priceYuan) ?? 0,
+    priceCents: euroToCents(form.priceEuro) ?? 0,
     capacity: Number(form.capacity.trim()),
     maxQuantityPerBooking: form.maxQuantityPerBooking.trim() ? Number(form.maxQuantityPerBooking.trim()) : null,
     contactInfo: orNull(form.contactInfo),

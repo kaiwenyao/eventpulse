@@ -96,4 +96,4 @@ eventpulse:
     max-events: 10
     history-limit: 8
     context-token-ttl-seconds: 300
-    time-zone: ${AI_TIME_ZONE:Asia/Shanghai}
+    time-zone: ${AI_TIME_ZONE:Europe/Berlin}

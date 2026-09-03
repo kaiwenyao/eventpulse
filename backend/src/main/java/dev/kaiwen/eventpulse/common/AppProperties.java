@@ -47,7 +47,7 @@ public class AppProperties {
         /** 发给 Python 的用户上下文 token 有效期。 */
         private int contextTokenTtlSeconds = 300;
         /** Agent 解析「这个周末」这类相对日期时使用的明确时区。 */
-        private String timeZone = "Asia/Shanghai";
+        private String timeZone = "Europe/Berlin";
 
         public boolean isEnabled() {
             return enabled;

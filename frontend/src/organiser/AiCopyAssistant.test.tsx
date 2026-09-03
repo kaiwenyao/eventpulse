@@ -43,7 +43,7 @@ describe('AiCopyAssistant', () => {
         summary: '',
         description: expect.any(String),
         category: 'music',
-        city: 'Shanghai',
+        city: 'Berlin',
         venueName: '',
         startsAt: expect.any(String),
         tone: '',

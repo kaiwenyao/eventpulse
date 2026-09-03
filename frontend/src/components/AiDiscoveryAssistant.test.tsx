@@ -18,7 +18,7 @@ const event: EventVo = {
   summary: '适合新手',
   description: '',
   category: 'tech',
-  city: 'Shanghai',
+  city: 'Berlin',
   venueName: '',
   address: '',
   latitude: undefined,

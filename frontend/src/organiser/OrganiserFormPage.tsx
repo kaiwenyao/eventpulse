@@ -20,7 +20,7 @@ import {
   validateEventForm,
 } from './eventForm'
 
-const CITY_SUGGESTIONS = ['Shanghai', 'Beijing', 'Guangzhou', 'Shenzhen', 'Chengdu', 'Hangzhou', 'Wuhan', "Xi'an"]
+const CITY_SUGGESTIONS = ['Berlin', 'London', 'Paris', 'New York', 'Toronto', 'Tokyo', 'Melbourne', 'Sao Paulo']
 
 const FIELD_LABEL_KEYS: Partial<Record<keyof EventFormState, string>> = {
   title: 'organiser.form.title',
@@ -32,7 +32,7 @@ const FIELD_LABEL_KEYS: Partial<Record<keyof EventFormState, string>> = {
   startsAt: 'organiser.form.startsAt',
   endsAt: 'organiser.form.endsAt',
   salesEndAt: 'organiser.form.salesEnd',
-  priceYuan: 'organiser.form.price',
+  priceEuro: 'organiser.form.price',
   capacity: 'organiser.form.capacity',
   maxQuantityPerBooking: 'organiser.form.limit',
   contactInfo: 'organiser.form.contact',
@@ -297,15 +297,15 @@ export function OrganiserFormPage() {
               <fieldset className="form-section">
                 <legend>{t('organiser.form.tickets')}</legend>
                 <div className="form-grid">
-                  <Field id="f-price" label={t('organiser.form.price')} required error={errors.priceYuan} hint={t('organiser.form.priceHint')}>
+                  <Field id="f-price" label={t('organiser.form.price')} required error={errors.priceEuro} hint={t('organiser.form.priceHint')}>
                     <input
-                      {...fieldAria('f-price', errors.priceYuan, 'hint')}
+                      {...fieldAria('f-price', errors.priceEuro, 'hint')}
                       type="number"
                       min={0}
                       step="0.01"
                       inputMode="decimal"
-                      value={form.priceYuan}
-                      onChange={(e) => update('priceYuan', e.target.value)}
+                      value={form.priceEuro}
+                      onChange={(e) => update('priceEuro', e.target.value)}
                     />
                   </Field>
                   <Field id="f-cap" label={t('organiser.form.capacity')} required error={errors.capacity} hint={t('organiser.form.capacityHint')}>

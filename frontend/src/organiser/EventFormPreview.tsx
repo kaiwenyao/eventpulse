@@ -3,7 +3,7 @@ import { formatMoney, formatTime } from '../api'
 import { localInputToIso } from '../lib/datetime'
 import { CategoryPill, SoldBar } from '../ui/Badges'
 import { ArrowRightIcon, ClockIcon } from '../ui/Icons'
-import { EventFormState, publishWarnings, yuanToCents } from './eventForm'
+import { EventFormState, publishWarnings, euroToCents } from './eventForm'
 
 /**
  * Live mirror of the discovery card an audience will see, plus a publish
@@ -12,7 +12,7 @@ import { EventFormState, publishWarnings, yuanToCents } from './eventForm'
  */
 export function EventFormPreview({ form }: { form: EventFormState }) {
   const { t } = useTranslation()
-  const cents = yuanToCents(form.priceYuan) ?? 0
+  const cents = euroToCents(form.priceEuro) ?? 0
   const capacity = Number(form.capacity) || 0
   const startsAtIso = localInputToIso(form.startsAt)
   const warnings = publishWarnings(form)

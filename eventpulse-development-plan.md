@@ -1357,7 +1357,7 @@ AI 能力来自运行时调用外部 LLM。项目不拥有或训练基础模型�
 
 | 计划项 | 现状 |
 | --- | --- |
-| Flyway `V1__init.sql` + `V2__crud_enhancement.sql` | 已落地，V2 覆盖 §5.2 与 §5.3 全部字段与新表 |
+| Flyway `V1__init.sql` | 已落地；上线前把 V1..V9 合并成这一份基线，覆盖 §5.2 与 §5.3 全部字段与新表 |
 | 六态生命周期与转换校验 | 已落地（`domain/EventStatus`），转换规则与 §8.2 一致 |
 | `/api/organiser/events` 全套（含 publish / cancel / archive / duplicate） | 已落地 |
 | 主办方订单、参与者、CSV、票据核销与撤销 | 已落地（`OrganiserOpsController`、`TicketService`） |

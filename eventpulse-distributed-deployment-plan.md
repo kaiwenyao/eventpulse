@@ -1212,7 +1212,7 @@ backend/src/main/java/dev/kaiwen/eventpulse/seed/SeederService.java
 backend/src/main/resources/application-api.yml
 backend/src/main/resources/application-worker.yml
 backend/src/main/resources/application-seeder.yml
-backend/src/main/resources/db/migration/V*_distributed_runtime.sql
+backend/src/main/resources/db/migration/V1__init.sql
 deploy/k8s/*.yml
 deploy/k8s/kafka/*.yml
 ai-service/Dockerfile

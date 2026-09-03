@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { isoToLocalInput, localInputToIso } from '../lib/datetime'
 import { EventVo } from '../types'
 import {
-  centsToYuanInput,
+  centsToEuroInput,
   createInitialForm,
   EventFormState,
   formFromEvent,
   publishWarnings,
   toOrganiserRequest,
   validateEventForm,
-  yuanToCents,
+  euroToCents,
 } from './eventForm'
 
 function formWith(overrides: Partial<EventFormState> = {}): EventFormState {
@@ -27,22 +27,22 @@ describe('createInitialForm', () => {
   })
 })
 
-describe('yuanToCents / centsToYuanInput', () => {
-  it('converts yuan text to integer cents', () => {
-    expect(yuanToCents('180')).toBe(18000)
-    expect(yuanToCents('9.99')).toBe(999)
-    expect(yuanToCents(' 0 ')).toBe(0)
+describe('euroToCents / centsToEuroInput', () => {
+  it('converts euro text to integer cents', () => {
+    expect(euroToCents('180')).toBe(18000)
+    expect(euroToCents('9.99')).toBe(999)
+    expect(euroToCents(' 0 ')).toBe(0)
   })
 
   it('returns null for empty or non-numeric text', () => {
-    expect(yuanToCents('')).toBeNull()
-    expect(yuanToCents('free')).toBeNull()
+    expect(euroToCents('')).toBeNull()
+    expect(euroToCents('free')).toBeNull()
   })
 
   it('renders cents without trailing .00 noise', () => {
-    expect(centsToYuanInput(18000)).toBe('180')
-    expect(centsToYuanInput(999)).toBe('9.99')
-    expect(centsToYuanInput(undefined)).toBe('')
+    expect(centsToEuroInput(18000)).toBe('180')
+    expect(centsToEuroInput(999)).toBe('9.99')
+    expect(centsToEuroInput(undefined)).toBe('')
   })
 })
 
@@ -86,8 +86,8 @@ describe('validateEventForm', () => {
   })
 
   it('requires a numeric price and a capacity of at least one', () => {
-    expect(validateEventForm(formWith({ priceYuan: '' })).priceYuan).toBe('请填写票价，免费活动填 0')
-    expect(validateEventForm(formWith({ priceYuan: '-1' })).priceYuan).toBe('票价不能为负数')
+    expect(validateEventForm(formWith({ priceEuro: '' })).priceEuro).toBe('请填写票价，免费活动填 0')
+    expect(validateEventForm(formWith({ priceEuro: '-1' })).priceEuro).toBe('票价不能为负数')
     expect(validateEventForm(formWith({ capacity: '' })).capacity).toBe('请填写库存容量')
     expect(validateEventForm(formWith({ capacity: '0' })).capacity).toBe('容量必须大于零')
     expect(validateEventForm(formWith({ capacity: '1.5' })).capacity).toBe('请填写库存容量')
@@ -118,7 +118,7 @@ describe('formFromEvent', () => {
     summary: 'A live show',
     description: 'd',
     category: 'music',
-    city: 'Shanghai',
+    city: 'Berlin',
     venueName: 'Sound Space',
     address: '一号路',
     startsAt: new Date(2027, 2, 1, 19, 30).toISOString(),
@@ -135,7 +135,7 @@ describe('formFromEvent', () => {
   it('hydrates every field the editor exposes', () => {
     const form = formFromEvent(event)
     expect(form.title).toBe('Indie Rock Night')
-    expect(form.priceYuan).toBe('180')
+    expect(form.priceEuro).toBe('180')
     expect(form.capacity).toBe('100')
     expect(form.maxQuantityPerBooking).toBe('4')
     expect(form.startsAt).toBe(isoToLocalInput(event.startsAt))
@@ -156,8 +156,8 @@ describe('toOrganiserRequest', () => {
       formWith({
         title: '  Indie Rock Night  ',
         summary: '   ',
-        city: 'Shanghai',
-        priceYuan: '9.99',
+        city: 'Berlin',
+        priceEuro: '9.99',
         capacity: '80',
         maxQuantityPerBooking: '',
         startsAt: '2027-03-01T19:30',

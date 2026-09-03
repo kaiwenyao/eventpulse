@@ -28,7 +28,7 @@ const event = {
   title: 'City Pulse · Indie Rock Night',
   description: 'd',
   category: 'music',
-  city: 'Shanghai',
+  city: 'Berlin',
   startsAt: '2026-09-10T12:00:00Z',
   priceCents: 18000,
   capacity: 10,
@@ -49,7 +49,7 @@ describe('discovery page design elements', () => {
     await waitFor(() => expect(screen.getByText('City Pulse · Indie Rock Night')).toBeInTheDocument())
     // Category pill, city label and sold meter label render on the stub.
     expect(document.querySelector('.pill-music')).not.toBeNull()
-    expect(screen.getAllByText('Shanghai').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Berlin').length).toBeGreaterThan(0)
     expect(screen.getByText('1 张余票')).toBeInTheDocument()
     expect(document.querySelector('.sold-fill')).not.toBeNull()
   })
@@ -88,7 +88,7 @@ describe('event detail', () => {
     apiMock.fn.mockResolvedValue(event)
     renderApp('/events/1')
     await waitFor(() => expect(screen.getByText('City Pulse · Indie Rock Night')).toBeInTheDocument())
-    expect(screen.getByText('¥180.00')).toBeInTheDocument()
+    expect(screen.getByText('€180.00')).toBeInTheDocument()
     expect(screen.getByText('1 张余票')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '登录后预订' })).toBeInTheDocument()
   })
