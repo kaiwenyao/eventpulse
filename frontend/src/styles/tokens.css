@@ -216,11 +216,6 @@ p {
   margin: 0;
 }
 
-/* Photography runs black and white in this system. */
-.grayscale {
-  filter: grayscale(1) contrast(1.08);
-}
-
 /* Shared inline icon sizing — every glyph inherits the text colour. */
 .icon {
   width: 1em;
