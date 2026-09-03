@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, ApiError } from '../api'
 import { ErrorNote } from '../ui/Badges'
-import { SkeletonCard } from '../ui/Skeleton'
+import { AiThinking } from '../components/AiThinking'
 import type { EventFormState } from './eventForm'
 import { localInputToIso } from '../lib/datetime'
 
@@ -35,6 +35,9 @@ const FIELD_TO_FORM: Record<SuggestionField, keyof EventFormState> = {
  * 主办方文案助手面板。AI 只产出建议：加载、失败、重试都在这里，
  * 主办方逐项勾选后点「应用」才会写进表单；保存与发布仍走普通接口。
  */
+/** 文案助手是单次 LLM 调用（没有工具检索），阶段文案相应更短。 */
+const COPY_STAGES = ['ai.copy.thinkingReading', 'ai.copy.thinkingWriting']
+
 export function AiCopyAssistant({
   form,
   eventId,
@@ -131,7 +134,7 @@ export function AiCopyAssistant({
       </div>
       <p className="muted small">{t('ai.copy.hint')}</p>
 
-      {loading && <SkeletonCard />}
+      {loading && <AiThinking stageKeys={COPY_STAGES} />}
       {error && (
         <>
           <ErrorNote message={error} />

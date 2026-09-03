@@ -432,13 +432,28 @@
       "entry": "AI Find Events",
       "title": "AI event discovery assistant",
       "hint": "Describe what you feel like attending; the assistant only recommends events that really exist in the database.",
-      "empty": "Try asking: “Any beginner-friendly tech events this weekend?”",
+      "empty": "Ask in your own words — or start with one of these:",
       "placeholder": "Describe the event you are looking for…",
       "send": "Send",
       "retry": "Retry",
       "close": "Collapse assistant",
       "failed": "The AI assistant is temporarily unavailable. Please try again later or use the normal search.",
-      "guestNote": "Guest questions are independent; sign in so the assistant can keep the conversation context. AI can make mistakes — always check the event page."
+      "guestNote": "Guest questions are independent; sign in so the assistant can keep the conversation context. AI can make mistakes — always check the event page.",
+      "starters": [
+        "Any beginner-friendly tech events this weekend?",
+        "Show me free events near me",
+        "What's popular right now?"
+      ],
+      "you": "You",
+      "assistant": "Assistant",
+      "thinking": "Thinking…",
+      "thinkingSearching": "Searching real events…",
+      "thinkingReading": "Reading the results…",
+      "thinkingWriting": "Putting the answer together…",
+      "stillWorking": "Still working — complex questions can take a moment.",
+      "followUpLabel": "Ask next",
+      "noAnswer": "I could not put an answer together this time. Try rephrasing your question.",
+      "noEvents": "No matching events were found."
     },
     "copy": {
       "entry": "AI polish copy",
@@ -459,7 +474,9 @@
         "summary": "Short summary",
         "description": "Full description",
         "attendanceNotes": "Attendance notes"
-      }
+      },
+      "thinkingReading": "Reading what you filled in…",
+      "thinkingWriting": "Drafting the copy…"
     }
   }
 }

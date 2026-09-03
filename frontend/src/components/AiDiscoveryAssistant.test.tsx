@@ -81,6 +81,51 @@ describe('AiDiscoveryAssistant', () => {
     )
   })
 
+  it('shows a thinking indicator while the answer is in flight', async () => {
+    let resolve: (value: unknown) => void = () => {}
+    apiMock.fn.mockReturnValueOnce(new Promise((r) => { resolve = r }))
+    render(<MemoryRouter><AiDiscoveryAssistant onClose={() => {}} /></MemoryRouter>)
+
+    await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '周末有什么活动')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    // 等待期间给出明确反馈，而不是一个没有语义的骨架屏。
+    expect(await screen.findByRole('status')).toHaveTextContent('正在检索真实活动…')
+
+    resolve({ requestId: 'r3', conversationId: null, answer: '找到了。', events: [], followUpQuestions: [] })
+    await waitFor(() => expect(screen.getByText('找到了。')).toBeInTheDocument())
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('offers starter questions before the first turn and sends one on click', async () => {
+    apiMock.fn.mockResolvedValueOnce({
+      requestId: 'r4', conversationId: null, answer: '好的。', events: [], followUpQuestions: [],
+    })
+    render(<MemoryRouter><AiDiscoveryAssistant onClose={() => {}} /></MemoryRouter>)
+
+    const starter = screen.getByRole('button', { name: '现在有什么热门活动？' })
+    await userEvent.click(starter)
+
+    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/ai/discovery/chat', {
+      conversationId: null,
+      message: '现在有什么热门活动？',
+    }))
+    // 开场问题只在没有任何对话时出现。
+    await waitFor(() => expect(screen.queryByRole('button', { name: '现在有什么热门活动？' })).not.toBeInTheDocument())
+  })
+
+  it('falls back to a localised message when the answer comes back empty', async () => {
+    apiMock.fn.mockResolvedValueOnce({
+      requestId: 'r5', conversationId: null, answer: '   ', events: [], followUpQuestions: [],
+    })
+    render(<MemoryRouter><AiDiscoveryAssistant onClose={() => {}} /></MemoryRouter>)
+
+    await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '随便问问')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    expect(await screen.findByText('这次没能整理出结果，换个说法再试一次吧。')).toBeInTheDocument()
+  })
+
   it('shows failure with retry and clears after a successful retry', async () => {
     apiMock.fn
       .mockRejectedValueOnce(new ApiError(503, 'AI 助手暂时不可用'))

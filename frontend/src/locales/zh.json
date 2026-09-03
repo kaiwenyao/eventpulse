@@ -432,13 +432,28 @@
       "entry": "AI 找活动",
       "title": "AI 活动发现助手",
       "hint": "用自然语言描述你想参加的活动，AI 只会推荐数据库中真实存在的活动。",
-      "empty": "试试问：「这个周末有什么适合新手的技术活动？」",
+      "empty": "用你自己的话问就行，也可以从这几个开始：",
       "placeholder": "用一句话描述你想找的活动…",
       "send": "发送",
       "retry": "重试",
       "close": "收起助手",
       "failed": "AI 助手暂时不可用，请稍后再试，或使用普通搜索。",
-      "guestNote": "游客每次提问相互独立；登录后 AI 可以结合你的历史追问继续对话。AI 可能出错，请以活动详情页为准。"
+      "guestNote": "游客每次提问相互独立；登录后 AI 可以结合你的历史追问继续对话。AI 可能出错，请以活动详情页为准。",
+      "starters": [
+        "这个周末有什么适合新手的技术活动？",
+        "帮我找找附近的免费活动",
+        "现在有什么热门活动？"
+      ],
+      "you": "你",
+      "assistant": "助手",
+      "thinking": "正在思考…",
+      "thinkingSearching": "正在检索真实活动…",
+      "thinkingReading": "正在阅读查询结果…",
+      "thinkingWriting": "正在整理答案…",
+      "stillWorking": "还在处理——复杂的问题需要多花一点时间。",
+      "followUpLabel": "接着问",
+      "noAnswer": "这次没能整理出结果，换个说法再试一次吧。",
+      "noEvents": "没有找到匹配的活动。"
     },
     "copy": {
       "entry": "AI 完善文案",
@@ -459,7 +474,9 @@
         "summary": "简短摘要",
         "description": "完整描述",
         "attendanceNotes": "参与须知"
-      }
+      },
+      "thinkingReading": "正在读你填写的内容…",
+      "thinkingWriting": "正在撰写文案…"
     }
   }
 }
