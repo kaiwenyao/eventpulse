@@ -27,6 +27,9 @@ import dev.kaiwen.eventpulse.service.WalletService;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
         "spring.profiles.active=worker",
         "spring.kafka.bootstrap-servers=localhost:59999",
+        // An intentionally unreachable broker can produce tens of thousands of identical
+        // rebootstrap INFO messages. Keep warnings/errors without flooding CI/test reports.
+        "logging.level.org.apache.kafka.clients.admin.internals.AdminMetadataManager=WARN",
         "eventpulse.outbox.poll-ms=500",
         "eventpulse.outbox.future-wait-seconds=1",
         "eventpulse.outbox.claim-seconds=10",

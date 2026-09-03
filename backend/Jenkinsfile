@@ -152,6 +152,10 @@ spec:
             }
             stages {
                 stage('2. Maven Verify') {
+                    environment {
+                        // Integration tests otherwise inherit the application's SQL DEBUG default.
+                        SQL_LOG_LEVEL = 'WARN'
+                    }
                     steps {
                         container('maven') {
                             dir('backend') {
@@ -169,14 +173,29 @@ spec:
                                 # and metadata updates are coordinated across Maven JVMs.
                                 mvn -B -ntp -Dmaven.repo.local="$maven_repo" \\
                                     -Daether.syncContext.named.factory=file-lock \\
-                                    -Daether.syncContext.named.nameMapper=file-gav verify
+                                    -Daether.syncContext.named.nameMapper=file-gav \\
+                                    -Dmaven.test.redirectTestOutputToFile=true \\
+                                    -DenableOutErrElements=false verify
                                 '''
                             }
                         }
                     }
                     post {
                         always {
-                            junit testResults: 'backend/target/surefire-reports/*.xml', allowEmptyResults: false
+                            // Archive before publishing JUnit, even when tests/coverage fail.
+                            // Detailed test output stays downloadable instead of flooding the UI.
+                            container('maven') {
+                                dir('backend') {
+                                    sh '''
+                                    if [ -d target/surefire-reports ]; then
+                                        tar -czf target/backend-test-logs.tar.gz -C target surefire-reports
+                                        echo "Detailed test logs: backend/target/backend-test-logs.tar.gz (build artifacts)"
+                                    fi
+                                    '''
+                                }
+                            }
+                            archiveArtifacts artifacts: 'backend/target/backend-test-logs.tar.gz', allowEmptyArchive: true
+                            junit testResults: 'backend/target/surefire-reports/*.xml', allowEmptyResults: false, keepLongStdio: false
                         }
                     }
                 }

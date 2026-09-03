@@ -194,6 +194,14 @@ Kubelet 通过 `DirectoryOrCreate` 创建目录，Maven 容器沿用镜像默认
 EventPulse 使用 `verify`，不会向共享仓库安装项目产物。
 构建日志输出所用仓库路径和 Maven verify 耗时。旧的项目专用缓存不会自动迁移或删除。
 
+Backend Jenkins 控制台保留 Maven 阶段进度、测试统计和失败摘要。Surefire 将测试的
+stdout/stderr 写入 `target/surefire-reports/*-output.txt`，成功用例的 XML 不再重复
+嵌入这些输出。无论测试成功或失败，已有测试报告都会压缩为构建附件
+`backend/target/backend-test-logs.tar.gz`，可从 Jenkins 的 Artifacts 下载排查；
+JUnit 测试结果仍正常发布，测试或覆盖率失败仍阻止后续发布。
+CI 通过 `SQL_LOG_LEVEL=WARN` 关闭逐条 SQL DEBUG 输出；Kafka 不可用测试仅将
+`AdminMetadataManager` 的重复重连 INFO 日志调到 WARN，保留警告、错误和断言。
+
 AI 流水线使用节点本地的 `emptyDir` 工作卷，把 uv 缓存和 `.venv` 放在同一
 文件系统，通过硬链接安装依赖，避免从 NFS 逐个复制大量小文件。缓存随构建 Pod
 删除，每次新构建会重新下载依赖；不再使用共享 Maven PVC 保存 uv 缓存。
