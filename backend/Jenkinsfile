@@ -1,6 +1,6 @@
 // EventPulse backend CI — modeled on dublin-bikes/backend/Jenkinsfile.
 // Kubernetes cloud agent (Jenkins kubernetes-plugin injects the jnlp sidecar):
-//   - maven:  compile, unit tests, Testcontainers integration tests, coverage (JDK 21 + Maven).
+//   - maven:  tests (unit + Testcontainers ITs, one invocation), coverage, SBOM (JDK 21 + Maven).
 //   - docker: on main, build & push ghcr.io/<user>/eventpulse-backend:<short-sha>
 //     (same tagging as nightdeal: commit short SHA, no latest).
 //
@@ -130,29 +130,19 @@ spec:
                 }
             }
             stages {
-                stage('2. Maven Compile') {
+                stage('2. Maven Test') {
                     steps {
                         container('maven') {
                             dir('backend') {
+                                // 单测与 Testcontainers IT 合并为一次 mvn 调用：每多一次启动，
+                                // 就多 1~2.5 分钟的 JVM/依赖解析开销（依赖在 NFS PVC 上）。
+                                // -Dcyclonedx.skip=true：starter-parent 4.x 默认在 generate-resources
+                                // 注入 makeAggregateBom，每次 mvn 要花 24s~2min 重解析依赖；
+                                // SBOM 只在 Coverage & Package 阶段随最终 jar 生成一次即可。
                                 sh '''
                                 java -version
                                 mvn -version
-                                mvn -B -ntp -DskipTests compile
-                                '''
-                            }
-                        }
-                    }
-                }
-
-                stage('3. Unit Tests') {
-                    steps {
-                        container('maven') {
-                            dir('backend') {
-                                sh '''
-                                echo "Running unit tests (no external services)"
-                                mvn -B -ntp test \
-                                    -Dtest='!dev.kaiwen.eventpulse.BookingConcurrencyIT' \
-                                    -Dsurefire.failIfNoSpecifiedTests=false
+                                mvn -B -ntp -Dcyclonedx.skip=true test
                                 '''
                             }
                         }
@@ -164,33 +154,13 @@ spec:
                     }
                 }
 
-                stage('4. Integration Tests') {
-                    steps {
-                        container('maven') {
-                            dir('backend') {
-                                sh '''
-                                echo "Running integration tests (Testcontainers: PostgreSQL)"
-                                mvn -B -ntp test \
-                                    -Dtest='dev.kaiwen.eventpulse.BookingConcurrencyIT' \
-                                    -Dsurefire.failIfNoSpecifiedTests=false
-                                '''
-                            }
-                        }
-                    }
-                    post {
-                        always {
-                            junit testResults: 'backend/target/surefire-reports/*.xml', allowEmptyResults: false
-                        }
-                    }
-                }
-
-                stage('5. Coverage & Package') {
+                stage('3. Coverage & Package') {
                     steps {
                         container('maven') {
                             dir('backend') {
                                 sh '''
                                 echo "Generating merged JaCoCo report and enforcing coverage gate"
-                                # Unit + IT append into the same target/jacoco.exec. jacoco:report
+                                # The test run appended into target/jacoco.exec. jacoco:report
                                 # is bound to test (re-run over cumulative data); jacoco:check and
                                 # the CycloneDX SBOM are bound to verify. -DskipTests avoids
                                 # re-running tests while still packaging the jar.
