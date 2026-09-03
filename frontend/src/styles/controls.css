@@ -30,14 +30,14 @@ button,
 }
 
 .btn-primary,
-button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle, .lang-toggle) {
+button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle, .lang-toggle, .ai-followup, .ai-starter) {
   background: var(--accent);
   border: 1px solid var(--accent);
   color: #fff;
 }
 
 .btn-primary:hover,
-button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle, .lang-toggle):hover {
+button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle, .lang-toggle, .ai-followup, .ai-starter):hover {
   background: var(--accent-600);
   border-color: var(--accent-600);
   color: #fff;
@@ -45,7 +45,7 @@ button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-to
 }
 
 .btn-primary:active,
-button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle):active {
+button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .ai-followup, .ai-starter):active {
   background: var(--accent-700);
   border-color: var(--accent-700);
 }
