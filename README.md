@@ -173,7 +173,7 @@ AI 流水线使用节点本地的 `emptyDir` 工作卷，把 uv 缓存和 `.venv
 
 | 流水线 | 自动更新的清单（位于 `apps/eventpulse/`） |
 | --- | --- |
-| backend | `api-deployment.yaml`、`worker-deployment.yaml` |
+| backend | `api-deployment.yaml`、`worker-deployment.yaml`、`seeder-job.yaml` |
 | frontend | `frontend-deployment.yaml` |
 | ai-service | `ai-service-deployment.yaml` |
 
@@ -183,9 +183,12 @@ Jenkins 需能访问与 nightdeal 相同的 `k3s-home-write` 凭据（Username w
 版本未变化时不创建提交，目标清单缺失或镜像不匹配时让构建失败。三个任务同时推送
 发生冲突时，会从远端最新 main 重新应用本服务的修改，最多尝试五次，不强推。
 
-`seeder-job.yaml` 单独维护：已创建 Job 的 Pod 模板不可变，需要更新时应调整
-镜像并按 k3s-home 的说明重建 Job。此流程只提交部署配置，集群应用仍按现有运维
-流程进行。GitOps 脚本的集成测试使用临时本地仓库，不访问 GitHub：
+API、Worker 和 Seeder 在同一次 Git 提交中更新为同一个后端镜像，保证三者携带
+一致的 Flyway 迁移文件；任一清单缺失或镜像匹配异常时，整个更新失败，不推送
+部分修改。Job 名保持 `eventpulse-seeder`；已创建 Job 的 Pod 模板不可变，镜像
+变化后需删除旧 Job，再通过 Argo CD Sync 或 apply 重建。此流程只提交部署配置，
+不会自动重建 Job 或修改数据库迁移历史。GitOps 脚本的集成测试使用临时本地仓库，
+不访问 GitHub：
 
 ```bash
 python3 -m unittest discover -s scripts/tests -v
