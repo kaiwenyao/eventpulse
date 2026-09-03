@@ -45,6 +45,15 @@ class TestExtractJson:
     def test_non_object_json_rejected(self):
         assert extract_json("[1, 2, 3]") is None
 
+    def test_trailing_garbage_after_object(self):
+        # 模型偶尔在合法对象后多吐收尾符号；贪婪正则会把它吞进匹配导致整体解析失败。
+        assert extract_json('{"a": 1}]}') == {"a": 1}
+        assert extract_json('{"a": {"b": 2}} 就是这样。') == {"a": {"b": 2}}
+
+    def test_unescaped_newline_inside_string(self):
+        # 字符串里的裸换行不应让整段结构报废。
+        assert extract_json('{"a": "line1\nline2"}') == {"a": "line1\nline2"}
+
 
 class TestImproveEventCopy:
     def test_happy_path_and_usage(self):

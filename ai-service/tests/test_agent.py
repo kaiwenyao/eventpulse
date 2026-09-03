@@ -216,3 +216,30 @@ class TestParseDiscoveryAnswer:
     def test_extracts_json_from_surrounding_text(self):
         parsed = parse_discovery_answer('好的：{"answer": "ok", "events": [], "follow_up_questions": []}', set(), 10)
         assert parsed.answer == "ok"
+
+    def test_object_with_trailing_garbage_still_parses(self):
+        parsed = parse_discovery_answer(
+            '{"answer": "找到两场活动。", "events": [{"event_id": 2, "reason": "近"}],'
+            ' "follow_up_questions": ["帮我看看北京的"]}]}',
+            allowed_event_ids={2},
+            max_events=10,
+        )
+        assert parsed.answer == "找到两场活动。"
+        assert [e.event_id for e in parsed.events] == [2]
+        assert parsed.follow_up_questions == ["帮我看看北京的"]
+
+    def test_broken_envelope_never_leaks_raw_json(self):
+        # 信封坏到无法解析时只抢救 answer，绝不把原始 JSON 当回答展示。
+        broken = '{"answer": "只找到两场活动。", "events": [{"event_id": 2,, }], "follow_up"'
+        parsed = parse_discovery_answer(broken, allowed_event_ids={2}, max_events=10)
+        assert parsed.answer == "只找到两场活动。"
+        assert parsed.events == []
+        assert "event_id" not in parsed.answer
+
+    def test_unsalvageable_envelope_returns_empty_answer(self):
+        parsed = parse_discovery_answer('{"events": [{"event_id": ,]', set(), 10)
+        assert parsed.answer == ""
+
+    def test_plain_prose_answer_is_kept(self):
+        parsed = parse_discovery_answer("这个周末没有合适的活动。", set(), 10)
+        assert parsed.answer == "这个周末没有合适的活动。"

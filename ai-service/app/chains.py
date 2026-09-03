@@ -5,7 +5,6 @@ LlmOutputError，绝不把未校验的文本交给调用方。
 """
 
 import json
-import re
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -40,21 +39,50 @@ class CopySuggestionOut(BaseModel):
         )
 
 
-_JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
+# strict=False：容忍模型在字符串里直接写换行等控制字符（常见输出瑕疵），
+# 否则整段合法结构会因为一个裸换行被判为不可解析。
+_DECODER = json.JSONDecoder(strict=False)
+
+
+def _decode_object_at(text: str, start: int) -> tuple[dict[str, Any], int] | None:
+    """从 start 处尝试解出一个 JSON 对象，返回 (对象, 结束位置)。"""
+    try:
+        parsed, end = _DECODER.raw_decode(text, start)
+    except ValueError:
+        return None
+    return (parsed, end) if isinstance(parsed, dict) else None
+
+
+def _scan_objects(text: str, limit: int = 2) -> list[tuple[dict[str, Any], int]]:
+    r"""按位置扫描出最多 limit 个顶层 JSON 对象。
+
+    用 raw_decode 做括号配对，而不是贪婪正则 `\{.*\}`：正则会把对象之后
+    的任何 `}`（模型偶尔多吐的收尾符号、解释性后缀）也吞进匹配里，让一段
+    本来合法的 JSON 整体解析失败。
+    """
+    found: list[tuple[dict[str, Any], int]] = []
+    index = text.find("{")
+    while index != -1 and len(found) < limit:
+        decoded = _decode_object_at(text, index)
+        if decoded is not None:
+            found.append(decoded)
+            index = text.find("{", decoded[1])
+        else:
+            index = text.find("{", index + 1)
+    return found
 
 
 def extract_json(text: str) -> dict[str, Any] | None:
-    """从模型回复里提取第一个 JSON 对象；容忍 markdown 代码块与前后缀文本。"""
+    """从模型回复里提取唯一的 JSON 对象；容忍 markdown 代码块与前后缀文本。
+
+    出现两个可解析的对象时属于歧义文本，宁可拒绝也不猜（由调用方重试或降级）。
+    """
     if not isinstance(text, str):
         return None
-    match = _JSON_OBJECT.search(text)
-    if not match:
+    objects = _scan_objects(text)
+    if len(objects) != 1:
         return None
-    try:
-        parsed = json.loads(match.group(0))
-    except ValueError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
+    return objects[0][0]
 
 
 def _content_to_text(message_content: Any) -> str:

@@ -5,6 +5,7 @@
 “只有自然语言回答”。
 """
 
+import json
 import re
 import time
 from typing import Any
@@ -53,19 +54,41 @@ class DiscoveryAnswer(BaseModel):
     follow_up_questions: list[str] = Field(default_factory=list)
 
 
-_JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
+# 只在结构化解析失败时用：从坏掉的信封里捞出 answer 字段的字符串值。
+_ANSWER_FIELD = re.compile(r'"answer"\s*:\s*"((?:[^"\\]|\\.)*)"', re.DOTALL)
+# 判断一段文本是不是「本来想当 JSON 信封」的产物。
+_LOOKS_LIKE_ENVELOPE = re.compile(r'^\s*(?:```[a-zA-Z]*\s*)?\{.*"(?:answer|events|follow_up_questions)"', re.DOTALL)
+
+
+def _salvage_answer(text: str) -> str | None:
+    """信封解析失败时抢救 answer 文本；抢救不到返回 None。"""
+    match = _ANSWER_FIELD.search(text)
+    if not match:
+        return None
+    try:
+        # 用 JSON 自己的转义规则还原 \n、\" 等，避免把转义符原样给用户。
+        salvaged = json.loads(f'"{match.group(1)}"')
+    except ValueError:
+        return None
+    return salvaged.strip() or None
 
 
 def parse_discovery_answer(text: str, allowed_event_ids: set[int], max_events: int) -> DiscoveryAnswer:
     """把模型的最终文本解析成可校验的答案。
 
     - JSON 合法：events 过滤到 allowed_event_ids（工具真实返回过的 id）。
-    - JSON 不合法：整段文本作为 answer，不带活动卡片（宁缺毋滥）。
+    - JSON 不合法但看得出是坏掉的信封：只抢救 answer 文本，不带活动卡片
+      （宁缺毋滥）。绝不把原始 JSON 直接当回答展示给用户。
+    - 完全不是 JSON：整段文本就是模型的自然语言回答，原样使用。
     """
-    parsed = extract_json(text or "")
+    raw = (text or "").strip()
+    parsed = extract_json(raw)
     if parsed is None:
-        answer = (text or "").strip()[:2000]
-        return DiscoveryAnswer(answer=answer, events=[], follow_up_questions=[])
+        if _LOOKS_LIKE_ENVELOPE.match(raw):
+            salvaged = _salvage_answer(raw)
+            # 抢救失败时返回空 answer，交给调用方走统一的降级文案。
+            return DiscoveryAnswer(answer=(salvaged or "")[:2000], events=[], follow_up_questions=[])
+        return DiscoveryAnswer(answer=raw[:2000], events=[], follow_up_questions=[])
 
     answer = parsed.get("answer") if isinstance(parsed.get("answer"), str) else ""
     follow_ups = [
@@ -167,8 +190,8 @@ def run_discovery_agent(
         raise AgentExecutionError(f"agent ended on {type(final).__name__}")
     text = _content_to_text(final.content)
     answer = parse_discovery_answer(text, ledger.allowed_event_ids, settings.max_events_returned)
-    if not answer.answer:
-        answer.answer = "这次没能整理出结果，请换个说法再试一次。"
+    # answer 为空时不在这里补中文兜底：语言应跟随用户，统一由 Spring 侧
+    # 的降级文案（前端可本地化）处理，避免两层各写一句、语言还对不上。
     usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
     for message in messages:
         u = getattr(message, "usage_metadata", None)
