@@ -52,4 +52,12 @@ class ApiProfileWiringIT {
         // Kafka 自动装配被排除：api 实例上没有任何 Kafka Bean。
         assertThat(ctx.containsBean("kafkaTemplate")).isFalse();
     }
+
+    @Test
+    void defaultMediaStorageIsLocalDisk() {
+        // s3.enabled 默认 false：本地开发回落磁盘存储，S3 相关 Bean 不存在。
+        assertThat(ctx.containsBean("localMediaStorage")).isTrue();
+        assertThat(ctx.containsBean("s3Client")).isFalse();
+        assertThat(ctx.containsBean("s3MediaStorage")).isFalse();
+    }
 }

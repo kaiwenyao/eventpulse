@@ -94,7 +94,10 @@ make test-distributed # 起多实例 + 端到端冒烟
 
 `demo` profile 已由 `seeder` 角色取代：8 个账号、19 个活动（覆盖四个分类、
 六座城市：柏林、纽约、伦敦、东京、墨尔本、圣保罗，以及全部六种状态）、18 笔订单与对应电子票、收藏、行为流水、每日统计
-和站内消息。种子内容集中在
+和站内消息。19 个活动各带封面：图片按 `DemoCatalog.EVENTS` 顺序预传到对象存储
+（key 固定为 `seed/demo-covers/NN.jpeg`，NN 为活动序号），播种时只写
+`media_assets` 行并把它接进活动的 `coverAssetId` / `coverUrl`，不做对象存储 IO；
+bucket 里对象缺失时封面会 404，重传同名 key 即可修复。种子内容集中在
 `backend/src/main/java/dev/kaiwen/eventpulse/seed/DemoCatalog.java`，
 改 demo 数据只改这一个文件。
 
@@ -130,9 +133,9 @@ make down        # 停掉全部容器并删数据卷；下次 make up 会重跑�
 `deploy/k8s/` 下是同一镜像的三种角色清单：
 
 ```text
-configmap.yml         普通配置（数据库 / Kafka / Redis 地址、partition、心跳、批量、AI 网关地址）
+configmap.yml         普通配置（数据库 / Kafka / Redis 地址、partition、心跳、批量、AI 网关地址、S3 地址）
 ai-configmap.yml      AI 服务非敏感配置（LLM provider / model / 超时）
-secret.example.yml    敏感配置示例（DB_PASSWORD / SECRET_KEY / AI 服务间凭证），复制为 secret.yml 使用
+secret.example.yml    敏感配置示例（DB_PASSWORD / SECRET_KEY / AI 服务间凭证 / S3 凭证），复制为 secret.yml 使用
 api-deployment.yml    api，2 副本，readiness/liveness 分离，优雅停机 40s
 api-service.yml       ClusterIP Service
 worker-deployment.yml worker，第一版 1 副本（可安全扩到 2），只暴露 Actuator
@@ -193,6 +196,113 @@ API、Worker 和 Seeder 在同一次 Git 提交中更新为同一个后端镜像
 ```bash
 python3 -m unittest discover -s scripts/tests -v
 ```
+
+## 图片存储（SeaweedFS S3）
+
+图片（活动封面等）存在自建 SeaweedFS 的 S3 兼容接口上，不落在 api Pod 的本地
+磁盘：两个 api 副本读写同一份对象，前端不用改。业务语义全部保留——上传仍要
+登录、限 2MB、仅 JPEG/PNG/WebP，上传响应结构不变。对象 key 由后端
+生成（UUID 前缀），Content-Type 随对象保存；上传成功但数据库保存失败会补偿
+删除刚上传的对象；S3 不可达 / 凭证错误映射为 503（读取与上传），对象缺失
+404，不会把存储故障说成请求错误。
+
+删除是软删除：`DELETE` 只改数据库审计字段（`status=DELETED` + `deleted_at`），
+权限校验不变；S3 对象由 worker 的清理任务在宽限期后统一删除并标记 `PURGED`
+（只清理数据库里记录的、过了宽限期的 DELETED 对象；删除失败保持 DELETED 等
+下轮重试；S3 delete 幂等，对象不存在视为已删除）。
+
+配置（`application.yml` 的 `eventpulse.s3.*`，全部可被环境变量覆盖）：
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `S3_ENABLED` | `false` | true 时图片走 S3；false 回落本地磁盘（仅本地单机） |
+| `S3_ENDPOINT` | 空 | 例如 `https://s3.kaiwen.dev` |
+| `S3_REGION` | `us-east-1` | S3 兼容服务常为 us-east-1 |
+| `S3_BUCKET` | `eventpulse` | 必须已存在；应用不创建 bucket、不改公开权限 |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | 空 | 专属身份的凭证，走环境变量 / K8s Secret，不入 git |
+| `S3_PATH_STYLE` | `true` | SeaweedFS 用 path-style（`https://endpoint/bucket/key`） |
+| `S3_PUBLIC_BASE_URL` | 空 | 浏览器直连基址（见下）；留空则图片走 `/api/media/images/{id}` 代理 |
+| `S3_CONNECT_TIMEOUT` / `S3_READ_TIMEOUT` / `S3_API_CALL_TIMEOUT` | 2000 / 10000 / 30000 | 毫秒 |
+
+### 图片的取址方式
+
+后端在 `public_url` 字段里下发图片地址，**前端把它当不透明字符串直接用**，不要
+自己拼 endpoint 和 key——换 CDN、换 bucket、或某类资产改走预签名时才不用动前端。
+
+配了 `S3_PUBLIC_BASE_URL` 就是**公开直连**：`public_url` 指向对象存储，图片字节
+不经过 api 进程，浏览器与 CDN 可长期缓存（对象上带
+`Cache-Control: public, max-age=31536000, immutable`，key 含 UUID 内容不变）。
+地址由 key 拼出，是纯字符串操作，不发起任何存储请求。
+
+留空则回落到 `/api/media/images/{id}` **代理**：后端校验数据库状态后从存储读
+内容回传。本地磁盘模式（`S3_ENABLED=false`）永远走这条路。两条路都保留，
+`MediaController` 的 GET 端点不会下线。
+
+直连要求 bucket 已授予匿名读，**应用不检查也不修改这个权限**。SeaweedFS 侧加
+bucket policy（只给对象级 `s3:GetObject`）：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadObjects",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": ["s3:GetObject"],
+      "Resource": ["arn:aws:s3:::eventpulse/*"]
+    }
+  ]
+}
+```
+
+`Resource` 结尾的 `/*` 是对象级，不能写成 bucket 本身；`Action` 不要加
+`s3:ListBucket`——用户上传的 key 带 UUID 不可枚举，列举权一旦开出去这层保护就
+没了（也会暴露软删除宽限期内尚未清理的对象）。改完用不带凭证的请求核实：
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://s3.kaiwen.dev/eventpulse/seed/demo-covers/01.jpeg   # 期望 200
+curl -s -o /dev/null -w "%{http_code}\n" https://s3.kaiwen.dev/eventpulse/                            # 期望 403
+```
+
+清理任务（worker 执行）：`MEDIA_PURGE_ENABLED`（默认 true）、
+`MEDIA_PURGE_AFTER_DAYS`（宽限期天数，默认 7）、`MEDIA_PURGE_BATCH_SIZE`（50）、
+`MEDIA_PURGE_FIXED_DELAY_MS`（3600000）。
+
+### 本地开发
+
+默认 `S3_ENABLED=false`，图片仍落在 `MEDIA_DIR`（默认 `data/media`），行为和
+以前一致。要用 SeaweedFS，在运行环境设置上面几个变量即可：
+
+```bash
+S3_ENABLED=true S3_ENDPOINT=https://s3.kaiwen.dev S3_BUCKET=eventpulse \
+S3_ACCESS_KEY=... S3_SECRET_KEY=... \
+mvn -pl backend spring-boot:run -Dspring-boot.run.profiles=api
+```
+
+compose 里同样把这几个变量放进 `.env`（已在 `docker-compose.yml` 透传）；
+`.env.example` 有完整清单。多副本（`API>1` 或 k3s）必须启用 S3。
+
+### k3s
+
+`k3s-home/apps/eventpulse/configmap.yaml` 已带 S3 的非敏感变量（三个角色共用
+同一套 envFrom：api 读写对象，worker 执行清理，seeder 仅需能启动），凭证
+`S3_ACCESS_KEY` / `S3_SECRET_KEY` 封进 `sealed-secret.yaml`。SeaweedFS 侧的
+身份、bucket 与权限核实见 k3s-home 仓库 README 的「S3 图片存储」。
+
+### 已有本地图片怎么办（迁移方案，未执行）
+
+历史图片在各 api 容器的 `data/media` 里，compose / k8s 都没有给它挂持久卷，
+容器重建即丢，通常无需迁移。若确有要保留的本地文件，按下面顺序迁（不删除
+本地文件，出问题可重来）：
+
+1. 对象 key 直接沿用数据库里的 `storage_key`，无需改任何数据库记录：
+   `aws s3 sync ./data/media/ s3://eventpulse/ --endpoint-url https://s3.kaiwen.dev`
+   （key 以 `.png` / `.jpg` / `.webp` 结尾，CLI 能猜对 Content-Type；
+   `S3_ACCESS_KEY` / `S3_SECRET_KEY` 走环境变量。）
+2. sync 完成后，把 `S3_ENABLED=true` 随新镜像一起滚动更新。
+3. 切换后新上传直接进 S3；若有实例在切换窗口内还往本地写过文件，再 sync 一次
+   补齐。确认无误前不要删本地目录，确认后删除也只影响本机残留。
 
 ## AI 助手
 
@@ -300,6 +410,9 @@ Authorization 头、指数退避自动重连），收到提醒后重新拉取 RE
 | `BookingConcurrencyIT` | 并发下单不超卖 |
 | `AiMigrationIT` | V9 迁移：全新建库 + 旧库升级两条路径，旧推荐表被删除 |
 | `AiGatewayServiceTest` / `AiServiceClientTest` / `InternalServiceInterceptorTest` | AI 网关限流、活动复核、编造 ID 过滤、服务间认证 |
+| `MediaServiceTest` / `S3MediaStorageTest` / `MediaPurgeWorkerTest` | 图片上传校验、key 生成、DB 失败补偿删除、读取 404/503 映射、软删除不碰对象、S3 异常翻译、清理任务语义 |
+| `MediaS3ProfileWiringIT` / `MediaS3WorkerProfileWiringIT` / `MediaS3SeederProfileWiringIT` | S3 启用后 api / worker / seeder 装配与启动兼容性（S3Client 构造不联网），默认回落本地磁盘 |
+| `S3LiveMediaStorageIT` | 真实 S3 读写删连通性（`MEDIA_S3_LIVE_TEST=true` 才运行，只用 `__eventpulse-selftest/` 临时前缀并自清理） |
 
 Python AI 服务的测试（模拟 LLM 与工具响应，CI 不调用付费模型、不需要真实 Key）：
 

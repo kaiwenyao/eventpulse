@@ -33,6 +33,8 @@ import dev.kaiwen.eventpulse.entity.Event;
 import dev.kaiwen.eventpulse.entity.EventDailyMetric;
 import dev.kaiwen.eventpulse.entity.EventFavourite;
 import dev.kaiwen.eventpulse.entity.Interaction;
+import dev.kaiwen.eventpulse.entity.MediaAsset;
+import dev.kaiwen.eventpulse.storage.InMemoryMediaStorage;
 import dev.kaiwen.eventpulse.entity.Notification;
 import dev.kaiwen.eventpulse.entity.Ticket;
 import dev.kaiwen.eventpulse.entity.User;
@@ -42,6 +44,7 @@ import dev.kaiwen.eventpulse.repository.EventDailyMetricRepository;
 import dev.kaiwen.eventpulse.repository.EventFavouriteRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
 import dev.kaiwen.eventpulse.repository.InteractionRepository;
+import dev.kaiwen.eventpulse.repository.MediaAssetRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
 import dev.kaiwen.eventpulse.repository.UserPreferenceRepository;
@@ -64,6 +67,8 @@ class DemoSeedTest {
     @Mock
     EventRepository events;
     @Mock
+    MediaAssetRepository mediaAssets;
+    @Mock
     PasswordEncoder passwordEncoder;
     @Mock
     BookingRepository bookings;
@@ -82,6 +87,8 @@ class DemoSeedTest {
     @Mock
     UserPreferenceRepository preferences;
 
+    private InMemoryMediaStorage storage;
+
     private DemoDataSeeder seeder;
 
     @BeforeEach
@@ -89,16 +96,19 @@ class DemoSeedTest {
         AtomicLong userIds = new AtomicLong();
         AtomicLong eventIds = new AtomicLong();
         AtomicLong bookingIds = new AtomicLong();
+        AtomicLong mediaIds = new AtomicLong();
         when(passwordEncoder.encode(anyString())).thenReturn("hash");
         when(users.save(any())).thenAnswer(call -> withId(call.getArgument(0), userIds.incrementAndGet()));
         when(events.save(any())).thenAnswer(call -> withId(call.getArgument(0), eventIds.incrementAndGet()));
+        when(mediaAssets.save(any())).thenAnswer(call -> withId(call.getArgument(0), mediaIds.incrementAndGet()));
         when(bookings.save(any())).thenAnswer(call -> withId(call.getArgument(0), bookingIds.incrementAndGet()));
         when(ticketService.issue(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
                 .thenAnswer(call -> issue(call.getArgument(0), call.getArgument(1), call.getArgument(2)));
 
         DemoEngagementSeeder engagement = new DemoEngagementSeeder(
                 bookings, ticketService, tickets, favourites, interactions, metrics, notifications, preferences);
-        seeder = new DemoDataSeeder(users, events, passwordEncoder, engagement);
+        storage = new InMemoryMediaStorage();
+        seeder = new DemoDataSeeder(users, events, mediaAssets, passwordEncoder, engagement, storage);
     }
 
     @Test
@@ -112,6 +122,7 @@ class DemoSeedTest {
         // Assert
         verify(users, never()).save(any());
         verify(events, never()).save(any());
+        verify(mediaAssets, never()).save(any());
         verify(bookings, never()).save(any());
     }
 
@@ -182,6 +193,58 @@ class DemoSeedTest {
                         .filter(user -> "ORGANISER".equals(user.getRole()))
                         .map(User::getId)
                         .toList());
+    }
+
+    @Test
+    void everyEventIsWiredToItsCoverAssetInCatalogueOrder() {
+        // Act
+        seeder.seed();
+
+        // Assert：封面资产行按 EVENTS 顺序落库，活动按下标引用自己的那张图。
+        List<MediaAsset> covers = captureMediaAssets();
+        assertThat(covers).hasSize(DemoCatalog.COVERS.size());
+        assertThat(covers).extracting(MediaAsset::getStorageKey)
+                .containsExactlyElementsOf(DemoCatalog.COVERS.stream().map(DemoCatalog.CoverSpec::storageKey).toList());
+        assertThat(covers).allSatisfy(asset -> {
+            assertThat(asset.getContentType()).isEqualTo("image/jpeg");
+            assertThat(asset.getStatus()).isEqualTo("ACTIVE");
+            assertThat(asset.getSizeBytes()).isPositive();
+            assertThat(asset.getOwnerId()).isNotNull();
+        });
+        // size_bytes 必须和对象存储里真实对象一致，读取时的 Content-Length 才对得上。
+        assertThat(covers).extracting(MediaAsset::getSizeBytes)
+                .containsExactlyElementsOf(DemoCatalog.COVERS.stream().map(DemoCatalog.CoverSpec::sizeBytes).toList());
+        // public_url 已从 key 占位回写成 id 地址，与 MediaService 的行为一致。
+        assertThat(covers).allSatisfy(asset ->
+                assertThat(asset.getPublicUrl()).isEqualTo("/api/media/images/" + asset.getId()));
+
+        List<Event> saved = captureEvents();
+        assertThat(saved).hasSize(DemoCatalog.COVERS.size());
+        for (int i = 0; i < saved.size(); i++) {
+            Event event = saved.get(i);
+            MediaAsset cover = covers.get(i);
+            assertThat(event.getCoverAssetId()).as("活动 %s 的 coverAssetId", event.getTitle()).isEqualTo(cover.getId());
+            assertThat(event.getCoverUrl()).isEqualTo("/api/media/images/" + cover.getId());
+            assertThat(cover.getOwnerId()).isEqualTo(event.getOrganiserId());
+        }
+    }
+
+    @Test
+    void coversPointStraightAtObjectStorageWhenAPublicBaseUrlIsConfigured() {
+        // Arrange
+        storage.publicBaseUrl = "https://s3.kaiwen.dev/eventpulse";
+
+        // Act
+        seeder.seed();
+
+        // Assert
+        List<MediaAsset> covers = captureMediaAssets();
+        assertThat(covers).allSatisfy(asset -> assertThat(asset.getPublicUrl())
+                .isEqualTo("https://s3.kaiwen.dev/eventpulse/" + asset.getStorageKey()));
+        List<Event> saved = captureEvents();
+        for (int i = 0; i < saved.size(); i++) {
+            assertThat(saved.get(i).getCoverUrl()).isEqualTo(covers.get(i).getPublicUrl());
+        }
     }
 
     @Test
@@ -391,6 +454,12 @@ class DemoSeedTest {
     private List<Event> captureEvents() {
         ArgumentCaptor<Event> captor = ArgumentCaptor.forClass(Event.class);
         verify(events, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
+        return captor.getAllValues();
+    }
+
+    private List<MediaAsset> captureMediaAssets() {
+        ArgumentCaptor<MediaAsset> captor = ArgumentCaptor.forClass(MediaAsset.class);
+        verify(mediaAssets, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
         return captor.getAllValues();
     }
 

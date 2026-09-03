@@ -1,5 +1,7 @@
 package dev.kaiwen.eventpulse.exception;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -23,6 +25,8 @@ import dev.kaiwen.eventpulse.service.AiUnavailableException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> handleBusiness(BusinessException ex) {
         return json(ex.getStatus(), ex.getMessage());
@@ -44,6 +48,17 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(AiUnavailableException.class)
     public ResponseEntity<Result<Void>> handleAiUnavailable(AiUnavailableException ex) {
+        return json(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
+    /**
+     * S3 等对象存储不可达 / 凭证错误 / 服务端错误：预期之外的服务状态，返回
+     * 503 让重试语义正确。SDK 异常细节（含 cause）只进服务端日志，不进响应——
+     * 异常消息里可能带 endpoint / bucket / 错误码，但不包含凭证本身。
+     */
+    @ExceptionHandler(StorageUnavailableException.class)
+    public ResponseEntity<Result<Void>> handleStorageUnavailable(StorageUnavailableException ex) {
+        log.warn("Object storage unavailable: {}", ex.getMessage(), ex.getCause());
         return json(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
     }
 

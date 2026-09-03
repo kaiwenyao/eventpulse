@@ -44,8 +44,14 @@ class WorkerProfileWiringIT {
         assertThat(ctx.containsBean("bookingEventsTopic")).isTrue();
         assertThat(ctx.containsBean("bookingEventsDltTopic")).isTrue();
         assertThat(ctx.containsBean("sseReminderPublisher")).isTrue();
+        // 软删除图片的 S3 对象清理任务也只在 worker 上跑。
+        assertThat(ctx.containsBean("mediaPurgeWorker")).isTrue();
         // Actuator 健康检查端口保留。
         assertThat(ctx.containsBean("healthEndpoint")).isTrue();
+        // 默认 s3.enabled=false：worker 带着本地磁盘 MediaStorage 也能完整启动，
+        // api 的 S3 配置不会把它拖起来（清理任务只对已配置的存储生效）。
+        assertThat(ctx.containsBean("localMediaStorage")).isTrue();
+        assertThat(ctx.containsBean("s3Client")).isFalse();
     }
 
     @Test

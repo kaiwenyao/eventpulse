@@ -25,3 +25,14 @@ data:
   AI_ENABLED: "true"
   # Agent 多轮调用总耗时可能远超单次 HTTP 请求，读超时放长。
   AI_READ_TIMEOUT: "90000"
+  # 图片对象存储（SeaweedFS 等 S3 兼容服务）。多副本部署必须启用；
+  # 凭证 S3_ACCESS_KEY / S3_SECRET_KEY 在 Secret 中，不在这里。
+  S3_ENABLED: "true"
+  S3_ENDPOINT: "https://s3.kaiwen.dev"
+  S3_REGION: "us-east-1"
+  S3_BUCKET: "eventpulse"
+  # SeaweedFS 走 path-style（https://endpoint/bucket/key）。
+  S3_PATH_STYLE: "true"
+  # 浏览器直连基址：bucket policy 已授予匿名 s3:GetObject（仅对象级）。
+  # 留空则回落到 /api/media/images/{id} 代理。
+  S3_PUBLIC_BASE_URL: "https://s3.kaiwen.dev/eventpulse"
