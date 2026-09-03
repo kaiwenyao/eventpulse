@@ -113,6 +113,10 @@ spec:
                     changeset pattern: 'frontend/**'
                     changeset pattern: 'deploy/frontend/**'
                     triggeredBy 'UserIdCause'
+                    // A branch job's first build has no previous build to diff against,
+                    // so Jenkins records an empty changeset and the patterns above never
+                    // match; run CI on that build instead of silently skipping it.
+                    expression { currentBuild.previousBuild == null }
                 }
             }
             stages {
