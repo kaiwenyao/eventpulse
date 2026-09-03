@@ -33,3 +33,6 @@ data:
   S3_BUCKET: "eventpulse"
   # SeaweedFS 走 path-style（https://endpoint/bucket/key）。
   S3_PATH_STYLE: "true"
+  # 浏览器直连基址：bucket policy 已授予匿名 s3:GetObject（仅对象级）。
+  # 留空则回落到 /api/media/images/{id} 代理。
+  S3_PUBLIC_BASE_URL: "https://s3.kaiwen.dev/eventpulse"

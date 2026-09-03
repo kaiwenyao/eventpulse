@@ -56,7 +56,7 @@ public class S3StorageConfig {
 
     @Bean
     public MediaStorage s3MediaStorage(S3Client s3Client, AppProperties properties) {
-        return new S3MediaStorage(s3Client, properties.getS3().getBucket());
+        return new S3MediaStorage(s3Client, properties.getS3().getBucket(), properties.getS3().getPublicBaseUrl());
     }
 
     private static boolean isBlank(String value) {

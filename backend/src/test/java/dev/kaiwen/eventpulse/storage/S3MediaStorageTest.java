@@ -34,7 +34,34 @@ class S3MediaStorageTest {
     @BeforeEach
     void setUp() {
         s3 = mock(S3Client.class);
-        storage = new S3MediaStorage(s3, "eventpulse");
+        storage = new S3MediaStorage(s3, "eventpulse", "https://s3.kaiwen.dev/eventpulse");
+    }
+
+    @Test
+    void publicUrlJoinsBaseUrlAndKey() {
+        assertThat(storage.publicUrl("seed/demo-covers/01.jpeg"))
+                .contains("https://s3.kaiwen.dev/eventpulse/seed/demo-covers/01.jpeg");
+    }
+
+    @Test
+    void publicUrlIgnoresTrailingSlashOnBaseUrl() {
+        S3MediaStorage trailing = new S3MediaStorage(s3, "eventpulse", "https://s3.kaiwen.dev/eventpulse/");
+        assertThat(trailing.publicUrl("a/b.jpg")).contains("https://s3.kaiwen.dev/eventpulse/a/b.jpg");
+    }
+
+    @Test
+    void publicUrlEmptyWhenBaseUrlNotConfigured() {
+        // 未配公开基址（bucket 仍是私有的）：调用方必须回落到代理路径，
+        // 绝不能拼出一个匿名访问会 403 的地址。
+        assertThat(new S3MediaStorage(s3, "eventpulse", "").publicUrl("a/b.jpg")).isEmpty();
+        assertThat(new S3MediaStorage(s3, "eventpulse", null).publicUrl("a/b.jpg")).isEmpty();
+    }
+
+    @Test
+    void putSetsImmutableCacheControl() {
+        // key 含 UUID，内容永不变更：可长期缓存，浏览器/CDN 不必回源。
+        storage.put("a/b.jpg", new byte[] {1}, "image/jpeg");
+        assertThat(capturePut().cacheControl()).isEqualTo("public, max-age=31536000, immutable");
     }
 
     @Test

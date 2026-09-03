@@ -201,8 +201,7 @@ python3 -m unittest discover -s scripts/tests -v
 
 图片（活动封面等）存在自建 SeaweedFS 的 S3 兼容接口上，不落在 api Pod 的本地
 磁盘：两个 api 副本读写同一份对象，前端不用改。业务语义全部保留——上传仍要
-登录、限 2MB、仅 JPEG/PNG/WebP；`/api/media/images/{id}` 仍是图片的唯一入口
-（后端校验数据库状态后从 S3 读内容回传），上传响应结构不变。对象 key 由后端
+登录、限 2MB、仅 JPEG/PNG/WebP，上传响应结构不变。对象 key 由后端
 生成（UUID 前缀），Content-Type 随对象保存；上传成功但数据库保存失败会补偿
 删除刚上传的对象；S3 不可达 / 凭证错误映射为 503（读取与上传），对象缺失
 404，不会把存储故障说成请求错误。
@@ -222,7 +221,49 @@ python3 -m unittest discover -s scripts/tests -v
 | `S3_BUCKET` | `eventpulse` | 必须已存在；应用不创建 bucket、不改公开权限 |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | 空 | 专属身份的凭证，走环境变量 / K8s Secret，不入 git |
 | `S3_PATH_STYLE` | `true` | SeaweedFS 用 path-style（`https://endpoint/bucket/key`） |
+| `S3_PUBLIC_BASE_URL` | 空 | 浏览器直连基址（见下）；留空则图片走 `/api/media/images/{id}` 代理 |
 | `S3_CONNECT_TIMEOUT` / `S3_READ_TIMEOUT` / `S3_API_CALL_TIMEOUT` | 2000 / 10000 / 30000 | 毫秒 |
+
+### 图片的取址方式
+
+后端在 `public_url` 字段里下发图片地址，**前端把它当不透明字符串直接用**，不要
+自己拼 endpoint 和 key——换 CDN、换 bucket、或某类资产改走预签名时才不用动前端。
+
+配了 `S3_PUBLIC_BASE_URL` 就是**公开直连**：`public_url` 指向对象存储，图片字节
+不经过 api 进程，浏览器与 CDN 可长期缓存（对象上带
+`Cache-Control: public, max-age=31536000, immutable`，key 含 UUID 内容不变）。
+地址由 key 拼出，是纯字符串操作，不发起任何存储请求。
+
+留空则回落到 `/api/media/images/{id}` **代理**：后端校验数据库状态后从存储读
+内容回传。本地磁盘模式（`S3_ENABLED=false`）永远走这条路。两条路都保留，
+`MediaController` 的 GET 端点不会下线。
+
+直连要求 bucket 已授予匿名读，**应用不检查也不修改这个权限**。SeaweedFS 侧加
+bucket policy（只给对象级 `s3:GetObject`）：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadObjects",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": ["s3:GetObject"],
+      "Resource": ["arn:aws:s3:::eventpulse/*"]
+    }
+  ]
+}
+```
+
+`Resource` 结尾的 `/*` 是对象级，不能写成 bucket 本身；`Action` 不要加
+`s3:ListBucket`——用户上传的 key 带 UUID 不可枚举，列举权一旦开出去这层保护就
+没了（也会暴露软删除宽限期内尚未清理的对象）。改完用不带凭证的请求核实：
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://s3.kaiwen.dev/eventpulse/seed/demo-covers/01.jpeg   # 期望 200
+curl -s -o /dev/null -w "%{http_code}\n" https://s3.kaiwen.dev/eventpulse/                            # 期望 403
+```
 
 清理任务（worker 执行）：`MEDIA_PURGE_ENABLED`（默认 true）、
 `MEDIA_PURGE_AFTER_DAYS`（宽限期天数，默认 7）、`MEDIA_PURGE_BATCH_SIZE`（50）、

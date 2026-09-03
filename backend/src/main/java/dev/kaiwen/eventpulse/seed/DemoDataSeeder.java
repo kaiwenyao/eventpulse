@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -19,6 +20,7 @@ import dev.kaiwen.eventpulse.repository.MediaAssetRepository;
 import dev.kaiwen.eventpulse.repository.UserRepository;
 import dev.kaiwen.eventpulse.seed.DemoCatalog.EventSpec;
 import dev.kaiwen.eventpulse.seed.DemoCatalog.UserSpec;
+import dev.kaiwen.eventpulse.storage.MediaStorage;
 
 /**
  * 播种一整套可以直接点的演示数据：账号、活动、订单、电子票、收藏、行为流水、
@@ -40,18 +42,21 @@ public class DemoDataSeeder {
     private final MediaAssetRepository mediaAssets;
     private final PasswordEncoder passwordEncoder;
     private final DemoEngagementSeeder engagement;
+    private final MediaStorage storage;
 
     public DemoDataSeeder(
             UserRepository users,
             EventRepository events,
             MediaAssetRepository mediaAssets,
             PasswordEncoder passwordEncoder,
-            DemoEngagementSeeder engagement) {
+            DemoEngagementSeeder engagement,
+            MediaStorage storage) {
         this.users = users;
         this.events = events;
         this.mediaAssets = mediaAssets;
         this.passwordEncoder = passwordEncoder;
         this.engagement = engagement;
+        this.storage = storage;
     }
 
     /** 幂等：主演示账号已存在时不再写入。 */
@@ -100,17 +105,21 @@ public class DemoDataSeeder {
      * （见 {@link DemoCatalog#COVERS}），这里只写数据库行，不做任何对象存储 IO。
      */
     private MediaAsset seedCover(EventSpec spec, DemoCatalog.CoverSpec coverSpec, Map<String, User> byEmail) {
+        // 与 MediaService.upload 同一套取址规则：有公开基址就直连，否则代理回落。
+        Optional<String> directUrl = storage.publicUrl(coverSpec.storageKey());
         MediaAsset asset = new MediaAsset();
         asset.setOwnerId(organiserId(spec, byEmail));
         asset.setStorageKey(coverSpec.storageKey());
-        // public_url 非空约束：与 MediaService 一致，先写 key 拼的占位，拿到
-        // 自增 id 后在同一事务里回写成正式地址（脏检查提交 UPDATE）。
-        asset.setPublicUrl("/api/media/images/" + coverSpec.storageKey());
+        asset.setPublicUrl(directUrl.orElse("/api/media/images/" + coverSpec.storageKey()));
         asset.setContentType("image/jpeg");
         asset.setSizeBytes(coverSpec.sizeBytes());
         asset.setStatus("ACTIVE");
         mediaAssets.save(asset);
-        asset.setPublicUrl("/api/media/images/" + asset.getId());
+        if (directUrl.isEmpty()) {
+            // public_url 非空约束逼着先写 key 拼的占位，拿到自增 id 后在同一
+            // 事务里回写成正式地址（脏检查提交 UPDATE）。
+            asset.setPublicUrl("/api/media/images/" + asset.getId());
+        }
         return asset;
     }
 

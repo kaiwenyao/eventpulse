@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.Optional;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
 
@@ -18,6 +19,14 @@ public class LocalStorageMediaStorage implements MediaStorage {
 
     public LocalStorageMediaStorage(AppProperties properties) {
         this.properties = properties;
+    }
+
+    /**
+     * 本地磁盘没有匿名可读地址：始终 empty，调用方走 /api/media/images/{id} 代理。
+     */
+    @Override
+    public Optional<String> publicUrl(String key) {
+        return Optional.empty();
     }
 
     @Override

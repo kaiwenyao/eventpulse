@@ -2,6 +2,7 @@ package dev.kaiwen.eventpulse.storage;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 测试用内存 MediaStorage：记录 put/delete 结果，可按操作注入「存储不可用」
@@ -12,11 +13,19 @@ public class InMemoryMediaStorage implements MediaStorage {
     public final Map<String, byte[]> objects = new HashMap<>();
     public final Map<String, String> contentTypes = new HashMap<>();
 
+    /** 非 null 时 publicUrl 返回 base + "/" + key，模拟已配公开基址的 S3。 */
+    public String publicBaseUrl;
+
     public boolean failOnPut;
     public boolean failOnGet;
     public boolean failOnDelete;
     /** 只对这些 key 注入删除失败，其余照常成功（模拟部分对象删除失败）。 */
     public final java.util.Set<String> failDeleteKeys = new java.util.HashSet<>();
+
+    @Override
+    public Optional<String> publicUrl(String key) {
+        return publicBaseUrl == null ? Optional.empty() : Optional.of(publicBaseUrl + "/" + key);
+    }
 
     @Override
     public void put(String key, byte[] bytes, String contentType) {

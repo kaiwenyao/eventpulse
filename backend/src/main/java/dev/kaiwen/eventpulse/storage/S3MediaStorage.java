@@ -1,5 +1,7 @@
 package dev.kaiwen.eventpulse.storage;
 
+import java.util.Optional;
+
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -17,12 +19,35 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  */
 public class S3MediaStorage implements MediaStorage {
 
+    /**
+     * key 含 UUID、内容永不变更，所以对象可被浏览器与 CDN 长期缓存。
+     * 写在对象上（而非响应头），直连读取时才带得上。
+     */
+    private static final String IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
     private final S3Client s3;
     private final String bucket;
+    private final String publicBaseUrl;
 
-    public S3MediaStorage(S3Client s3, String bucket) {
+    public S3MediaStorage(S3Client s3, String bucket, String publicBaseUrl) {
         this.s3 = s3;
         this.bucket = bucket;
+        this.publicBaseUrl = publicBaseUrl;
+    }
+
+    /**
+     * 匿名可读的直连地址。未配置 public-base-url 时返回 empty——此时 bucket 仍是
+     * 私有的，拼出来的地址匿名访问只会 403，宁可让调用方回落到代理。
+     */
+    @Override
+    public Optional<String> publicUrl(String key) {
+        if (publicBaseUrl == null || publicBaseUrl.isBlank()) {
+            return Optional.empty();
+        }
+        String base = publicBaseUrl.endsWith("/")
+                ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1)
+                : publicBaseUrl;
+        return Optional.of(base + "/" + key);
     }
 
     @Override
@@ -32,6 +57,7 @@ public class S3MediaStorage implements MediaStorage {
                             .bucket(bucket)
                             .key(key)
                             .contentType(contentType)
+                            .cacheControl(IMMUTABLE_CACHE_CONTROL)
                             .build(),
                     RequestBody.fromBytes(bytes));
         }

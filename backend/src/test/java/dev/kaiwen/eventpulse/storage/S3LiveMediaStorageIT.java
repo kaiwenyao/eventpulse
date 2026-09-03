@@ -62,7 +62,8 @@ class S3LiveMediaStorageIT {
                         .apiCallAttemptTimeout(Duration.ofSeconds(15))
                         .build())
                 .build();
-        storage = new S3MediaStorage(s3, bucket);
+        // 实弹 IT 只验证对象读写删，公开基址与之无关（publicUrl 是纯拼接，不发请求）。
+        storage = new S3MediaStorage(s3, bucket, null);
     }
 
     @AfterAll

@@ -97,6 +97,10 @@ eventpulse:
     secret-key: ${S3_SECRET_KEY:}
     # SeaweedFS 走 path-style（https://endpoint/bucket/key）。
     path-style: ${S3_PATH_STYLE:true}
+    # 图片的浏览器直连基址，例如 https://s3.kaiwen.dev/eventpulse。仅当 bucket
+    # 已授予匿名 s3:GetObject（对象级，不含 ListBucket）时才配；留空则图片继续
+    # 走 /api/media/images/{id} 代理。应用不检查也不修改这个权限。
+    public-base-url: ${S3_PUBLIC_BASE_URL:}
     connect-timeout-ms: ${S3_CONNECT_TIMEOUT:2000}
     read-timeout-ms: ${S3_READ_TIMEOUT:10000}
     api-call-timeout-ms: ${S3_API_CALL_TIMEOUT:30000}

@@ -171,6 +171,12 @@ public class AppProperties {
         private String region = "us-east-1";
         /** 启动/运行时不会创建 bucket，必须已存在。 */
         private String bucket = "eventpulse";
+        /**
+         * 图片的浏览器直连基址，例如 https://s3.kaiwen.dev/eventpulse。
+         * 只有 bucket 已授予匿名 GetObject 时才配；留空则图片继续走
+         * /api/media/images/{id} 代理（字节经过 api）。应用不改这个权限。
+         */
+        private String publicBaseUrl = "";
         private String accessKey = "";
         private String secretKey = "";
         /** SeaweedFS 走 path-style（https://endpoint/bucket/key），不开虚拟主机域名。 */
@@ -210,6 +216,14 @@ public class AppProperties {
 
         public void setBucket(String bucket) {
             this.bucket = bucket;
+        }
+
+        public String getPublicBaseUrl() {
+            return publicBaseUrl;
+        }
+
+        public void setPublicBaseUrl(String publicBaseUrl) {
+            this.publicBaseUrl = publicBaseUrl;
         }
 
         public String getAccessKey() {

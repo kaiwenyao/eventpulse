@@ -53,6 +53,22 @@ class MediaServiceTest {
     }
 
     @Test
+    void uploadStoresDirectPublicUrlWhenStorageHasOne() {
+        // 公开直连：public_url 指向对象存储，图片字节不再经过 api。
+        storage.publicBaseUrl = "https://s3.kaiwen.dev/eventpulse";
+        MediaAsset asset = media.upload("cover.png", "image/png", new byte[] {1});
+        String key = storage.objects.keySet().iterator().next();
+        assertThat(asset.getPublicUrl()).isEqualTo("https://s3.kaiwen.dev/eventpulse/" + key);
+    }
+
+    @Test
+    void uploadFallsBackToProxyUrlWhenStorageHasNoPublicUrl() {
+        // 本地磁盘 / 未配公开基址：仍旧下发代理路径，按自增 id 寻址。
+        MediaAsset asset = media.upload("cover.png", "image/png", new byte[] {1});
+        assertThat(asset.getPublicUrl()).isEqualTo("/api/media/images/42");
+    }
+
+    @Test
     void uploadValidatesLoginSizeAndType() {
         BaseContext.clear();
         assertThatThrownBy(() -> media.upload("a.png", "image/png", new byte[] {1}))

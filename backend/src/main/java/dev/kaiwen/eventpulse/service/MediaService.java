@@ -1,5 +1,6 @@
 package dev.kaiwen.eventpulse.service;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -58,10 +59,12 @@ public class MediaService {
         catch (StorageException e) {
             throw new StorageUnavailableException("Image storage is temporarily unavailable", e);
         }
+        // 直连地址在 key 生成时就确定，不依赖自增 id；只有代理回落才需要等 id。
+        Optional<String> directUrl = storage.publicUrl(key);
         MediaAsset asset = new MediaAsset();
         asset.setOwnerId(ownerId);
         asset.setStorageKey(key);
-        asset.setPublicUrl("/api/media/images/" + key);
+        asset.setPublicUrl(directUrl.orElse("/api/media/images/" + key));
         asset.setContentType(type);
         asset.setSizeBytes(bytes.length);
         asset.setStatus("ACTIVE");
@@ -76,7 +79,11 @@ public class MediaService {
             deleteQuietly(key);
             throw e;
         }
-        asset.setPublicUrl("/api/media/images/" + asset.getId());
+        if (directUrl.isEmpty()) {
+            // 代理回落：public_url 非空约束逼着先写 key 拼的占位，
+            // 拿到自增 id 后在同一事务里回写成正式地址（脏检查提交 UPDATE）。
+            asset.setPublicUrl("/api/media/images/" + asset.getId());
+        }
         return asset;
     }
 

@@ -34,6 +34,7 @@ import dev.kaiwen.eventpulse.entity.EventDailyMetric;
 import dev.kaiwen.eventpulse.entity.EventFavourite;
 import dev.kaiwen.eventpulse.entity.Interaction;
 import dev.kaiwen.eventpulse.entity.MediaAsset;
+import dev.kaiwen.eventpulse.storage.InMemoryMediaStorage;
 import dev.kaiwen.eventpulse.entity.Notification;
 import dev.kaiwen.eventpulse.entity.Ticket;
 import dev.kaiwen.eventpulse.entity.User;
@@ -86,6 +87,8 @@ class DemoSeedTest {
     @Mock
     UserPreferenceRepository preferences;
 
+    private InMemoryMediaStorage storage;
+
     private DemoDataSeeder seeder;
 
     @BeforeEach
@@ -104,7 +107,8 @@ class DemoSeedTest {
 
         DemoEngagementSeeder engagement = new DemoEngagementSeeder(
                 bookings, ticketService, tickets, favourites, interactions, metrics, notifications, preferences);
-        seeder = new DemoDataSeeder(users, events, mediaAssets, passwordEncoder, engagement);
+        storage = new InMemoryMediaStorage();
+        seeder = new DemoDataSeeder(users, events, mediaAssets, passwordEncoder, engagement, storage);
     }
 
     @Test
@@ -222,6 +226,24 @@ class DemoSeedTest {
             assertThat(event.getCoverAssetId()).as("活动 %s 的 coverAssetId", event.getTitle()).isEqualTo(cover.getId());
             assertThat(event.getCoverUrl()).isEqualTo("/api/media/images/" + cover.getId());
             assertThat(cover.getOwnerId()).isEqualTo(event.getOrganiserId());
+        }
+    }
+
+    @Test
+    void coversPointStraightAtObjectStorageWhenAPublicBaseUrlIsConfigured() {
+        // Arrange
+        storage.publicBaseUrl = "https://s3.kaiwen.dev/eventpulse";
+
+        // Act
+        seeder.seed();
+
+        // Assert
+        List<MediaAsset> covers = captureMediaAssets();
+        assertThat(covers).allSatisfy(asset -> assertThat(asset.getPublicUrl())
+                .isEqualTo("https://s3.kaiwen.dev/eventpulse/" + asset.getStorageKey()));
+        List<Event> saved = captureEvents();
+        for (int i = 0; i < saved.size(); i++) {
+            assertThat(saved.get(i).getCoverUrl()).isEqualTo(covers.get(i).getPublicUrl());
         }
     }
 
