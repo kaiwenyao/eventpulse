@@ -21,6 +21,10 @@
     <java.version>21</java.version>
     <jjwt.version>0.12.6</jjwt.version>
     <testcontainers.version>2.0.5</testcontainers.version>
+    <!-- 不生成 CycloneDX SBOM：starter-parent 会往 generate-resources 注入
+         makeAggregateBom（每次 mvn 都要重解析一遍依赖图），且本项目没有
+         消费方——镜像用普通 COPY jar 的 Dockerfile，SBOM 也无归档方。 -->
+    <cyclonedx.skip>true</cyclonedx.skip>
   </properties>
 
   <dependencyManagement>
@@ -169,23 +173,6 @@
                   </limits>
                 </rule>
               </rules>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.cyclonedx</groupId>
-        <artifactId>cyclonedx-maven-plugin</artifactId>
-        <version>2.9.2</version>
-        <executions>
-          <execution>
-            <id>sbom</id>
-            <phase>verify</phase>
-            <goals><goal>makeBom</goal></goals>
-            <configuration>
-              <schemaVersion>1.6</schemaVersion>
-              <includeCompileScope>true</includeCompileScope>
-              <includeProvidedScope>true</includeProvidedScope>
             </configuration>
           </execution>
         </executions>

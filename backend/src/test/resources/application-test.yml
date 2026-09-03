@@ -9,3 +9,7 @@ spring:
 eventpulse:
   secret-key: test-secret-key-change-me-0123456789ab
   token-ttl-ms: 3600000
+
+logging:
+  level:
+    org.hibernate.SQL: WARN

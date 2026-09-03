@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +63,23 @@ class WorkerBackgroundTasksIT {
     EventRepository events;
     @Autowired
     UserRepository users;
+
+    @BeforeEach
+    void cleanOutbox() {
+        // 各测试共用一个 Postgres：别的 IT（如 BookingCancelTicketIT 的 api Profile 上下文
+        // 没有 relay 消费）留下的 pending 行 id 更小，会被本类的 claimBatch 先领走；
+        // 第一条发送失败就 break 本轮，我们的行还没轮到处理就被 releaseAllClaims
+        // 统一释放，publish_attempts 断言会变成 0（Jenkins PR-15 #2 的失败形态）。
+        // 每个测试先清空 outbox，保证 claimBatch 只见本测试自己写的行。
+        outbox.deleteAll();
+    }
+
+    @AfterEach
+    void cleanOutboxAgain() {
+        // relayFailurePathKeepsMessagePending 的行按语义保持 pending，测完清掉，
+        // 不给同 JVM 里排在后面的测试留串扰源。
+        outbox.deleteAll();
+    }
 
     @Test
     void lifecycleConditionalUpdatesAdvanceStatuses() {

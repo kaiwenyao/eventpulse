@@ -58,6 +58,7 @@ import dev.kaiwen.eventpulse.entity.User;
 import dev.kaiwen.eventpulse.exception.BusinessException;
 import dev.kaiwen.eventpulse.exception.GlobalExceptionHandler;
 import dev.kaiwen.eventpulse.interceptor.JwtInterceptor;
+import dev.kaiwen.eventpulse.interceptor.RequestLoggingInterceptor;
 import dev.kaiwen.eventpulse.kafka.BookingConsumer;
 import dev.kaiwen.eventpulse.outbox.OutboxWriter;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
@@ -581,6 +582,7 @@ class UnitTest {
 
         AppProperties props = new AppProperties();
         WebMvcConfig web = new WebMvcConfig(new JwtInterceptor(new JwtService(props)),
+                new RequestLoggingInterceptor(),
                 new dev.kaiwen.eventpulse.interceptor.InternalServiceInterceptor(props, new JwtService(props)), props);
         web.addInterceptors(new org.springframework.web.servlet.config.annotation.InterceptorRegistry());
         web.addCorsMappings(new org.springframework.web.servlet.config.annotation.CorsRegistry());

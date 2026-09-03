@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -41,6 +42,11 @@ import dev.kaiwen.eventpulse.repository.UserRepository;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = "spring.profiles.active=worker")
 @Testcontainers(disabledWithoutDocker = true)
+// 本上下文自带「每秒一轮的 relay」和「自启动的 Kafka listener」。类测完后上下文会留在
+// JVM 级缓存里，relay 继续对着共享的 SharedPostgres 抢领 pending 消息（此时 Kafka 容器
+// 已停，发送必然失败再释放），把 WorkerBackgroundTasksIT 这类直接断言 outbox 行状态的
+// 测试搅成概率性失败。类结束即关闭上下文，调度器和 listener 一并停下。
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class KafkaOutboxE2EIT {
 
     @Container

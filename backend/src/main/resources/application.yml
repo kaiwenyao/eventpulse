@@ -51,6 +51,16 @@ server:
   port: 8080
   shutdown: graceful
 
+# 过程日志走 SLF4J：HTTP 拦截器打请求，Hibernate 打 SQL 语句。
+# 控制台带 requestId，方便把一次请求和它触发的 SQL 对上。
+# 不默认打开 jdbc.bind TRACE：绑定值会把邮箱等写进日志。
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%X{requestId:-}] [%15.15t] %-40.40logger{39} : %m%n%wEx"
+  level:
+    # SQL 过程日志默认开；生产嫌吵可用 SQL_LOG_LEVEL=WARN 压掉。
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:DEBUG}
+
 management:
   endpoints:
     web:
