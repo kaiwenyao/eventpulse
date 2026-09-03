@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 import dev.kaiwen.eventpulse.common.Result;
 import dev.kaiwen.eventpulse.entity.MediaAsset;
 import dev.kaiwen.eventpulse.exception.BusinessException;
+import dev.kaiwen.eventpulse.exception.StorageUnavailableException;
 import dev.kaiwen.eventpulse.service.MediaService;
 
 @RestController
@@ -33,10 +34,12 @@ public class MediaController {
         try {
             return Result.success(media.upload(file.getOriginalFilename(), file.getContentType(), file.getBytes()));
         }
+        catch (BusinessException | StorageUnavailableException e) {
+            // 业务校验失败 / 对象存储不可用：保留真实状态码与文案，
+            // 不把 503 归并成 400。
+            throw e;
+        }
         catch (Exception e) {
-            if (e instanceof BusinessException business) {
-                throw business;
-            }
             throw new BusinessException("Upload failed");
         }
     }

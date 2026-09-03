@@ -12,8 +12,10 @@ import org.springframework.stereotype.Component;
 
 import dev.kaiwen.eventpulse.domain.EventStatus;
 import dev.kaiwen.eventpulse.entity.Event;
+import dev.kaiwen.eventpulse.entity.MediaAsset;
 import dev.kaiwen.eventpulse.entity.User;
 import dev.kaiwen.eventpulse.repository.EventRepository;
+import dev.kaiwen.eventpulse.repository.MediaAssetRepository;
 import dev.kaiwen.eventpulse.repository.UserRepository;
 import dev.kaiwen.eventpulse.seed.DemoCatalog.EventSpec;
 import dev.kaiwen.eventpulse.seed.DemoCatalog.UserSpec;
@@ -35,16 +37,19 @@ public class DemoDataSeeder {
 
     private final UserRepository users;
     private final EventRepository events;
+    private final MediaAssetRepository mediaAssets;
     private final PasswordEncoder passwordEncoder;
     private final DemoEngagementSeeder engagement;
 
     public DemoDataSeeder(
             UserRepository users,
             EventRepository events,
+            MediaAssetRepository mediaAssets,
             PasswordEncoder passwordEncoder,
             DemoEngagementSeeder engagement) {
         this.users = users;
         this.events = events;
+        this.mediaAssets = mediaAssets;
         this.passwordEncoder = passwordEncoder;
         this.engagement = engagement;
     }
@@ -79,9 +84,34 @@ public class DemoDataSeeder {
     private List<Event> seedEvents(Map<String, User> byEmail, Instant now) {
         List<Event> seeded = new ArrayList<>();
         for (int i = 0; i < DemoCatalog.EVENTS.size(); i++) {
-            seeded.add(events.save(toEvent(DemoCatalog.EVENTS.get(i), DemoCatalog.soldFor(i), byEmail, now)));
+            EventSpec spec = DemoCatalog.EVENTS.get(i);
+            // 封面资产先落库拿到 id，事件才能引用它（外键顺序）。
+            MediaAsset cover = seedCover(spec, DemoCatalog.COVERS.get(i), byEmail);
+            Event event = toEvent(spec, DemoCatalog.soldFor(i), byEmail, now);
+            event.setCoverAssetId(cover.getId());
+            event.setCoverUrl(cover.getPublicUrl());
+            seeded.add(events.save(event));
         }
         return seeded;
+    }
+
+    /**
+     * 封面资产：owner 记为活动主办方，storage_key 指向预上传的对象存储对象
+     * （见 {@link DemoCatalog#COVERS}），这里只写数据库行，不做任何对象存储 IO。
+     */
+    private MediaAsset seedCover(EventSpec spec, DemoCatalog.CoverSpec coverSpec, Map<String, User> byEmail) {
+        MediaAsset asset = new MediaAsset();
+        asset.setOwnerId(organiserId(spec, byEmail));
+        asset.setStorageKey(coverSpec.storageKey());
+        // public_url 非空约束：与 MediaService 一致，先写 key 拼的占位，拿到
+        // 自增 id 后在同一事务里回写成正式地址（脏检查提交 UPDATE）。
+        asset.setPublicUrl("/api/media/images/" + coverSpec.storageKey());
+        asset.setContentType("image/jpeg");
+        asset.setSizeBytes(coverSpec.sizeBytes());
+        asset.setStatus("ACTIVE");
+        mediaAssets.save(asset);
+        asset.setPublicUrl("/api/media/images/" + asset.getId());
+        return asset;
     }
 
     private static Event toEvent(EventSpec spec, int sold, Map<String, User> byEmail, Instant now) {

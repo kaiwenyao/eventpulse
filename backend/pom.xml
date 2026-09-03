@@ -21,6 +21,7 @@
     <java.version>21</java.version>
     <jjwt.version>0.12.6</jjwt.version>
     <testcontainers.version>2.0.5</testcontainers.version>
+    <awssdk.version>2.46.7</awssdk.version>
     <!-- 不生成 CycloneDX SBOM：starter-parent 会往 generate-resources 注入
          makeAggregateBom（每次 mvn 都要重解析一遍依赖图），且本项目没有
          消费方——镜像用普通 COPY jar 的 Dockerfile，SBOM 也无归档方。 -->
@@ -33,6 +34,13 @@
         <groupId>org.testcontainers</groupId>
         <artifactId>testcontainers-bom</artifactId>
         <version>${testcontainers.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${awssdk.version}</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -67,6 +75,17 @@
     <dependency>
       <groupId>org.springframework.security</groupId>
       <artifactId>spring-security-crypto</artifactId>
+    </dependency>
+
+    <!-- SeaweedFS S3 对象存储：只用 S3 模块 + 轻量 UrlConnection HTTP 客户端，
+         不引入整个 SDK 的全量模块。凭证由环境变量注入，见 AppProperties.S3。 -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>url-connection-client</artifactId>
     </dependency>
 
     <dependency>

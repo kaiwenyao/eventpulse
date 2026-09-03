@@ -36,6 +36,9 @@ class SeederProfileWiringIT {
         assertThat(ctx.containsBean("seederService")).isTrue();
         assertThat(ctx.containsBean("dataSeeder")).isTrue();
         assertThat(ctx.containsBean("demoDataSeeder")).isTrue();
+        // Seeder 不用图片，但共用镜像必须能带着同一个 MediaStorage Bean 启动，
+        // api 侧的 S3 配置变化不能让 seeder Job 起不来。
+        assertThat(ctx.containsBean("localMediaStorage")).isTrue();
     }
 
     @Test

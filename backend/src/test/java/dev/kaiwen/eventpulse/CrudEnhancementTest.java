@@ -73,6 +73,7 @@ import dev.kaiwen.eventpulse.sse.SseConnectionRegistry;
 import dev.kaiwen.eventpulse.sse.SseSubscriptionService;
 import dev.kaiwen.eventpulse.service.TicketCodes;
 import dev.kaiwen.eventpulse.service.TicketService;
+import dev.kaiwen.eventpulse.storage.LocalStorageMediaStorage;
 
 @ExtendWith(MockitoExtension.class)
 class CrudEnhancementTest {
@@ -382,7 +383,7 @@ class CrudEnhancementTest {
         AppProperties props = new AppProperties();
         props.setMediaDir(System.getProperty("java.io.tmpdir") + "/ep-media-" + System.nanoTime());
         MediaAssetRepository mediaRepo = org.mockito.Mockito.mock(MediaAssetRepository.class);
-        MediaService media = new MediaService(mediaRepo, props);
+        MediaService media = new MediaService(mediaRepo, new LocalStorageMediaStorage(props));
         BaseContext.setUserId(2L);
         when(mediaRepo.save(any())).thenAnswer(inv -> {
             MediaAsset asset = inv.getArgument(0);

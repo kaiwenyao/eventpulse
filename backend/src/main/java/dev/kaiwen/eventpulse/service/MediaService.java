@@ -1,32 +1,35 @@
 package dev.kaiwen.eventpulse.service;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Set;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import dev.kaiwen.eventpulse.common.AppProperties;
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.entity.MediaAsset;
 import dev.kaiwen.eventpulse.exception.BusinessException;
+import dev.kaiwen.eventpulse.exception.StorageUnavailableException;
 import dev.kaiwen.eventpulse.repository.MediaAssetRepository;
+import dev.kaiwen.eventpulse.storage.MediaStorage;
+import dev.kaiwen.eventpulse.storage.StorageException;
 
 @Service
 public class MediaService {
+
+    private static final Logger log = LoggerFactory.getLogger(MediaService.class);
 
     private static final Set<String> ALLOWED = Set.of("image/jpeg", "image/png", "image/webp");
     private static final long MAX_BYTES = 2 * 1024 * 1024;
 
     private final MediaAssetRepository assets;
-    private final AppProperties properties;
+    private final MediaStorage storage;
 
-    public MediaService(MediaAssetRepository assets, AppProperties properties) {
+    public MediaService(MediaAssetRepository assets, MediaStorage storage) {
         this.assets = assets;
-        this.properties = properties;
+        this.storage = storage;
     }
 
     @Transactional
@@ -46,14 +49,14 @@ public class MediaService {
             throw new BusinessException("Only JPEG, PNG, or WebP is supported");
         }
         String ext = type.endsWith("png") ? "png" : type.endsWith("webp") ? "webp" : "jpg";
+        // 对象 key 由后端生成：UUID 保证唯一，用户文件名只作清洗后的可读后缀，
+        // 绝不直接用原始文件名当对象路径。
         String key = UUID.randomUUID() + "-" + safeName(filename) + "." + ext;
-        Path dest = Path.of(properties.getMediaDir(), key);
         try {
-            Files.createDirectories(dest.getParent());
-            Files.write(dest, bytes);
+            storage.put(key, bytes, type);
         }
-        catch (IOException e) {
-            throw new IllegalStateException("Unable to save image", e);
+        catch (StorageException e) {
+            throw new StorageUnavailableException("Image storage is temporarily unavailable", e);
         }
         MediaAsset asset = new MediaAsset();
         asset.setOwnerId(ownerId);
@@ -62,7 +65,17 @@ public class MediaService {
         asset.setContentType(type);
         asset.setSizeBytes(bytes.length);
         asset.setStatus("ACTIVE");
-        assets.save(asset);
+        try {
+            assets.save(asset);
+        }
+        catch (RuntimeException e) {
+            // 数据库保存失败不能指望事务回滚 S3：这里补偿删除刚上传的对象。
+            // key 是本次新生成的 UUID，删除不会波及任何已有对象；
+            // 补偿也失败时只能留成孤儿对象，打日志人工排查（对象无数据库记录，
+            // 不会被读取，也不会被清理任务选中）。
+            deleteQuietly(key);
+            throw e;
+        }
         asset.setPublicUrl("/api/media/images/" + asset.getId());
         return asset;
     }
@@ -77,13 +90,20 @@ public class MediaService {
 
     public byte[] readBytes(MediaAsset asset) {
         try {
-            return Files.readAllBytes(Path.of(properties.getMediaDir(), asset.getStorageKey()));
+            return storage.get(asset.getStorageKey());
         }
-        catch (IOException e) {
-            throw BusinessException.notFound("Image file is missing");
+        catch (StorageException e) {
+            if (e.getKind() == StorageException.Kind.OBJECT_NOT_FOUND) {
+                throw BusinessException.notFound("Image file is missing");
+            }
+            throw new StorageUnavailableException("Image storage is temporarily unavailable", e);
         }
     }
 
+    /**
+     * 软删除：只改数据库状态与审计字段，S3 对象留给 worker 的清理任务在
+     * 宽限期后统一删除（见 MediaPurgeWorker），期间可用数据库恢复找回。
+     */
     @Transactional
     public void delete(Long id) {
         Long ownerId = BaseContext.getUserId();
@@ -98,11 +118,20 @@ public class MediaService {
         asset.setDeletedAt(java.time.Instant.now());
     }
 
+    private void deleteQuietly(String key) {
+        try {
+            storage.delete(key);
+        }
+        catch (RuntimeException e) {
+            log.warn("Failed to clean up uploaded media object {} after database error; it stays orphaned", key, e);
+        }
+    }
+
     private static String safeName(String filename) {
         if (filename == null || filename.isBlank()) {
             return "cover";
         }
-        String base = Path.of(filename).getFileName().toString().replaceAll("[^a-zA-Z0-9._-]", "_");
+        String base = java.nio.file.Path.of(filename).getFileName().toString().replaceAll("[^a-zA-Z0-9._-]", "_");
         return base.length() > 40 ? base.substring(0, 40) : base;
     }
 }

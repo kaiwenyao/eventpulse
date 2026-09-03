@@ -45,6 +45,16 @@ final class DemoCatalog {
             String cancellationReason) {
     }
 
+    /**
+     * 演示活动封面。下标与 {@link #EVENTS} 一一对应：第 N 个活动用第 N 张图，
+     * 图片按 EVENTS 顺序生成后预传到对象存储，key 固定为 seed/demo-covers/NN.jpeg
+     * （NN 为活动的 1-based 序号，补零两位），内容类型统一 image/jpeg。
+     * sizeBytes 是上传时的真实字节数，media_assets.size_bytes 非空需要它；
+     * S3 上对象缺失时封面会 404，重新上传同名 key 即可修复。
+     */
+    record CoverSpec(String storageKey, long sizeBytes) {
+    }
+
     /** 演示订单。eventIndex 指向 {@link #EVENTS} 的下标，checkedIn 是已核销的票数。 */
     record BookingSpec(
             String userEmail,
@@ -197,6 +207,32 @@ final class DemoCatalog {
                     "Bring one record, leave with another.",
                     "Bring vinyl or tapes to swap. Turntables on site for listening. A past event, archived.",
                     "music", FILM_LANE, -90 * DAY, 4, 3000, 80, 72, "ARCHIVED", 0, null));
+
+    /**
+     * 演示封面，与 {@link #EVENTS} 等长且下标对齐（活动 1 ↔ seed/demo-covers/01.jpeg）。
+     * 对象已在部署 S3（bucket eventpulse，path-style）就位；换 bucket 时只需重传
+     * 同名 key，本表不用改。
+     */
+    static final List<CoverSpec> COVERS = List.of(
+            new CoverSpec("seed/demo-covers/01.jpeg", 2948169),
+            new CoverSpec("seed/demo-covers/02.jpeg", 790775),
+            new CoverSpec("seed/demo-covers/03.jpeg", 3062872),
+            new CoverSpec("seed/demo-covers/04.jpeg", 3508898),
+            new CoverSpec("seed/demo-covers/05.jpeg", 2773825),
+            new CoverSpec("seed/demo-covers/06.jpeg", 2796136),
+            new CoverSpec("seed/demo-covers/07.jpeg", 3789018),
+            new CoverSpec("seed/demo-covers/08.jpeg", 2902242),
+            new CoverSpec("seed/demo-covers/09.jpeg", 4038727),
+            new CoverSpec("seed/demo-covers/10.jpeg", 3604954),
+            new CoverSpec("seed/demo-covers/11.jpeg", 4127479),
+            new CoverSpec("seed/demo-covers/12.jpeg", 3666928),
+            new CoverSpec("seed/demo-covers/13.jpeg", 3251015),
+            new CoverSpec("seed/demo-covers/14.jpeg", 2971757),
+            new CoverSpec("seed/demo-covers/15.jpeg", 3352567),
+            new CoverSpec("seed/demo-covers/16.jpeg", 3351778),
+            new CoverSpec("seed/demo-covers/17.jpeg", 3248658),
+            new CoverSpec("seed/demo-covers/18.jpeg", 3598240),
+            new CoverSpec("seed/demo-covers/19.jpeg", 3759650));
 
     /**
      * 演示订单。已确认的订单会占用库存并从钱包扣款；已取消的订单只留记录，

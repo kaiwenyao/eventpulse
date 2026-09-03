@@ -78,11 +78,35 @@ eventpulse:
   secret-key: ${SECRET_KEY:dev-only-secret-key-change-me-0123456789ab}
   token-ttl-ms: 604800000
   cors-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:5173}
+  # 本地磁盘目录：仅 s3.enabled=false（默认，本地开发）时使用；
+  # 也是历史本地图片的迁移来源（见 README「图片存储」）。
   media-dir: ${MEDIA_DIR:data/media}
   redis-enabled: ${REDIS_ENABLED:false}
   redis-host: ${REDIS_HOST:localhost}
   redis-port: ${REDIS_PORT:6379}
   seed-name: demo-v1
+  s3:
+    # 图片对象存储（SeaweedFS 等 S3 兼容服务）。多副本部署必须 enabled=true，
+    # 否则 api 副本之间看不到彼此上传的文件。凭证只经环境变量 / Secret 注入。
+    enabled: ${S3_ENABLED:false}
+    endpoint: ${S3_ENDPOINT:}
+    region: ${S3_REGION:us-east-1}
+    # 运行时只使用已有 bucket，不会创建，也不会改公开权限。
+    bucket: ${S3_BUCKET:eventpulse}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    # SeaweedFS 走 path-style（https://endpoint/bucket/key）。
+    path-style: ${S3_PATH_STYLE:true}
+    connect-timeout-ms: ${S3_CONNECT_TIMEOUT:2000}
+    read-timeout-ms: ${S3_READ_TIMEOUT:10000}
+    api-call-timeout-ms: ${S3_API_CALL_TIMEOUT:30000}
+  media:
+    # 软删除图片的对象清理（worker 执行）：宽限期后删除 S3 对象并标记 PURGED。
+    purge-enabled: ${MEDIA_PURGE_ENABLED:true}
+    purge-after-days: ${MEDIA_PURGE_AFTER_DAYS:7}
+    purge-batch-size: ${MEDIA_PURGE_BATCH_SIZE:50}
+    purge-fixed-delay-ms: ${MEDIA_PURGE_FIXED_DELAY_MS:3600000}
+    purge-initial-delay-ms: ${MEDIA_PURGE_INITIAL_DELAY_MS:60000}
   ai:
     enabled: ${AI_ENABLED:true}
     service-url: ${AI_SERVICE_URL:http://localhost:8090}
