@@ -161,6 +161,12 @@ kubectl apply -f deploy/k8s/api-deployment.yml -f deploy/k8s/api-service.yml \
 
 ### Jenkins 自动更新 k3s-home
 
+AI 流水线使用节点本地的 `emptyDir` 工作卷，把 uv 缓存和 `.venv` 放在同一
+文件系统，通过硬链接安装依赖，避免从 NFS 逐个复制大量小文件。缓存随构建 Pod
+删除，每次新构建会重新下载依赖；不再使用共享 Maven PVC 保存 uv 缓存。
+依赖同步仍使用 `uv sync --frozen --extra dev`，测试通过 `uv run --no-sync pytest`
+复用刚安装的环境。同步阶段输出 uv 缓存路径与耗时，便于比较实际 CI 性能。
+
 三个 Jenkinsfile 沿用 nightdeal 的发布方式：main 分支推送 GHCR 镜像成功后，
 在独立的 `gitops` 容器中更新 `kaiwenyao/k3s-home` 的 main 分支。PR 和普通分支
 不会写入配置仓库；流水线失败或变为 unstable 时也不会继续发布。

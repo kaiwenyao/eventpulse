@@ -6,22 +6,23 @@
 //     (same tagging as backend / frontend: commit short SHA, no `latest`).
 //   - gitops: after a successful main image push, update k3s-home/main.
 //
-// Cluster assumptions: cloud name `kubernetes`, the shared RWX PVC
-// `jenkins-maven-cache` (reused with a subPath for the uv cache), and a
-// Docker-enabled node exposing /var/run/docker.sock.
+// Cluster assumptions: cloud name `kubernetes` and a Docker-enabled node
+// exposing /var/run/docker.sock. uv cache and .venv use the same local workspace.
 pipeline {
     agent {
         kubernetes {
             cloud 'kubernetes'
             defaultContainer 'uv'
+            // Keep cache and .venv on the same node-local filesystem for hardlinks.
+            workspaceVolume emptyDirWorkspaceVolume(memory: false)
             // -----------------------------------------------------------------------------
             // Pod definition. Three workload containers (uv + docker + gitops); Jenkins injects jnlp.
             //
             // uv container (same base image as ai-service/Dockerfile):
             //   - `command: sleep` replaces the image's `uv` ENTRYPOINT, so Jenkins'
             //     keep-alive process works unchanged.
-            //   - Mounted volume: the shared RWX PVC for the uv download cache
-            //     (subPath keeps it separate from the Maven repository cache).
+            //   - Cache lives inside the local workspace, alongside .venv, avoiding
+            //     thousands of unpacked wheel reads and cross-filesystem copies from NFS.
             //
             // docker container (docker:27-cli is Alpine and has /bin/sh):
             //   - on main, builds and pushes the ai-service image to GHCR.
@@ -62,12 +63,6 @@ spec:
           value: "internal-token"
         - name: BACKEND_INTERNAL_URL
           value: "http://backend.test"
-      volumeMounts:
-        # uv download cache — shared NFS PVC (jenkins-maven-cache), isolated via
-        # subPath so it does not mix with the Maven repository tree.
-        - mountPath: /root/.cache/uv
-          name: uv-cache
-          subPath: uv-cache
     - name: docker
       image: docker:27-cli
       command:
@@ -104,9 +99,6 @@ spec:
           cpu: "500m"
           memory: 256Mi
   volumes:
-    - name: uv-cache
-      persistentVolumeClaim:
-        claimName: jenkins-maven-cache
     - name: docker-sock
       hostPath:
         path: /var/run/docker.sock
@@ -119,12 +111,14 @@ spec:
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
         skipStagesAfterUnstable()
-        // Serialize against the shared cache PVC and the host Docker socket.
+        // Serialize builds that use the host Docker socket and publish images.
         disableConcurrentBuilds()
     }
 
     environment {
         CI = 'true'
+        UV_CACHE_DIR = "${WORKSPACE}/.uv-cache"
+        UV_LINK_MODE = 'hardlink'
     }
 
     stages {
@@ -149,9 +143,11 @@ spec:
                                 sh '''
                                 uv --version
                                 python --version
-                                # --frozen: never drift from uv.lock (same as the Dockerfile
-                                # and .github/workflows/ci.yml). --extra dev pulls in pytest.
+                                uv cache dir
+                                # --frozen: install from uv.lock; --extra dev includes pytest.
+                                sync_started_at=$(date +%s)
                                 uv sync --frozen --extra dev
+                                echo "uv sync elapsed: $(($(date +%s) - sync_started_at))s"
                                 '''
                             }
                         }
@@ -164,7 +160,7 @@ spec:
                             dir('ai-service') {
                                 sh '''
                                 echo "Running pytest (scripted LLM / backend, no real API key)"
-                                uv run pytest --junitxml=junit-report.xml
+                                uv run --no-sync pytest --junitxml=junit-report.xml
                                 '''
                             }
                         }
