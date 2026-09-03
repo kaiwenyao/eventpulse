@@ -175,7 +175,8 @@ class UnitTest {
         String token = jwt.createToken(3L, "ORGANISER");
         assertThat(jwt.parseToken(token).get("userId", Number.class).longValue()).isEqualTo(3L);
 
-        AuthService auth = new AuthService(users, passwordEncoder, jwt, bookings, tickets, favourites, notifications, wallets);
+        AuthService auth = new AuthService(users, passwordEncoder, jwt, bookings, tickets, favourites, notifications,
+                wallets, org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
         when(users.existsByEmail("a@b.c")).thenReturn(true);
         assertThatThrownBy(() -> auth.register(new RegisterRequest("a@b.c", "123456", "A")))
                 .isInstanceOf(BusinessException.class);
@@ -222,8 +223,8 @@ class UnitTest {
         });
         assertThat(auth.recharge(2L, recharge, null).walletCents()).isEqualTo(50000);
         assertThat(stored.getWalletCents()).isEqualTo(50000);
-        // 幂等键命中：不重复入账。
-        when(wallets.creditOnce(eq(2L), eq(50000L), anyString(), eq("RECHARGE:retry-key"), anyString()))
+        // 幂等键命中：不重复入账（键按用户隔离：RECHARGE:{userId}:{key}）。
+        when(wallets.creditOnce(eq(2L), eq(50000L), anyString(), eq("RECHARGE:2:retry-key"), anyString()))
                 .thenReturn(Optional.empty());
         assertThat(auth.recharge(2L, recharge, "retry-key").walletCents()).isEqualTo(50000);
         assertThat(stored.getWalletCents()).isEqualTo(50000);
@@ -535,7 +536,8 @@ class UnitTest {
     @Test
     void controllersAndConfig() {
         AuthService auth = new AuthService(users, passwordEncoder, new JwtService(new AppProperties()),
-                bookings, tickets, favourites, notifications, wallets);
+                bookings, tickets, favourites, notifications, wallets,
+                org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
         when(users.existsByEmail("n@b.c")).thenReturn(false);
         when(passwordEncoder.encode(anyString())).thenReturn("hash");
         when(users.save(any())).thenAnswer(inv -> {

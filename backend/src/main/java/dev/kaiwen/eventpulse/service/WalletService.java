@@ -70,8 +70,9 @@ public class WalletService {
     }
 
     /**
-     * 幂等入账（演示充值用）：以 externalBizId 去重。
-     * 已记录过（或并发下被抢先记录）时返回 empty，且不改动余额；
+     * 幂等入账（演示充值用）：以 externalBizId 去重（调用方保证键按用户隔离）。
+     * 已记录过且金额一致时返回 empty（幂等重放，不改动余额）；
+     * 同键但金额不同抛 409——同一个键不能悄悄入一笔不同的账；
      * 不同的业务键（用户主动发起的两笔充值）分别成功。
      * 唯一约束竞争通过 SAVEPOINT 回滚刚执行的余额 UPDATE，事务本身不受污染。
      */
@@ -79,7 +80,9 @@ public class WalletService {
     public Optional<Mutation> creditOnce(Long userId, long amountCents, String bizType, String externalBizId,
             String description) {
         requirePositive(amountCents);
-        if (ledgers.existsByExternalBizId(externalBizId)) {
+        Optional<WalletLedger> existing = ledgers.findByExternalBizId(externalBizId);
+        if (existing.isPresent()) {
+            requireSameAmount(existing.get(), amountCents);
             return Optional.empty();
         }
         jdbc.execute("SAVEPOINT wallet_credit_once");
@@ -218,6 +221,12 @@ public class WalletService {
     private static void requirePositive(long amountCents) {
         if (amountCents <= 0) {
             throw new BusinessException("Amount must be positive");
+        }
+    }
+
+    private static void requireSameAmount(WalletLedger existing, long amountCents) {
+        if (existing.getAmountCents() != amountCents) {
+            throw BusinessException.conflict("Idempotency key was already used with a different amount");
         }
     }
 

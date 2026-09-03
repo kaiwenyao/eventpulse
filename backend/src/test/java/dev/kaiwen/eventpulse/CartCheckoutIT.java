@@ -546,6 +546,43 @@ class CartCheckoutIT {
     }
 
     @Test
+    void rechargeIdempotencyIsUserScopedAndResponseCarriesFreshBalance() {
+        User alice = newUser("USER", 0);
+        User bob = newUser("USER", 0);
+        login(alice.getId());
+
+        // 响应必须携带本次充值后的新余额：WalletService 用 JdbcTemplate 更新余额，
+        // 一级缓存里的 User 旧快照不能把它带回答复（回归测试）。
+        assertThat(auth.recharge(alice.getId(), new WalletRechargeRequest(500), "shared-key").walletCents())
+                .isEqualTo(500);
+
+        // 同键同金额重试：幂等重放，不重复入账。
+        assertThat(auth.recharge(alice.getId(), new WalletRechargeRequest(500), "shared-key").walletCents())
+                .isEqualTo(500);
+        assertThat(ledgerOf(alice.getId())).hasSize(1);
+
+        // 同键不同金额：拒绝，不入账。
+        assertThatThrownBy(() -> auth.recharge(alice.getId(), new WalletRechargeRequest(300), "shared-key"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("different amount");
+        assertThat(walletOf(alice.getId())).isEqualTo(500);
+        assertThat(ledgerOf(alice.getId())).hasSize(1);
+
+        // 另一用户用相同的键：各自成功，不互相吞掉充值。
+        login(bob.getId());
+        assertThat(auth.recharge(bob.getId(), new WalletRechargeRequest(700), "shared-key").walletCents())
+                .isEqualTo(700);
+
+        // 流水去重键按用户隔离，互不碰撞。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM wallet_ledger WHERE external_biz_id = ?",
+                Long.class, "RECHARGE:" + alice.getId() + ":shared-key")).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM wallet_ledger WHERE external_biz_id = ?",
+                Long.class, "RECHARGE:" + bob.getId() + ":shared-key")).isEqualTo(1);
+    }
+
+    @Test
     void userCancelAndOrganiserCancelRaceRefundExactlyOnce() throws Exception {
         User buyer = newUser("USER", 5000);
         User organiser = newUser("ORGANISER", 0);
