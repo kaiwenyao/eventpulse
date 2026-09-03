@@ -215,7 +215,7 @@
   gap: var(--space-3);
 }
 
-/* Full-bleed monochrome cover, closed by an ink rule. */
+/* Full-bleed cover, closed by an ink rule. */
 .ticket-cover {
   display: grid;
   place-items: center;
@@ -225,7 +225,6 @@
   background-position: center;
   background-color: var(--n-300);
   border-bottom: var(--rule) solid var(--line-strong);
-  filter: grayscale(1) contrast(1.08);
 }
 
 /* No cover uploaded — say so, in the system's own micro-label voice. */
@@ -351,7 +350,6 @@ html[lang="en"] .ticket-cover-empty::after {
   border: 0;
   border-bottom: var(--rule) solid var(--line-strong);
   margin: 0 calc(-1 * var(--gutter));
-  filter: grayscale(1) contrast(1.08);
 }
 
 .detail-cover-empty {

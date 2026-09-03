@@ -444,7 +444,6 @@ label {
   max-height: 220px;
   object-fit: cover;
   display: block;
-  filter: grayscale(1) contrast(1.08);
 }
 
 /* Visually hidden but still focusable and hit-testable: the styled trigger
