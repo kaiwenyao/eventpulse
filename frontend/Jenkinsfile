@@ -3,6 +3,7 @@
 //   - node:  install deps, lint, unit tests + coverage, production build, Playwright smoke.
 //   - docker: on main, build & push ghcr.io/<user>/eventpulse-frontend:<short-sha>
 //     (same tagging as nightdeal: commit short SHA, no latest).
+//   - gitops: after a successful main image push, update k3s-home/main.
 //
 // Cluster assumptions: cloud name `kubernetes`, and a Docker-enabled node
 // exposing /var/run/docker.sock (needed only for the image-build stage).
@@ -12,7 +13,7 @@ pipeline {
             cloud 'kubernetes'
             defaultContainer 'node'
             // -----------------------------------------------------------------------------
-            // Pod definition. Two workload containers (node + docker); Jenkins injects jnlp.
+            // Pod definition. Three workload containers (node + docker + gitops); Jenkins injects jnlp.
             //
             // node container: npm ci, ESLint, Vitest unit tests (jsdom, no backend needed),
             // production build, Playwright chromium smoke (installs OS deps on first run).
@@ -61,6 +62,23 @@ spec:
       volumeMounts:
         - mountPath: /var/run/docker.sock
           name: docker-sock
+    - name: gitops
+      # Same Git tooling and credentials as nightdeal; no Docker socket needed.
+      image: alpine:3.22
+      command:
+        - sh
+        - -c
+      args:
+        - apk add --no-cache git ca-certificates && sleep 9999999
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: "100m"
+          memory: 128Mi
+        limits:
+          cpu: "500m"
+          memory: 256Mi
   volumes:
     - name: docker-sock
       hostPath:
@@ -73,6 +91,9 @@ spec:
         skipDefaultCheckout()
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
+        skipStagesAfterUnstable()
+        // Keep image publication and GitOps updates ordered for this branch.
+        disableConcurrentBuilds()
     }
 
     environment {
@@ -191,6 +212,23 @@ spec:
                             '''
                             sh 'docker logout ghcr.io'
                         }
+                    }
+                }
+            }
+        }
+
+        stage('7. Update k3s-home') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('gitops') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'k3s-home-write',
+                        usernameVariable: 'GITOPS_USER',
+                        passwordVariable: 'GITOPS_TOKEN'
+                    )]) {
+                        sh 'sh scripts/update-k3s-home.sh frontend'
                     }
                 }
             }

@@ -3,6 +3,7 @@
 //   - maven:  tests (unit + Testcontainers ITs, one invocation), coverage (JDK 21 + Maven).
 //   - docker: on main, build & push ghcr.io/<user>/eventpulse-backend:<short-sha>
 //     (same tagging as nightdeal: commit short SHA, no latest).
+//   - gitops: after a successful main image push, update k3s-home/main.
 //
 // Cluster assumptions: cloud name `kubernetes`, RWX PVC `jenkins-maven-cache`,
 // and a Docker-enabled node exposing /var/run/docker.sock (not plain containerd).
@@ -12,7 +13,7 @@ pipeline {
             cloud 'kubernetes'
             defaultContainer 'maven'
             // -----------------------------------------------------------------------------
-            // Pod definition. Two workload containers (maven + docker); Jenkins injects jnlp.
+            // Pod definition. Three workload containers (maven + docker + gitops); Jenkins injects jnlp.
             //
             // maven container (image has JDK 21 + Maven):
             //   - TESTCONTAINERS_HOST_OVERRIDE: the BookingConcurrencyIT uses Testcontainers.
@@ -89,6 +90,23 @@ spec:
       volumeMounts:
         - mountPath: /var/run/docker.sock
           name: docker-sock
+    - name: gitops
+      # Same Git tooling and credentials as nightdeal; no Docker socket needed.
+      image: alpine:3.22
+      command:
+        - sh
+        - -c
+      args:
+        - apk add --no-cache git ca-certificates && sleep 9999999
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: "100m"
+          memory: 128Mi
+        limits:
+          cpu: "500m"
+          memory: 256Mi
   volumes:
     # Maven repository backed by the cluster NFS PVC (jenkins-maven-cache, RWX).
     - name: maven-repo
@@ -105,6 +123,7 @@ spec:
         skipDefaultCheckout()
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
+        skipStagesAfterUnstable()
         // Serialize against the shared Maven PVC and the host Docker socket.
         disableConcurrentBuilds()
     }
@@ -213,6 +232,23 @@ spec:
                             }
                             sh 'docker logout ghcr.io'
                         }
+                    }
+                }
+            }
+        }
+
+        stage('7. Update k3s-home') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('gitops') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'k3s-home-write',
+                        usernameVariable: 'GITOPS_USER',
+                        passwordVariable: 'GITOPS_TOKEN'
+                    )]) {
+                        sh 'sh scripts/update-k3s-home.sh backend'
                     }
                 }
             }

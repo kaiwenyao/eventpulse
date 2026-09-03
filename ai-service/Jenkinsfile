@@ -4,6 +4,7 @@
 //     scripted, so CI never calls a paid model and needs no real API key.
 //   - docker: on main, build & push ghcr.io/<user>/eventpulse-ai-service:<short-sha>
 //     (same tagging as backend / frontend: commit short SHA, no `latest`).
+//   - gitops: after a successful main image push, update k3s-home/main.
 //
 // Cluster assumptions: cloud name `kubernetes`, the shared RWX PVC
 // `jenkins-maven-cache` (reused with a subPath for the uv cache), and a
@@ -14,7 +15,7 @@ pipeline {
             cloud 'kubernetes'
             defaultContainer 'uv'
             // -----------------------------------------------------------------------------
-            // Pod definition. Two workload containers (uv + docker); Jenkins injects jnlp.
+            // Pod definition. Three workload containers (uv + docker + gitops); Jenkins injects jnlp.
             //
             // uv container (same base image as ai-service/Dockerfile):
             //   - `command: sleep` replaces the image's `uv` ENTRYPOINT, so Jenkins'
@@ -85,6 +86,23 @@ spec:
       volumeMounts:
         - mountPath: /var/run/docker.sock
           name: docker-sock
+    - name: gitops
+      # Same Git tooling and credentials as nightdeal; no Docker socket needed.
+      image: alpine:3.22
+      command:
+        - sh
+        - -c
+      args:
+        - apk add --no-cache git ca-certificates && sleep 9999999
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: "100m"
+          memory: 128Mi
+        limits:
+          cpu: "500m"
+          memory: 256Mi
   volumes:
     - name: uv-cache
       persistentVolumeClaim:
@@ -100,6 +118,7 @@ spec:
         skipDefaultCheckout()
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
+        skipStagesAfterUnstable()
         // Serialize against the shared cache PVC and the host Docker socket.
         disableConcurrentBuilds()
     }
@@ -187,6 +206,23 @@ spec:
                             }
                             sh 'docker logout ghcr.io'
                         }
+                    }
+                }
+            }
+        }
+
+        stage('5. Update k3s-home') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('gitops') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'k3s-home-write',
+                        usernameVariable: 'GITOPS_USER',
+                        passwordVariable: 'GITOPS_TOKEN'
+                    )]) {
+                        sh 'sh scripts/update-k3s-home.sh ai-service'
                     }
                 }
             }

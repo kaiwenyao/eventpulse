@@ -159,6 +159,32 @@ kubectl apply -f deploy/k8s/api-deployment.yml -f deploy/k8s/api-service.yml \
 （例如 `ghcr.io/<owner>/eventpulse-backend:<commit-sha>`）。
 所有 API 实例共享同一 `SECRET_KEY`，api / worker / seeder 共用同一套数据库连接。
 
+### Jenkins 自动更新 k3s-home
+
+三个 Jenkinsfile 沿用 nightdeal 的发布方式：main 分支推送 GHCR 镜像成功后，
+在独立的 `gitops` 容器中更新 `kaiwenyao/k3s-home` 的 main 分支。PR 和普通分支
+不会写入配置仓库；流水线失败或变为 unstable 时也不会继续发布。
+
+| 流水线 | 自动更新的清单（位于 `apps/eventpulse/`） |
+| --- | --- |
+| backend | `api-deployment.yaml`、`worker-deployment.yaml` |
+| frontend | `frontend-deployment.yaml` |
+| ai-service | `ai-service-deployment.yaml` |
+
+Jenkins 需能访问与 nightdeal 相同的 `k3s-home-write` 凭据（Username with password，
+密码为拥有 k3s-home Contents 写权限的 GitHub token）。镜像推送继续使用 `ghcr-token`。
+`scripts/update-k3s-home.sh` 直接使用刚推送的 `FULL_IMAGE`，只替换对应镜像行；
+版本未变化时不创建提交，目标清单缺失或镜像不匹配时让构建失败。三个任务同时推送
+发生冲突时，会从远端最新 main 重新应用本服务的修改，最多尝试五次，不强推。
+
+`seeder-job.yaml` 单独维护：已创建 Job 的 Pod 模板不可变，需要更新时应调整
+镜像并按 k3s-home 的说明重建 Job。此流程只提交部署配置，集群应用仍按现有运维
+流程进行。GitOps 脚本的集成测试使用临时本地仓库，不访问 GitHub：
+
+```bash
+python3 -m unittest discover -s scripts/tests -v
+```
+
 ## AI 助手
 
 AI 是运行时调用的外部 LLM 能力（不训练模型、不做向量化）。架构：

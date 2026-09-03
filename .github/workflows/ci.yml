@@ -121,6 +121,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test GitOps updates with local repositories
+        run: python3 -m unittest discover -s scripts/tests -v
       - name: Validate docker-compose.yml
         run: docker compose config -q
       - name: Validate Kubernetes manifests
