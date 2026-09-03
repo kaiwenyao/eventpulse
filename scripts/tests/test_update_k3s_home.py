@@ -39,6 +39,7 @@ class GitOpsTest(unittest.TestCase):
                 "apiVersion: batch/v1\nkind: Job\nmetadata:\n"
                 "  name: eventpulse-seeder\n  annotations:\n"
                 "    argocd.argoproj.io/sync-wave: '0'\n"
+                "    argocd.argoproj.io/sync-options: Force=true,Replace=true\n"
                 "spec:\n  activeDeadlineSeconds: 600\n"
                 if is_seeder else "apiVersion: apps/v1\nkind: Deployment\nspec:\n"
             )

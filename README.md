@@ -227,8 +227,11 @@ Jenkins 需能访问与 nightdeal 相同的 `k3s-home-write` 凭据（Username w
 API、Worker 和 Seeder 在同一次 Git 提交中更新为同一个后端镜像，保证三者携带
 一致的 Flyway 迁移文件；任一清单缺失或镜像匹配异常时，整个更新失败，不推送
 部分修改。Job 名保持 `eventpulse-seeder`；已创建 Job 的 Pod 模板不可变，镜像
-变化后需删除旧 Job，再通过 Argo CD Sync 或 apply 重建。此流程只提交部署配置，
-不会自动重建 Job 或修改数据库迁移历史。GitOps 脚本的集成测试使用临时本地仓库，
+变化后由 `k3s-home/apps/eventpulse/seeder-job.yaml` 上的资源级注解
+`argocd.argoproj.io/sync-options: Force=true,Replace=true` 让 Argo CD 删除旧 Job 并重建。
+该 Job 仍在 wave 0，数据库就绪后执行、成功后才更新 wave 10 的应用；再次运行时
+`seed_runs` 会跳过已完成的播种。直接使用 `kubectl apply` 则仍需手动删除旧 Job。
+GitOps 脚本只更新镜像并保留上述注解，不修改数据库迁移历史。集成测试使用临时本地仓库，
 不访问 GitHub：
 
 ```bash
