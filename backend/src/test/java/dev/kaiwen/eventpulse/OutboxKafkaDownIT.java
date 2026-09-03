@@ -15,7 +15,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import dev.kaiwen.eventpulse.entity.User;
-import dev.kaiwen.eventpulse.repository.OutboxRepository;
 import dev.kaiwen.eventpulse.repository.UserRepository;
 import dev.kaiwen.eventpulse.service.WalletService;
 
@@ -48,8 +47,6 @@ class OutboxKafkaDownIT {
     @Autowired
     UserRepository users;
     @Autowired
-    OutboxRepository outbox;
-    @Autowired
     JdbcTemplate jdbc;
 
     @Test
@@ -62,7 +59,6 @@ class OutboxKafkaDownIT {
         user.setWalletCents(0);
         Long userId = users.save(user).getId();
 
-        long outboxBefore = outbox.countByPublishedAtIsNullAndFailedAtIsNull();
         // 充值走 WalletService.creditOnce：余额、流水、wallet-events Outbox 同一事务提交。
         var mutation = wallets.creditOnce(userId, 12345, "RECHARGE", "RECHARGE:kafka-down-it", "demo");
         assertThat(mutation).isPresent();
@@ -74,6 +70,17 @@ class OutboxKafkaDownIT {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM wallet_ledger WHERE user_id = ? AND external_biz_id = 'RECHARGE:kafka-down-it'",
                 Long.class, userId)).isEqualTo(1);
+
+        // 本类与其它 IT 共享同一个 PostgreSQL 容器：先行用例（无 Relay 的 profile）
+        // 会留下永远无人投递成功的 pending 行，而 Relay 按 id 升序尝试、临时故障
+        // 即整轮暂停，旧行会让本行一直排在队尾，30s 内轮不到发送尝试。
+        // 发送等待前清掉历史遗留行，只留本用例自己的行（WorkerBackgroundTasksIT
+        // 出于同样的原因在每个测试前后清空 outbox）。
+        jdbc.update("""
+                DELETE FROM outbox
+                 WHERE dedup_key <> 'RECHARGE:kafka-down-it'
+                   AND published_at IS NULL AND failed_at IS NULL
+                """);
 
         // Kafka 不可达：等 Relay 真正重试过至少一次；事件绝不会被标记已发布，
         // 仍保留在 Outbox（待发送队列，或在反复失败后被隔离等待人工恢复——
