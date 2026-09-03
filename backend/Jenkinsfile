@@ -23,8 +23,8 @@ pipeline {
             //   - TESTCONTAINERS_RYUK_DISABLED: Ryuk needs --privileged, which restricted
             //     clusters usually cannot pull off; falls back to JVM shutdown hooks, and
             //     post { always } removes leftover postgres:18-alpine Testcontainers.
-            //   - Mounted volumes: node-local persistent Maven cache (one repository per
-            //     Jenkins job) and the host-node Docker socket for Testcontainers.
+            //   - Mounted volumes: node-local persistent Maven cache shared by Java jobs,
+            //     and the host-node Docker socket for Testcontainers.
             //
             // docker container (docker:27-cli is Alpine and has /bin/sh):
             //   - on main, builds and pushes the backend image to GHCR.
@@ -66,8 +66,8 @@ spec:
           value: "true"
       volumeMounts:
         # Keep dependency resolution and JAR reads off NFS. The Maven image runs as root.
-        # The verify step selects a job-specific repository beneath this mount.
-        - mountPath: /var/cache/maven
+        # All jobs sharing this repository must use the same cross-process lock settings.
+        - mountPath: /var/cache/maven/repository
           name: maven-repo
         # Host-node Docker socket: Testcontainers needs it to run the PostgreSQL container.
         - mountPath: /var/run/docker.sock
@@ -111,7 +111,7 @@ spec:
     # Survives Pod deletion; each node warms its own cache on first use.
     - name: maven-repo
       hostPath:
-        path: /var/cache/jenkins/eventpulse-backend/maven
+        path: /var/cache/jenkins/maven/repository
         type: DirectoryOrCreate
     - name: docker-sock
       hostPath:
@@ -125,7 +125,8 @@ spec:
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
         skipStagesAfterUnstable()
-        // Serialize builds of this job; other branches use separate Maven repositories.
+        // Serialize builds of this job; Maven file locks coordinate the shared repository
+        // with other branches and projects (which this option does not serialize).
         disableConcurrentBuilds()
     }
 
@@ -159,16 +160,16 @@ spec:
                                 sh '''
                                 set -eu
                                 java -version
-                                # JOB_NAME includes the multibranch job path. Hash it to keep
-                                # branch names out of filesystem paths and isolate writers.
-                                : "${JOB_NAME:?Jenkins must provide JOB_NAME}"
-                                cache_key=$(printf '%s' "$JOB_NAME" | sha256sum | cut -d ' ' -f 1)
-                                maven_repo="/var/cache/maven/$cache_key"
+                                maven_repo="/var/cache/maven/repository"
                                 mkdir -p "$maven_repo"
-                                echo "Maven repository: $maven_repo (node-local, per job)"
+                                echo "Maven repository: $maven_repo (node-local, shared across Java jobs)"
                                 started_at=$(date +%s)
                                 trap 'echo "Maven verify elapsed: $(($(date +%s) - started_at))s"' EXIT
-                                mvn -B -ntp -Dmaven.repo.local="$maven_repo" verify
+                                # Every writer must use file-lock + file-gav so downloads
+                                # and metadata updates are coordinated across Maven JVMs.
+                                mvn -B -ntp -Dmaven.repo.local="$maven_repo" \\
+                                    -Daether.syncContext.named.factory=file-lock \\
+                                    -Daether.syncContext.named.nameMapper=file-gav verify
                                 '''
                             }
                         }

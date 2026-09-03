@@ -174,13 +174,25 @@ kubectl apply -f deploy/k8s/api-deployment.yml -f deploy/k8s/api-service.yml \
 Backend 流水线通过一次 `mvn verify` 完成单测、Testcontainers 集成测试、JaCoCo
 报告、90% 行覆盖率检查及 JAR 打包；随后的 Coverage 阶段只发布报告。
 Maven 仓库使用节点本地 `hostPath`，宿主机路径为
-`/var/cache/jenkins/eventpulse-backend/maven`，不再挂载共享 NFS Maven PVC。
+`/var/cache/jenkins/maven/repository`，容器挂载路径为 `/var/cache/maven/repository`，
+供同一节点上的 Java 项目和分支共享，不再按项目或任务分目录，也不使用 NFS。
 Kubelet 通过 `DirectoryOrCreate` 创建目录，Maven 容器沿用镜像默认的 root 用户写入；
 构建节点需允许该 hostPath，并将该路径保留在本地磁盘上。
-仓库按完整 `JOB_NAME` 的 SHA-256 分目录，同一任务通过 `disableConcurrentBuilds()`
-串行执行，避免不同分支同时写同一个仓库。缓存跨 Pod 保留；新节点或新分支首次构建
-需要下载依赖，`cleanWs()` 不清除此缓存。删除旧分支任务后可在没有相关构建运行时
-清理对应节点的缓存目录。构建日志输出所用仓库路径和 Maven verify 耗时。
+所有接入项目需统一挂载上述 hostPath、使用兼容的 Maven 3.9.x，并在 Maven 命令中
+传入以下参数，确保不同进程使用相同的文件锁协调共享仓库的读写：
+
+```sh
+-Dmaven.repo.local=/var/cache/maven/repository \
+-Daether.syncContext.named.factory=file-lock \
+-Daether.syncContext.named.nameMapper=file-gav
+```
+
+`disableConcurrentBuilds()` 只串行化同一 Jenkins 任务，跨项目的仓库并发由上述文件锁
+处理。缓存跨 Pod 保留；每个节点首次使用时需要下载依赖，其他项目可复用已有依赖。
+`cleanWs()` 不清除此缓存；维护清理应在所有使用该节点缓存的构建停止后进行。
+执行 `mvn install` 的项目应另行隔离本地产物，避免同坐标的分支产物互相覆盖；
+EventPulse 使用 `verify`，不会向共享仓库安装项目产物。
+构建日志输出所用仓库路径和 Maven verify 耗时。旧的项目专用缓存不会自动迁移或删除。
 
 AI 流水线使用节点本地的 `emptyDir` 工作卷，把 uv 缓存和 `.venv` 放在同一
 文件系统，通过硬链接安装依赖，避免从 NFS 逐个复制大量小文件。缓存随构建 Pod
