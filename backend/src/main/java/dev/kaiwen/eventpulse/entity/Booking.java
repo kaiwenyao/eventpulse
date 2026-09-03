@@ -30,6 +30,14 @@ public class Booking {
     @Column(name = "paid_cents", nullable = false)
     private long paidCents;
 
+    /** 下单时的单价快照（分）。老订单由迁移从 paid_cents 推导，展示不再依赖当前活动价格。 */
+    @Column(name = "unit_price_cents")
+    private Long unitPriceCents;
+
+    /** 同一次购物车结算的关联标识；直接下单（未带幂等键）时为空。 */
+    @Column(name = "checkout_id")
+    private Long checkoutId;
+
     /** CONFIRMED 已确认；CANCELLED 已取消。创建后立刻确认，并往 Kafka 发一条消息。 */
     @Column(nullable = false)
     private String status;
@@ -81,6 +89,22 @@ public class Booking {
 
     public void setPaidCents(long paidCents) {
         this.paidCents = paidCents;
+    }
+
+    public Long getUnitPriceCents() {
+        return unitPriceCents;
+    }
+
+    public void setUnitPriceCents(Long unitPriceCents) {
+        this.unitPriceCents = unitPriceCents;
+    }
+
+    public Long getCheckoutId() {
+        return checkoutId;
+    }
+
+    public void setCheckoutId(Long checkoutId) {
+        this.checkoutId = checkoutId;
     }
 
     public String getStatus() {

@@ -36,4 +36,16 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
     long countByBookingIdAndStatus(Long bookingId, String status);
 
     long countByBookingIdIn(Collection<Long> bookingIds);
+
+    /**
+     * 批量统计一组订单的票状态计数：订单列表页一次查询拿到
+     * (bookingId, status, count)，避免逐单数票（N+1）。
+     */
+    @Query(value = """
+            SELECT booking_id, status, COUNT(*) AS cnt
+            FROM tickets
+            WHERE booking_id IN (:bookingIds)
+            GROUP BY booking_id, status
+            """, nativeQuery = true)
+    List<Object[]> countGroupedByBookingIds(@Param("bookingIds") Collection<Long> bookingIds);
 }

@@ -187,10 +187,13 @@ describe('App pages', () => {
   it('logs in and visits bookings and notifications', async () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
       if (path === '/api/auth/login') return Promise.resolve({ token: 't', user })
-      if (path === '/api/bookings') {
-        return Promise.resolve([
-          { id: 1, eventId: 1, eventTitle: 'Indie Rock Night', quantity: 1, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z' },
-        ])
+      if (path === '/api/bookings' || path.startsWith('/api/bookings?')) {
+        return Promise.resolve({
+          records: [
+            { id: 1, eventId: 1, eventTitle: 'Indie Rock Night', quantity: 1, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z', cancellable: true },
+          ],
+          total: 1,
+        })
       }
       if (path === '/api/notifications') {
         return Promise.resolve([{ id: 1, bookingId: 1, message: 'Processed: BOOKING_CREATED', createdAt: '2026-09-01T00:00:00Z' }])

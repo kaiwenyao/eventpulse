@@ -32,6 +32,13 @@ public class User {
     @Column(name = "wallet_cents", nullable = false)
     private long walletCents;
 
+    /**
+     * 账户内流水序号：每次余额变动与余额本身在同一条原子 UPDATE 里 +1。
+     * wallet_ledger.seq_no 引用它，保证并发交易后流水链可按序核对。
+     */
+    @Column(name = "ledger_seq", nullable = false)
+    private long ledgerSeq;
+
     public Long getId() {
         return id;
     }
@@ -78,5 +85,13 @@ public class User {
 
     public void setWalletCents(long walletCents) {
         this.walletCents = walletCents;
+    }
+
+    public long getLedgerSeq() {
+        return ledgerSeq;
+    }
+
+    public void setLedgerSeq(long ledgerSeq) {
+        this.ledgerSeq = ledgerSeq;
     }
 }

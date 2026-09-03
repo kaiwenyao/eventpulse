@@ -81,7 +81,9 @@ public class BookingConsumer {
         }
 
         // 事务提交成功后才会真正发布；提醒只是「请刷新」，最终数据以 PostgreSQL 为准。
+        // 订单级提醒保持不变；用户级提醒让「我的订单」列表等其他页面也刷新。
         reminders.remindBooking(event.bookingId(), event.type(), event.dedupKey());
+        reminders.remindUser(event.userId(), "BOOKINGS_CHANGED", "sse:" + event.dedupKey());
     }
 
     private BookingEvent parse(String json) {

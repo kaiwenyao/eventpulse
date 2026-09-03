@@ -42,6 +42,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
             @Param("amount") long amount,
             @Param("maxBalance") long maxBalance);
 
+    /** 播种专用：把流水计数推进到已写入的历史流水序号（真实交易总是 +1 递增）。 */
+    @Modifying
+    @Query("UPDATE User u SET u.ledgerSeq = :seq WHERE u.id = :id")
+    int updateLedgerSeq(@Param("id") Long id, @Param("seq") long seq);
+
     /** Refunds an already-recorded payment amount. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """

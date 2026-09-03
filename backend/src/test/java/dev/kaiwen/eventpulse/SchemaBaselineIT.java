@@ -14,10 +14,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * 基线迁移的验收：V1__init.sql 是上线前合并出来的唯一一份 schema，
- * 空库跑完之后每张实体表都在，旧版规则推荐的残留表不在。
- *
- * 之前的 V1..V9 已经合并，所以不再需要「旧库升级」的测试路径 —— 没有旧库。
+ * 基线迁移的验收：V1__init.sql 之后按版本号顺序追加 V2（购物车 / 钱包流水 /
+ * 结算幂等键），空库跑完之后每张实体表都在，旧版规则推荐的残留表不在。
  */
 @Testcontainers(disabledWithoutDocker = true)
 class SchemaBaselineIT {
@@ -27,7 +25,8 @@ class SchemaBaselineIT {
             "users", "events", "bookings", "notifications", "event_audit_logs",
             "event_favourites", "tickets", "media_assets", "user_preferences",
             "interactions", "outbox", "consumed_events", "event_daily_metrics",
-            "seed_runs", "ai_conversations", "ai_messages", "ai_requests");
+            "seed_runs", "ai_conversations", "ai_messages", "ai_requests",
+            "cart_items", "checkouts", "wallet_ledger");
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18-alpine");
@@ -54,7 +53,7 @@ class SchemaBaselineIT {
                 .migrate();
 
         // Assert
-        assertThat(result.migrationsExecuted).isEqualTo(1);
+        assertThat(result.migrationsExecuted).isEqualTo(2);
         for (String table : EXPECTED_TABLES) {
             assertThat(tableExists(table)).as(table).isTrue();
         }

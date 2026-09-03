@@ -67,7 +67,7 @@ class BookingCancelTicketIT {
         BaseContext.setUserId(buyerId);
         BaseContext.setRole("USER");
 
-        Long bookingId = bookings.create(new CreateBookingRequest(event.getId(), 2)).id();
+        Long bookingId = bookings.create(new CreateBookingRequest(event.getId(), 2), null).id();
         List<Ticket> issued = tickets.findByBookingIdOrderByIdAsc(bookingId);
         assertThat(issued).hasSize(2).allMatch(ticket -> TicketStatus.VALID.equals(ticket.getStatus()));
 

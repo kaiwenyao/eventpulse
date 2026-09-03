@@ -14,17 +14,17 @@ import dev.kaiwen.eventpulse.dto.AuthDtos.UserVo;
 import dev.kaiwen.eventpulse.dto.AuthDtos.WalletRechargeRequest;
 import dev.kaiwen.eventpulse.entity.Booking;
 import dev.kaiwen.eventpulse.entity.User;
+import dev.kaiwen.eventpulse.entity.WalletLedger;
 import dev.kaiwen.eventpulse.exception.BusinessException;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.EventFavouriteRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
 import dev.kaiwen.eventpulse.repository.UserRepository;
+import dev.kaiwen.eventpulse.service.WalletService;
 
 @Service
 public class AuthService {
-
-    private static final long MAX_WALLET_CENTS = 10_000_000_000L;
 
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
@@ -33,10 +33,12 @@ public class AuthService {
     private final TicketRepository tickets;
     private final EventFavouriteRepository favourites;
     private final NotificationRepository notifications;
+    private final WalletService wallets;
 
     public AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService,
             BookingRepository bookings, TicketRepository tickets,
-            EventFavouriteRepository favourites, NotificationRepository notifications) {
+            EventFavouriteRepository favourites, NotificationRepository notifications,
+            WalletService wallets) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
@@ -44,6 +46,7 @@ public class AuthService {
         this.tickets = tickets;
         this.favourites = favourites;
         this.notifications = notifications;
+        this.wallets = wallets;
     }
 
     @Transactional
@@ -99,11 +102,15 @@ public class AuthService {
     }
 
     @Transactional
-    public ProfileVo recharge(Long userId, WalletRechargeRequest request) {
+    public ProfileVo recharge(Long userId, WalletRechargeRequest request, String idempotencyKey) {
         requireUser(userId);
-        if (users.rechargeWalletWithinLimit(userId, request.amountCents(), MAX_WALLET_CENTS) == 0) {
-            throw new BusinessException("Wallet balance exceeds the limit");
-        }
+        // 演示充值幂等：带 Idempotency-Key 的重试不重复入账；不带键的两笔充值
+        // 各自成功。余额、流水与 wallet-events Outbox 在同一事务提交。
+        String bizId = idempotencyKey == null || idempotencyKey.isBlank()
+                ? "RECHARGE:" + java.util.UUID.randomUUID()
+                : "RECHARGE:" + idempotencyKey.trim();
+        wallets.creditOnce(userId, request.amountCents(), WalletLedger.TYPE_RECHARGE, bizId,
+                "Demo wallet recharge");
         return profile(userId);
     }
 

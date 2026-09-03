@@ -102,6 +102,19 @@ public class PlatformController {
                 .body(emitter);
     }
 
+    /**
+     * 用户级刷新频道（购物车 / 钱包 / 订单列表）：JWT 走 Authorization 头，
+     * 只验证已登录；提醒只发给所属用户，前端收到后重新走 REST 拉取数据。
+     * 错误路径仍交给 GlobalExceptionHandler 返回 JSON（理由同订单级订阅）。
+     */
+    @GetMapping("/api/user/events")
+    public ResponseEntity<SseEmitter> streamUser() {
+        SseEmitter emitter = sseSubscriptions.subscribeUser();
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_EVENT_STREAM)
+                .body(emitter);
+    }
+
     @PostMapping("/api/preferences")
     public Result<Void> preferences(@RequestBody Map<String, Object> body) {
         platform.savePreference(

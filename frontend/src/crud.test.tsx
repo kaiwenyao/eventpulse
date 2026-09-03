@@ -424,7 +424,7 @@ describe('audience flows', () => {
     apiMock.fn.mockImplementation((_m: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(user)
       if (path === '/api/bookings/1') {
-        return Promise.resolve({ id: 1, eventId: 1, eventTitle: 'Indie Rock Night', quantity: 2, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z' })
+        return Promise.resolve({ id: 1, eventId: 1, eventTitle: 'Indie Rock Night', quantity: 2, status: 'CONFIRMED', createdAt: '2026-09-01T00:00:00Z', cancellable: true })
       }
       if (path === '/api/bookings/1/tickets') return Promise.resolve([{ id: 11, code: 'abc123', status: 'VALID' }])
       if (path.includes('/cancel')) {

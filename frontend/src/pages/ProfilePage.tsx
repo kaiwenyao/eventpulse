@@ -1,7 +1,8 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 import { api, ApiError, formatMoney } from '../api'
+import { streamUserEvents, INITIAL_BACKOFF_MS } from '../lib/sse'
 import { UserProfile } from '../types'
 import { ErrorNote } from '../ui/Badges'
 import { SkeletonCard } from '../ui/Skeleton'
@@ -15,6 +16,7 @@ function initials(name?: string, email?: string) {
 /**
  * 个人中心：基本信息、钱包余额、充值，以及账户里各维度的统计。
  * 充值仍为演示功能，不接真实支付渠道；余额可用于站内预订与退款。
+ * 余额区域提供「余额明细」入口；充值带 Idempotency-Key，重试不会重复入账。
  */
 export function ProfilePage() {
   const { t } = useTranslation()
@@ -25,19 +27,32 @@ export function ProfilePage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api<UserProfile>('GET', '/api/auth/profile')
       .then(setProfile)
       .catch(() => setProfile(null))
       .finally(() => setLoading(false))
   }, [])
 
+  useEffect(() => {
+    load()
+    // 充值 / 扣款 / 退款发生在其他页面或设备时，钱包余额在这里同步刷新。
+    const controller = new AbortController()
+    void streamUserEvents(load, controller.signal, INITIAL_BACKOFF_MS, load)
+    return () => controller.abort()
+  }, [load])
+
   async function recharge(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError('')
     try {
-      const updated = await api<UserProfile>('POST', '/api/auth/wallet/recharge', { amountCents: Number(amount) * 100 })
+      const updated = await api<UserProfile>(
+        'POST',
+        '/api/auth/wallet/recharge',
+        { amountCents: Number(amount) * 100 },
+        { 'Idempotency-Key': crypto.randomUUID() },
+      )
       setProfile(updated)
       notify(t('profile.rechargeOk', { amount: formatMoney(updated.walletCents) }), 'success')
     } catch (err) {
@@ -105,6 +120,9 @@ export function ProfilePage() {
           <span className="muted small">{t('profile.wallet')}</span>
           <strong className="balance-num">{formatMoney(profile.walletCents)}</strong>
           <span className="muted small">{t('profile.spent', { amount: formatMoney(profile.totalSpentCents) })}</span>
+          <NavLink to="/wallet/ledger" className="btn-ghost btn-sm ledger-link">
+            {t('profile.ledgerLink')}
+          </NavLink>
         </div>
       </section>
 

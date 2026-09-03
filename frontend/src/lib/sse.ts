@@ -8,15 +8,26 @@ import { getAccessToken } from '../api'
 export interface BookingReminder {
   eventId: string
   type: string
+  /** 订单级提醒的目标订单；用户级提醒（购物车 / 钱包 / 订单列表刷新）没有它。 */
   bookingId: number
+  occurredAt: string
+}
+
+/** 用户级提醒：只发给所属用户，页面收到后重新拉取自己的数据。 */
+export interface UserReminder {
+  eventId: string
+  type: string
   occurredAt: string
 }
 
 export const INITIAL_BACKOFF_MS = 1000
 export const MAX_BACKOFF_MS = 30000
 
-/** 解析一个 SSE 帧；只认 name=reminder 的数据帧，坏数据一律忽略。 */
-export function parseReminder(frame: string): BookingReminder | null {
+/**
+ * 解析一个 SSE 帧；只认 name=reminder 的数据帧，坏数据一律忽略。
+ * 订单级提醒带 bookingId，用户级提醒带 userId，两者必有其一。
+ */
+export function parseReminder(frame: string): (BookingReminder | UserReminder) | null {
   let event = ''
   let data = ''
   for (const line of frame.split(/\r?\n/)) {
@@ -25,9 +36,17 @@ export function parseReminder(frame: string): BookingReminder | null {
   }
   if (event !== 'reminder' || !data) return null
   try {
-    const parsed = JSON.parse(data) as BookingReminder
-    if (typeof parsed.bookingId !== 'number' || !parsed.eventId || !parsed.type) return null
-    return parsed
+    const parsed = JSON.parse(data) as {
+      eventId?: string
+      type?: string
+      bookingId?: number
+      userId?: number
+      occurredAt?: string
+    }
+    if (!parsed.eventId || !parsed.type) return null
+    if (typeof parsed.bookingId === 'number') return parsed as BookingReminder
+    if (typeof parsed.userId === 'number') return parsed as UserReminder
+    return null
   } catch {
     return null
   }
@@ -57,13 +76,48 @@ export async function streamBookingEvents(
   initialBackoffMs: number = INITIAL_BACKOFF_MS,
   onOpen?: () => void,
 ): Promise<void> {
+  return streamEvents(
+    `/api/bookings/${bookingId}/events`,
+    (reminder) => onReminder(reminder as BookingReminder),
+    signal,
+    initialBackoffMs,
+    onOpen,
+  )
+}
+
+/**
+ * 用户级刷新频道（购物车 / 钱包 / 订单列表）。提醒只说明「有变化」，
+ * 页面正确性以重新拉取的 REST 数据为准，丢失的提醒由建连补偿覆盖。
+ */
+export async function streamUserEvents(
+  onReminder: (reminder: UserReminder) => void,
+  signal: AbortSignal,
+  initialBackoffMs: number = INITIAL_BACKOFF_MS,
+  onOpen?: () => void,
+): Promise<void> {
+  return streamEvents(
+    '/api/user/events',
+    (reminder) => onReminder(reminder as UserReminder),
+    signal,
+    initialBackoffMs,
+    onOpen,
+  )
+}
+
+async function streamEvents(
+  url: string,
+  onReminder: (reminder: BookingReminder | UserReminder) => void,
+  signal: AbortSignal,
+  initialBackoffMs: number,
+  onOpen?: () => void,
+): Promise<void> {
   let backoff = initialBackoffMs
   while (!signal.aborted) {
     try {
       const headers: Record<string, string> = { Accept: 'text/event-stream' }
       const token = getAccessToken()
       if (token) headers.Authorization = `Bearer ${token}`
-      const response = await fetch(`/api/bookings/${bookingId}/events`, { headers, signal })
+      const response = await fetch(url, { headers, signal })
       if (!response.ok || !response.body) {
         throw new Error(`SSE connection failed (${response.status})`)
       }

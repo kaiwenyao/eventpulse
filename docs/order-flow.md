@@ -90,33 +90,28 @@ WHERE id = :id
 
 ```sql
 UPDATE users
-SET wallet_cents = wallet_cents - :amount
+SET wallet_cents = wallet_cents - :amount,
+    ledger_seq = ledger_seq + 1
 WHERE id = :userId
-  AND wallet_cents >= :amount;
+  AND wallet_cents - :amount BETWEEN 0 AND :maxBalance
+RETURNING wallet_cents, ledger_seq;
 ```
 
-如果这条操作影响了 1 个用户，表示扣款成功；影响 0 个用户，就说明余额不够，流程会立刻停止：
+除了扣款本身，这条语句还做了两件事：
 
-```java
-if (users.debitWalletIfEnough(userId, paidCents) == 0) {
-    throw BusinessException.conflict("余额不足");
-}
-```
+- `RETURNING` 把扣款后的真实余额和账户内序号一起带回来——流水里的“变动前余额 / 变动后余额”来自数据库受并发控制的真实状态，而不是请求或程序里的推算；
+- `ledger_seq + 1` 与余额在**同一条**语句里递增，保证并发交易后流水顺序可核对。
+
+扣款和退款都会在同一事务里写入一条 **钱包流水**（`wallet_ledger` 表）：谁、什么业务类型（充值 / 下单扣款 / 订单退款 / 活动取消退款）、带正负号的变动金额、变动前后余额、关联订单，以及一个全局唯一的业务去重标识（例如 `PAY:123` / `REFUND:123`）。同一笔业务最多一条流水，重复退款的竞争会撞唯一约束并整体回滚。流水只追加，永不修改或删除。
 
 ### 充值也遵循同一条规则
 
-充值是另一笔独立操作，不属于某一次下单事务；但它也不能先读余额、在程序里相加后把旧余额写回。否则它可能覆盖刚刚完成的扣款或退款。
+充值是另一笔独立操作，不属于某一次下单事务；但它同样通过上面的“条件才成功”的原子语句完成，并把余额、流水和待发送消息放在同一事务里提交。
 
-因此，充值同样通过一条“余额还没到上限才加钱”的原子操作完成：
+充值是演示功能，不接真实支付渠道。接口支持可选的 `Idempotency-Key` 请求头：
 
-```sql
-UPDATE users
-SET wallet_cents = wallet_cents + :amount
-WHERE id = :userId
-  AND wallet_cents <= :maxBalance - :amount;
-```
-
-这表示“在当前余额上加钱”，而不是“把余额改成我之前算好的某个数”。无论充值、下单扣款还是退款先后到达，它们都会以数据库中最新的余额继续计算，因此不会互相覆盖。
+- 相同的键重试（网络超时后重发）不会重复入账；
+- 不带键的两次充值是两笔独立业务，各自成功。
 
 ### 5. 保存订单与电子票
 
@@ -215,6 +210,18 @@ public BookingVo create(CreateBookingRequest request) {
 
 需要特别区分的是：**发送消息本身不在这个事务里。** 下单时只负责把待办安全地留在 Outbox；等订单已经确定成功后，后台才去发送消息。这样消息系统临时不可用时，不会影响用户下单，也不会让“订单成功了但通知任务消失”。
 
+### 锁的顺序：活动在前，钱包在后
+
+活动和钱包都是可能被多人同时修改的数据。所有会同时触碰这两类数据的流程都按同一个顺序处理：
+
+```text
+下单 / 批量结算：  活动名额（按活动 id 升序） → 钱包扣款
+用户取消：        活动名额 → 电子票 → 订单状态 → 钱包退款
+取消活动：        活动状态 → 电子票 → 订单状态 → 钱包退款
+```
+
+购物车批量结算一次会占用多个活动的名额，因此它先把待结算项按活动 id 排序、再逐个占用，避免两笔结算用相反的顺序互相等待。钱包扣款按结算项顺序逐笔执行（每张订单一笔扣款流水），任何一笔余额不足都会让整笔结算回滚。
+
 ### 为什么统一“活动在前，钱包在后”
 
 活动和钱包都是可能被多人同时修改的数据。为了避免两笔流程互相等待，所有会同时触碰这两类数据的流程都按同一个顺序处理：
@@ -265,11 +272,7 @@ SET status = 'CANCELLED', cancelled_at = now()
 WHERE id = :id AND status = 'CONFIRMED';
 ```
 
-领取成功后，才会退回订单原本记录的实付金额：
-
-```java
-users.creditWallet(booking.getUserId(), booking.getPaidCents());
-```
+领取成功后，才会退回订单原本记录的实付金额。退款和扣款一样，走“同一条原子语句 + 同一条流水”的路：余额、流水（业务去重标识为 `REFUND:{订单号}`）和待发送消息在同一事务里生效。用户取消与主办方取消活动竞争时，后到的一方要么抢不到订单（条件更新影响 0 行），要么撞上流水的唯一约束，都不会重复退款。
 
 电子票的锁也很重要。取消订单和现场核销都要先锁住同一张票：
 
@@ -294,13 +297,91 @@ Outbox 待办
 
 如果发送失败，待办不会被当成已完成，会在之后继续尝试。即使因为网络原因产生重复投递，接收方也会根据消息的唯一标识避免重复创建同一条通知或重复统计。
 
+
+## 购物车与批量结算
+
+购物车保存在数据库里（`cart_items` 表），刷新页面、重新登录、换一台设备都还在。加购**不扣余额、不占库存**——它只是把“想买”记下来。
+
+- 同一用户同一活动永远只有一行（数据库唯一约束），再次加购会合并数量；
+- 数量必须符合活动的单次限购；整个购物车最多 20 个活动项；
+- 每行保存加购时的**价格快照**，列表页会把它和当前价格对比：活动取消、停售、已开始、售罄、余票不足、价格变化、超限，都会作为明确的失效原因展示；
+- 价格变化不会静默按新价扣款：结算会直接被拒绝，直到用户在确认弹窗里点“按新价格结算”（把快照刷新为当前价）。
+
+### 结算：要么全部成功，要么全部不动
+
+点“结算勾选项”时，所有勾选的活动在**同一个数据库事务**里处理：
+
+```text
+┌────────────── 结算事务（同进同退）──────────────┐
+│ 1. 登记幂等键（checkouts 表，用户 + 键唯一）      │
+│ 2. 锁定本用户的购物车行，逐项重新校验             │
+│    （活动可订、数量限购、价格快照一致）            │
+│ 3. 按活动 id 升序占用库存（条件更新，0 行即回滚）  │
+│ 4. 每个活动一张独立订单（复用电子票 / 退款 / 通知） │
+│ 5. 每张订单一笔扣款流水（余额不足即整次回滚）      │
+│ 6. 写 Outbox：订单事件 + 钱包事件 + 购物车汇总事件 │
+│ 7. 只把“本次购买的数量”从购物车里减掉             │
+└─────────────────────────────────────────────────┘
+```
+
+任一步失败，整个事务回滚：库存恢复、余额未动、订单和流水消失、购物车原样保留，用户会收到明确原因。
+
+### 幂等：同一笔结算只发生一次
+
+结算请求必须带一个 `Idempotency-Key` 请求头（前端生成，重试时复用）。它和服务端持久化的结算记录（`checkouts` 表，按“用户 + 键”唯一）配合：
+
+- **相同键 + 相同参数**：直接返回原订单——即使购物车已经被清空；
+- **相同键 + 不同参数**：拒绝，不会把别的结算结果当成本次响应；
+- **并发重复点击**：两个请求同时到达，数据库唯一索引让后到者等待先到者提交，然后命中同一份结果；
+- **结算失败**：事务回滚时键也一并消失，同一键可以重新结算。
+
+不带幂等键的直接预订保持原有行为；带上键的直接预订也获得同样的“重试不重复下单、不重复扣款”的保证。
+
+### 另一台设备改了购物车怎么办
+
+结算前会用 `FOR UPDATE` 锁住本用户的购物车行，和另一台设备的修改串行化。移除时**只减去本次实际购买的数量**：如果另一台设备刚刚把数量从 2 加到 3，本次买走 2 后还剩 1；如果数量被改小了，结算会拒绝并提示刷新，绝不误删。
+
+## 钱包流水与老账户
+
+启用流水体系之前就有余额的账户，迁移会写一条**期初余额记录**（类型 `OPENING_BALANCE`）：它只声明“接入流水时余额是多少”，不猜测此前的充值与消费明细（不可追溯），也不会增加或扣除余额。迁移后的余额 = 期初 + 之后每一笔流水之和。
+
+迁移前的老订单没有旧扣款流水，但退款只依赖订单上不可变的实付快照（`bookings.paid_cents`），所以之后仍然可以正常取消、正常退款、正常记账。
+
+免费订单照常生成订单和电子票，但不产生任何资金流水——不制造虚假的收支。
+
+## 事件清单：谁发、谁收、出错会怎样
+
+三类业务事件都走同一条可靠链路：**业务事务里写 Outbox → 后台 Relay 投递 Kafka → 消费者在数据库事务里处理**。HTTP 请求从不等待 Kafka；Kafka 挂掉时业务照常成功，消息留在 Outbox 等恢复后投递。
+
+| 事件 | Topic | 消息 Key | 生产者（事务内） | 消费者（独立 group） |
+| --- | --- | --- | --- | --- |
+| BOOKING_CREATED / BOOKING_CANCELLED / EVENT_CANCELLED | `booking-events` | `booking:{id}` | 下单、结算、用户取消、活动取消 | `eventpulse`：通知 + 行为统计 + 订单级 SSE |
+| WALLET_LEDGER_RECORDED | `wallet-events` | `wallet:{userId}` | WalletService（余额、流水同事务） | `eventpulse-wallet`：充值站内通知 + 钱包 SSE |
+| CART_ITEM_ADDED / UPDATED / REMOVED、CART_CHECKOUT_COMPLETED | `cart-events` | `cart:{userId}` | CartService / CheckoutService（变更同事务） | `eventpulse-cart`：每日统计 + 购物车 SSE |
+
+每条消息都带 `messageId`（唯一消息标识）、`eventType`、`schemaVersion`、`occurredAt`、`userId` 和用于去重的业务标识（`dedupKey`，如 `PAY:123`、`CART_CHECKOUT:456`）；钱包事件还带 `ledgerId` 和账户内序号 `seqNo`。消息里没有密码、令牌或票据密钥。
+
+消费端的规则：
+
+- **去重**：`(consumer_group, dedupKey)` 写入 `consumed_events`，与通知、统计等副作用在**同一个数据库事务**里提交——副作用失败去重记录一并回滚，重放可以重新处理；
+- **顺序**：同一用户的消息按 Key 进同一分区保序；但**不同 Topic 之间没有全局顺序**，消费者不假设订单事件和钱包事件谁先到达，页面数据一律以 REST 重新查询为准；
+- **旧消息**：购物车事件带 `version`，消费端丢弃比已统计版本更旧的乱序消息；
+- **失败**：有限重试后进 `<topic>.DLT`；DLT 里的消息保留原始 payload 与业务去重标识，重新发回原 Topic 即可安全重放（幂等由 dedupKey 保证）。
+
+**Kafka 故障时用户会看到什么**：下单、结算、充值、退款全部照常成功（页面立即更新，数据以 PostgreSQL 为准）；只是站内通知和“其他页面自动刷新”的提醒会延迟，Kafka 恢复后补发。购物车 / 钱包 / 订单页面在断线重连或收到提醒时都会重新拉取 REST 数据，漏掉几条提醒也不会漏掉变化。
+
+**统计口径**（异步、有延迟，不用于余额或库存判断）：`cart_daily_stats` 里 `items_added / quantity_added` 只统计“新加入购物车”（合并进已有行不计入），`items_removed / quantity_removed` 统计主动移除与清空，`checkouts / purchased_*` 只按每次结算的汇总事件累计一次。Outbox 积压（`outboxPending` / `outboxFailed` / 最老待发送消息年龄）通过主办方 Dashboard 接口可观测；消费延迟与死信通过 Kafka 消费组 lag 与 DLT 消息数监控。
+
 ## 对照代码阅读（可选）
 
 如果你想把这篇说明和代码对应起来，可以从下面几个位置开始：
 
 - 下单与用户取消订单：[BookingService.java](../backend/src/main/java/dev/kaiwen/eventpulse/service/BookingService.java)
-- 安全扣款与退款的余额操作：[UserRepository.java](../backend/src/main/java/dev/kaiwen/eventpulse/repository/UserRepository.java)
+- 购物车：[CartService.java](../backend/src/main/java/dev/kaiwen/eventpulse/service/CartService.java)
+- 批量结算与幂等键：[CheckoutService.java](../backend/src/main/java/dev/kaiwen/eventpulse/service/CheckoutService.java)
+- 余额变动 + 流水 + 事件（同事务）：[WalletService.java](../backend/src/main/java/dev/kaiwen/eventpulse/service/WalletService.java)
 - 防止重复退款的订单取消操作：[BookingRepository.java](../backend/src/main/java/dev/kaiwen/eventpulse/repository/BookingRepository.java)
 - 协调取消与核销的电子票锁：[TicketRepository.java](../backend/src/main/java/dev/kaiwen/eventpulse/repository/TicketRepository.java)
 - 写入待办消息：[OutboxWriter.java](../backend/src/main/java/dev/kaiwen/eventpulse/outbox/OutboxWriter.java)
-- 订单实付金额字段 `bookings.paid_cents`：[V1__init.sql](../backend/src/main/resources/db/migration/V1__init.sql)
+- 钱包 / 购物车消费者：[WalletConsumer.java](../backend/src/main/java/dev/kaiwen/eventpulse/kafka/WalletConsumer.java)、[CartConsumer.java](../backend/src/main/java/dev/kaiwen/eventpulse/kafka/CartConsumer.java)
+- 表结构（含钱包流水 / 购物车 / 结算幂等键）：[V1__init.sql](../backend/src/main/resources/db/migration/V1__init.sql)、[V2__cart_wallet_ledger_checkout.sql](../backend/src/main/resources/db/migration/V2__cart_wallet_ledger_checkout.sql)

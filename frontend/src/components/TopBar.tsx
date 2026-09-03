@@ -9,6 +9,7 @@ import { MoonIcon, SunIcon } from '../ui/Icons'
 const NAV_LINKS = [
   { to: '/', key: 'nav.events', end: true, auth: false },
   { to: '/bookings', key: 'nav.bookings', end: false, auth: true },
+  { to: '/cart', key: 'nav.cart', end: false, auth: true },
   { to: '/favourites', key: 'nav.favourites', end: false, auth: true },
   { to: '/notifications', key: 'nav.notifications', end: false, auth: true },
   { to: '/profile', key: 'nav.profile', end: false, auth: true },
