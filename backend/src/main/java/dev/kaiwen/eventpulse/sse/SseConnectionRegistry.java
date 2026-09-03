@@ -25,23 +25,33 @@ import dev.kaiwen.eventpulse.exception.BusinessException;
 @Profile("api")
 public class SseConnectionRegistry {
 
+    /** bookingId 为空表示用户级频道（购物车 / 钱包 / 订单列表的刷新提醒）。 */
     private record Connection(Long bookingId, Long userId, SseEmitter emitter) {
     }
 
     private final Map<String, Connection> connections = new ConcurrentHashMap<>();
     private final Map<Long, Set<String>> byBooking = new ConcurrentHashMap<>();
     private final Map<Long, Set<String>> byUser = new ConcurrentHashMap<>();
+    private final Map<Long, Set<String>> userChannels = new ConcurrentHashMap<>();
     private final long timeoutMs;
     private final int maxPerBooking;
     private final int maxPerUser;
+    private final int maxUserChannels;
 
+    /** 用户级刷新频道的连接数上限默认与 per-user 上限一致。 */
+    @org.springframework.beans.factory.annotation.Autowired
     public SseConnectionRegistry(
             @Value("${eventpulse.sse.timeout-ms:1800000}") long timeoutMs,
             @Value("${eventpulse.sse.max-connections-per-booking:5}") int maxPerBooking,
             @Value("${eventpulse.sse.max-connections-per-user:20}") int maxPerUser) {
+        this(timeoutMs, maxPerBooking, maxPerUser, maxPerUser);
+    }
+
+    public SseConnectionRegistry(long timeoutMs, int maxPerBooking, int maxPerUser, int maxUserChannels) {
         this.timeoutMs = timeoutMs;
         this.maxPerBooking = maxPerBooking;
         this.maxPerUser = maxPerUser;
+        this.maxUserChannels = maxUserChannels;
     }
 
     /**
@@ -55,7 +65,7 @@ public class SseConnectionRegistry {
             throw BusinessException.conflict("Too many live connections for this user");
         }
         String connectionId = UUID.randomUUID().toString();
-        SseEmitter emitter = new SseEmitter(timeoutMs);
+        SseEmitter emitter = newEmitter();
         emitter.onCompletion(() -> remove(connectionId));
         emitter.onTimeout(() -> {
             emitter.complete();
@@ -68,13 +78,44 @@ public class SseConnectionRegistry {
         return emitter;
     }
 
+    /**
+     * 注册用户级刷新频道（已登录即可，只收自己账号的变化提醒）。
+     * 与订单级订阅共用 per-user 连接上限，另设独立频道数上限。
+     */
+    public SseEmitter registerUserChannel(Long userId) {
+        if (userChannels.getOrDefault(userId, Set.of()).size() >= maxUserChannels) {
+            throw BusinessException.conflict("Too many live connections for this user");
+        }
+        String connectionId = UUID.randomUUID().toString();
+        SseEmitter emitter = newEmitter();
+        emitter.onCompletion(() -> remove(connectionId));
+        emitter.onTimeout(() -> {
+            emitter.complete();
+            remove(connectionId);
+        });
+        emitter.onError(e -> remove(connectionId));
+        connections.put(connectionId, new Connection(null, userId, emitter));
+        userChannels.computeIfAbsent(userId, key -> ConcurrentHashMap.newKeySet()).add(connectionId);
+        byUser.computeIfAbsent(userId, key -> ConcurrentHashMap.newKeySet()).add(connectionId);
+        return emitter;
+    }
+
+    private SseEmitter newEmitter() {
+        return new SseEmitter(timeoutMs);
+    }
+
     /** 只删除自己的连接，不影响同一订单的其他连接。 */
     public void remove(String connectionId) {
         Connection removed = connections.remove(connectionId);
         if (removed == null) {
             return;
         }
-        removeId(byBooking, removed.bookingId(), connectionId);
+        if (removed.bookingId() != null) {
+            removeId(byBooking, removed.bookingId(), connectionId);
+        }
+        else {
+            removeId(userChannels, removed.userId(), connectionId);
+        }
         removeId(byUser, removed.userId(), connectionId);
     }
 
@@ -85,6 +126,26 @@ public class SseConnectionRegistry {
     public int send(Long bookingId, String name, Object payload) {
         int sent = 0;
         for (String connectionId : byBooking.getOrDefault(bookingId, Set.of())) {
+            Connection connection = connections.get(connectionId);
+            if (connection == null) {
+                continue;
+            }
+            try {
+                connection.emitter().send(SseEmitter.event().name(name)
+                        .data(payload, MediaType.APPLICATION_JSON));
+                sent++;
+            }
+            catch (Exception e) {
+                remove(connectionId);
+            }
+        }
+        return sent;
+    }
+
+    /** 向本实例上某用户的全部「用户级频道」连接推送刷新提醒。 */
+    public int sendToUser(Long userId, String name, Object payload) {
+        int sent = 0;
+        for (String connectionId : userChannels.getOrDefault(userId, Set.of())) {
             Connection connection = connections.get(connectionId);
             if (connection == null) {
                 continue;

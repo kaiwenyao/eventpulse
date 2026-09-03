@@ -20,6 +20,7 @@ import dev.kaiwen.eventpulse.entity.Notification;
 import dev.kaiwen.eventpulse.entity.Ticket;
 import dev.kaiwen.eventpulse.entity.User;
 import dev.kaiwen.eventpulse.entity.UserPreference;
+import dev.kaiwen.eventpulse.entity.WalletLedger;
 import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.EventDailyMetricRepository;
 import dev.kaiwen.eventpulse.repository.EventFavouriteRepository;
@@ -27,10 +28,12 @@ import dev.kaiwen.eventpulse.repository.InteractionRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
 import dev.kaiwen.eventpulse.repository.UserPreferenceRepository;
+import dev.kaiwen.eventpulse.repository.UserRepository;
 import dev.kaiwen.eventpulse.seed.DemoCatalog.BookingSpec;
 import dev.kaiwen.eventpulse.seed.DemoCatalog.FavouriteSpec;
 import dev.kaiwen.eventpulse.seed.DemoCatalog.PreferenceSpec;
 import dev.kaiwen.eventpulse.service.TicketService;
+import dev.kaiwen.eventpulse.service.WalletService;
 
 /**
  * 播种账号与活动之外的「有人用过」的痕迹：订单、电子票、收藏、行为流水、
@@ -53,6 +56,8 @@ public class DemoEngagementSeeder {
     private final EventDailyMetricRepository metrics;
     private final NotificationRepository notifications;
     private final UserPreferenceRepository preferences;
+    private final UserRepository users;
+    private final WalletService wallets;
 
     public DemoEngagementSeeder(
             BookingRepository bookings,
@@ -62,7 +67,9 @@ public class DemoEngagementSeeder {
             InteractionRepository interactions,
             EventDailyMetricRepository metrics,
             NotificationRepository notifications,
-            UserPreferenceRepository preferences) {
+            UserPreferenceRepository preferences,
+            UserRepository users,
+            WalletService wallets) {
         this.bookings = bookings;
         this.ticketService = ticketService;
         this.tickets = tickets;
@@ -71,6 +78,8 @@ public class DemoEngagementSeeder {
         this.metrics = metrics;
         this.notifications = notifications;
         this.preferences = preferences;
+        this.users = users;
+        this.wallets = wallets;
     }
 
     /** seeded 的顺序必须与 {@link DemoCatalog#EVENTS} 一致，订单按下标引用活动。 */
@@ -81,15 +90,74 @@ public class DemoEngagementSeeder {
         seedMetrics(seeded, now);
     }
 
+    /**
+     * 订单 + 电子票 + 通知 + 钱包流水。流水与余额在同一事务里保持一致：
+     * 期初余额（充值总额）→ 每笔确认订单一笔扣款 → 每笔取消订单「扣款 + 退款」，
+     * 最终余额 = users.wallet_cents（播种时已扣掉确认订单的金额）。
+     * free 订单不产生资金流水。Seeder 幂等由 seed_runs 保证，重复运行不会重复记账。
+     */
     private void seedBookings(Map<String, User> byEmail, List<Event> seeded, Instant now) {
+        Map<Long, long[]> walletState = new java.util.HashMap<>();
+        for (User user : byEmail.values()) {
+            long initial = DemoCatalog.USERS.stream()
+                    .filter(spec -> spec.email().equals(user.getEmail()))
+                    .findFirst()
+                    .map(DemoCatalog.UserSpec::walletCents)
+                    .orElse(0L);
+            if (initial != 0) {
+                wallets.recordLedgerOnly(user.getId(), initial, WalletLedger.TYPE_OPENING_BALANCE,
+                        "OPENING_BALANCE:" + user.getId(), null, null,
+                        "Opening balance for the demo wallet", 0, initial, 1, now.minus(90, ChronoUnit.DAYS));
+                walletState.put(user.getId(), new long[] {initial, 1});
+            }
+        }
         for (BookingSpec spec : DemoCatalog.BOOKINGS) {
             Event event = seeded.get(spec.eventIndex());
             User buyer = byEmail.get(spec.userEmail());
             Booking booking = saveBooking(spec, event, buyer, now);
             issueTickets(spec, booking, event, now);
             saveBookingNotification(spec, booking, event, buyer, now);
+            recordLedgerForBooking(spec, booking, event, buyer, walletState);
             record(buyer.getId(), event.getId(), "CONFIRMED".equals(spec.status()) ? "BOOK" : "CANCEL",
                     now.plus(spec.createdOffsetHours(), ChronoUnit.HOURS));
+        }
+        // 余额链自检：播种结束后流水余额必须与 users.wallet_cents 一致，否则整个事务回滚。
+        // 同时把 users.ledger_seq 推进到最后一条历史流水的序号，真实交易从下一条开始。
+        for (Map.Entry<Long, long[]> entry : walletState.entrySet()) {
+            User user = byEmail.values().stream()
+                    .filter(candidate -> candidate.getId().equals(entry.getKey()))
+                    .findFirst()
+                    .orElseThrow();
+            if (entry.getValue()[0] != user.getWalletCents()) {
+                throw new IllegalStateException("Seed wallet ledger mismatch for " + user.getEmail()
+                        + ": ledger=" + entry.getValue()[0] + " wallet=" + user.getWalletCents());
+            }
+            users.updateLedgerSeq(entry.getKey(), entry.getValue()[1]);
+        }
+    }
+
+    private void recordLedgerForBooking(BookingSpec spec, Booking booking, Event event, User buyer,
+            Map<Long, long[]> walletState) {
+        long paid = (long) event.getPriceCents() * spec.quantity();
+        if (paid <= 0) {
+            return;
+        }
+        long[] state = walletState.computeIfAbsent(buyer.getId(), key -> new long[] {0, 0});
+        boolean confirmed = "CONFIRMED".equals(spec.status());
+        Instant paidAt = booking.getCreatedAt();
+        wallets.recordLedgerOnly(buyer.getId(), -paid, WalletLedger.TYPE_BOOKING_PAYMENT,
+                "PAY:" + booking.getId(), booking.getId(), null,
+                "Payment for booking #" + booking.getId()
+                        + " (" + event.getTitle() + " x" + spec.quantity() + ")",
+                state[0], state[0] - paid, ++state[1], paidAt);
+        state[0] -= paid;
+        if (!confirmed) {
+            // 已取消订单：扣款之后立刻按 paid 快照退回（演示「订了又退」的历史）。
+            wallets.recordLedgerOnly(buyer.getId(), paid, WalletLedger.TYPE_BOOKING_REFUND,
+                    "REFUND:" + booking.getId(), booking.getId(), null,
+                    "Refund for cancelled booking #" + booking.getId() + " (" + event.getTitle() + ")",
+                    state[0], state[0] + paid, ++state[1], booking.getCancelledAt());
+            state[0] += paid;
         }
     }
 
@@ -100,6 +168,7 @@ public class DemoEngagementSeeder {
         booking.setEventId(event.getId());
         booking.setQuantity(spec.quantity());
         booking.setPaidCents((long) event.getPriceCents() * spec.quantity());
+        booking.setUnitPriceCents((long) event.getPriceCents());
         booking.setStatus(spec.status());
         booking.setCreatedAt(createdAt);
         if (!"CONFIRMED".equals(spec.status())) {

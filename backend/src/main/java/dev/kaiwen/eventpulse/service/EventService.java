@@ -179,24 +179,44 @@ public class EventService {
                 reason);
     }
 
-    static String unbookableReason(Event event, Instant now) {
+    /**
+     * 不可预订原因的机器键（null = 可预订）。购物车失效提示、订单不可取消原因
+     * 都引用这组键，前端再做 i18n；{@link #unbookableReason} 负责英文消息。
+     */
+    static String unbookableKey(Event event, Instant now) {
         if (!EventStatus.PUBLISHED.equals(event.getStatus())) {
-            return EventStatus.CANCELLED.equals(event.getStatus()) ? "Event cancelled, booking closed" : "Event is not open for booking";
+            return EventStatus.CANCELLED.equals(event.getStatus()) ? "EVENT_CANCELLED" : "EVENT_NOT_OPEN";
         }
         if (event.getSalesStartAt() != null && now.isBefore(event.getSalesStartAt())) {
-            return "Sales have not started";
+            return "SALES_NOT_STARTED";
         }
         Instant salesEnd = event.getSalesEndAt() != null ? event.getSalesEndAt() : event.getStartsAt();
         if (!now.isBefore(salesEnd)) {
-            return "Sales have ended";
+            return "SALES_ENDED";
         }
         if (!now.isBefore(event.getStartsAt())) {
-            return "Event has already started";
+            return "EVENT_STARTED";
         }
         if (event.remaining() <= 0) {
-            return "Sold out";
+            return "SOLD_OUT";
         }
         return null;
+    }
+
+    static String unbookableReason(Event event, Instant now) {
+        String key = unbookableKey(event, now);
+        if (key == null) {
+            return null;
+        }
+        return switch (key) {
+            case "EVENT_CANCELLED" -> "Event cancelled, booking closed";
+            case "EVENT_NOT_OPEN" -> "Event is not open for booking";
+            case "SALES_NOT_STARTED" -> "Sales have not started";
+            case "SALES_ENDED" -> "Sales have ended";
+            case "EVENT_STARTED" -> "Event has already started";
+            case "SOLD_OUT" -> "Sold out";
+            default -> "Event is not open for booking";
+        };
     }
 
     private static int compareEvents(Event a, Event b, String sort, boolean desc) {

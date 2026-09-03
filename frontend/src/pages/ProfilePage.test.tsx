@@ -75,9 +75,14 @@ describe('ProfilePage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '€50' }))
     await userEvent.click(screen.getByRole('button', { name: '充值' }))
-    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/auth/wallet/recharge', {
-      amountCents: 5000,
-    }))
+    await waitFor(() =>
+      expect(apiMock.fn).toHaveBeenCalledWith(
+        'POST',
+        '/api/auth/wallet/recharge',
+        { amountCents: 5000 },
+        expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
+      ),
+    )
     expect(await screen.findByText('€938.00')).toBeInTheDocument()
     expect(apiMock.fn).toHaveBeenCalled()
   })

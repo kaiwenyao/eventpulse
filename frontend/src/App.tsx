@@ -11,12 +11,14 @@ import { OrganiserFormPage } from './organiser/OrganiserFormPage'
 import { OrganiserLayout } from './organiser/OrganiserLayout'
 import { BookingDetailPage } from './pages/BookingDetailPage'
 import { BookingsPage } from './pages/BookingsPage'
+import { CartPage } from './pages/CartPage'
 import { EventDetailPage } from './pages/EventDetailPage'
 import { EventsPage } from './pages/EventsPage'
 import { FavouritesPage } from './pages/FavouritesPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotificationsPage } from './pages/NotificationsPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { WalletLedgerPage } from './pages/WalletLedgerPage'
 import { EmptyState } from './ui/Badges'
 import { SkeletonGrid } from './ui/Skeleton'
 import { ToastProvider } from './ui/Toast'
@@ -75,6 +77,8 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/bookings" element={requireUser(<BookingsPage />)} />
           <Route path="/bookings/:id" element={requireUser(<BookingDetailPage />)} />
+          <Route path="/cart" element={requireUser(<CartPage />)} />
+          <Route path="/wallet/ledger" element={requireUser(<WalletLedgerPage />)} />
           <Route path="/favourites" element={requireUser(<FavouritesPage />)} />
           <Route path="/notifications" element={requireUser(<NotificationsPage />)} />
           <Route path="/profile" element={requireUser(<ProfilePage />)} />

@@ -37,4 +37,38 @@ public class KafkaTopicConfig {
                 .replicas(1)
                 .build();
     }
+
+    /** cart-events：按用户（message key = cart:{userId}）分区保序。 */
+    @Bean
+    public NewTopic cartEventsTopic() {
+        return TopicBuilder.name(KafkaTopics.CART_EVENTS)
+                .partitions(partitions)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic cartEventsDltTopic() {
+        return TopicBuilder.name(KafkaTopics.CART_EVENTS_DLT)
+                .partitions(partitions)
+                .replicas(1)
+                .build();
+    }
+
+    /** wallet-events：按用户（message key = wallet:{userId}）分区，携带流水序号。 */
+    @Bean
+    public NewTopic walletEventsTopic() {
+        return TopicBuilder.name(KafkaTopics.WALLET_EVENTS)
+                .partitions(partitions)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic walletEventsDltTopic() {
+        return TopicBuilder.name(KafkaTopics.WALLET_EVENTS_DLT)
+                .partitions(partitions)
+                .replicas(1)
+                .build();
+    }
 }

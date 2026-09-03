@@ -86,6 +86,8 @@ class DemoSeedTest {
     NotificationRepository notifications;
     @Mock
     UserPreferenceRepository preferences;
+    @Mock
+    dev.kaiwen.eventpulse.service.WalletService wallets;
 
     private InMemoryMediaStorage storage;
 
@@ -106,7 +108,8 @@ class DemoSeedTest {
                 .thenAnswer(call -> issue(call.getArgument(0), call.getArgument(1), call.getArgument(2)));
 
         DemoEngagementSeeder engagement = new DemoEngagementSeeder(
-                bookings, ticketService, tickets, favourites, interactions, metrics, notifications, preferences);
+                bookings, ticketService, tickets, favourites, interactions, metrics, notifications, preferences,
+                users, wallets);
         storage = new InMemoryMediaStorage();
         seeder = new DemoDataSeeder(users, events, mediaAssets, passwordEncoder, engagement, storage);
     }

@@ -24,6 +24,7 @@ import dev.kaiwen.eventpulse.dto.EventDtos.OrganiserEventRequest;
 import dev.kaiwen.eventpulse.entity.Booking;
 import dev.kaiwen.eventpulse.entity.Event;
 import dev.kaiwen.eventpulse.entity.EventAuditLog;
+import dev.kaiwen.eventpulse.entity.WalletLedger;
 import dev.kaiwen.eventpulse.exception.BusinessException;
 import dev.kaiwen.eventpulse.outbox.KafkaTopics;
 import dev.kaiwen.eventpulse.outbox.OutboxWriter;
@@ -31,7 +32,6 @@ import dev.kaiwen.eventpulse.repository.BookingRepository;
 import dev.kaiwen.eventpulse.repository.EventAuditLogRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
-import dev.kaiwen.eventpulse.repository.UserRepository;
 
 @Service
 public class OrganiserEventService {
@@ -41,7 +41,7 @@ public class OrganiserEventService {
     private final TicketRepository tickets;
     private final EventAuditLogRepository audits;
     private final EventService eventService;
-    private final UserRepository users;
+    private final WalletService wallets;
     private final OutboxWriter outbox;
     private final ObjectMapper objectMapper;
     private final PopularCache popularCache;
@@ -52,7 +52,7 @@ public class OrganiserEventService {
             TicketRepository tickets,
             EventAuditLogRepository audits,
             EventService eventService,
-            UserRepository users,
+            WalletService wallets,
             OutboxWriter outbox,
             ObjectMapper objectMapper,
             PopularCache popularCache) {
@@ -61,7 +61,7 @@ public class OrganiserEventService {
         this.tickets = tickets;
         this.audits = audits;
         this.eventService = eventService;
-        this.users = users;
+        this.wallets = wallets;
         this.outbox = outbox;
         this.objectMapper = objectMapper;
         this.popularCache = popularCache;
@@ -152,7 +152,14 @@ public class OrganiserEventService {
         for (Booking booking : bookings.findByEventIdOrderByCreatedAtDesc(id)) {
             // The event row is already updated above; claim the booking before touching its wallet.
             if (bookings.cancelConfirmed(booking.getId()) == 1) {
-                users.creditWallet(booking.getUserId(), booking.getPaidCents());
+                if (booking.getPaidCents() > 0) {
+                    // 活动取消退款流水：dedup 与用户取消退款一致（REFUND:{bookingId}），
+                    // 与用户取消竞争时后到方撞唯一约束或抢不到订单，不会重复退款。
+                    wallets.credit(booking.getUserId(), booking.getPaidCents(),
+                            WalletLedger.TYPE_EVENT_CANCEL_REFUND,
+                            "REFUND:" + booking.getId(), booking.getId(), booking.getCheckoutId(),
+                            "Refund because the event was cancelled (" + event.getTitle() + ")");
+                }
                 outbox.write(KafkaTopics.BOOKING_EVENTS, "EVENT_CANCELLED",
                         "booking:" + booking.getId(),
                         "EVENT_CANCELLED:" + id + ":" + booking.getUserId(),

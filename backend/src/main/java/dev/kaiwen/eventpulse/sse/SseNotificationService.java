@@ -24,10 +24,17 @@ public class SseNotificationService {
         this.registry = registry;
     }
 
-    /** Worker 处理完成后的提醒推给本机匹配的连接。 */
+    /** Worker 处理完成后的提醒推给本机匹配的连接：订单级按 bookingId，用户级按 userId。 */
     public void broadcast(SseReminder reminder) {
-        int sent = registry.send(reminder.bookingId(), "reminder", reminder);
-        log.debug("SSE 提醒 bookingId={} type={} 送达 {} 条连接", reminder.bookingId(), reminder.type(), sent);
+        if (reminder.bookingId() != null) {
+            int sent = registry.send(reminder.bookingId(), "reminder", reminder);
+            log.debug("SSE 提醒 bookingId={} type={} 送达 {} 条连接", reminder.bookingId(), reminder.type(), sent);
+            return;
+        }
+        if (reminder.userId() != null) {
+            int sent = registry.sendToUser(reminder.userId(), "reminder", reminder);
+            log.debug("SSE 用户级提醒 userId={} type={} 送达 {} 条连接", reminder.userId(), reminder.type(), sent);
+        }
     }
 
     /** 定期心跳：避免空闲连接被代理与负载均衡器关闭。 */

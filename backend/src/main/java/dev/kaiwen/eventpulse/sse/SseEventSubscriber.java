@@ -15,8 +15,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * 订阅 Redis 的「有新状态」广播（仅 api Profile）。
- * 收到提醒后按 bookingId 找本机连接推送；eventId 用来忽略重复提醒。
- * Redis 短暂中断时订阅会降级，浏览器靠重连后的 REST 查询补上变化。
+ * 收到提醒后按 bookingId（订单级）或 userId（用户级）找本机连接推送；
+ * eventId 用来忽略重复提醒。Redis 短暂中断时订阅会降级，
+ * 浏览器靠重连后的 REST 查询补上变化。
  */
 @Component
 @Profile("api")
@@ -46,12 +47,14 @@ public class SseEventSubscriber implements MessageListener {
         try {
             SseReminder reminder = objectMapper.readValue(
                     new String(message.getBody(), StandardCharsets.UTF_8), SseReminder.class);
-            if (reminder.bookingId() == null || reminder.type() == null) {
-                log.warn("忽略缺少 bookingId/type 的 SSE 提醒: {}", reminder);
+            if (reminder.type() == null
+                    || (reminder.bookingId() == null && reminder.userId() == null)) {
+                log.warn("忽略缺少 type 与目标的 SSE 提醒: {}", reminder);
                 return;
             }
             String eventId = reminder.eventId() == null || reminder.eventId().isBlank()
-                    ? reminder.type() + ":" + reminder.bookingId()
+                    ? reminder.type() + ":" + (reminder.bookingId() != null
+                            ? reminder.bookingId() : "user:" + reminder.userId())
                     : reminder.eventId();
             if (!recentEventIds.add(eventId)) {
                 log.debug("忽略重复 SSE 提醒 eventId={}", eventId);
@@ -61,7 +64,7 @@ public class SseEventSubscriber implements MessageListener {
                 recentEventIds.clear();
             }
             notifications.broadcast(new SseReminder(eventId, reminder.type(), reminder.bookingId(),
-                    reminder.occurredAt()));
+                    reminder.userId(), reminder.occurredAt()));
         }
         catch (Exception e) {
             // 单条坏消息不能影响订阅循环；Redis 里的提醒本来就是可丢弃的。

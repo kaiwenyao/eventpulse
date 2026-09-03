@@ -49,29 +49,53 @@ public class SseReminderPublisher {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    publish(bookingId, type, eventId);
+                    publish(new SseReminder(eventId, type, bookingId, Instant.now().toString()));
                 }
             });
         }
         else {
-            publish(bookingId, type, eventId);
+            publish(new SseReminder(eventId, type, bookingId, Instant.now().toString()));
         }
     }
 
-    private void publish(Long bookingId, String type, String eventId) {
+    /**
+     * 用户级刷新提醒（购物车 / 钱包 / 订单列表）：只发给该用户自己的频道连接。
+     * 同样走 afterCommit；redisEventId 用于跨实例去重。
+     */
+    public void remindUser(Long userId, String type, String redisEventId) {
+        if (userId == null) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publishUser(userId, type, redisEventId);
+                }
+            });
+        }
+        else {
+            publishUser(userId, type, redisEventId);
+        }
+    }
+
+    private void publishUser(Long userId, String type, String redisEventId) {
+        String dedupEventId = redisEventId == null || redisEventId.isBlank()
+                ? type + ":user:" + userId + ":" + UUID.randomUUID()
+                : redisEventId;
+        publish(new SseReminder(dedupEventId, type, null, userId, Instant.now().toString()));
+    }
+
+    private void publish(SseReminder reminder) {
         if (redis == null) {
             return;
         }
         try {
-            String json = objectMapper.writeValueAsString(new SseReminder(
-                    eventId == null || eventId.isBlank() ? UUID.randomUUID().toString() : eventId,
-                    type,
-                    bookingId,
-                    Instant.now().toString()));
+            String json = objectMapper.writeValueAsString(reminder);
             redis.convertAndSend(SseReminder.REDIS_CHANNEL, json);
         }
         catch (Exception e) {
-            log.warn("SSE 提醒发布失败（业务数据不受影响） bookingId={} type={}", bookingId, type, e);
+            log.warn("SSE 提醒发布失败（业务数据不受影响） type={} eventId={}", reminder.type(), reminder.eventId(), e);
         }
     }
 }

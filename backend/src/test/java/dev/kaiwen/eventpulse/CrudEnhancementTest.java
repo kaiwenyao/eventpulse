@@ -90,6 +90,9 @@ class CrudEnhancementTest {
     @Mock OutboxRepository outboxRepo;
     @Mock UserRepository users;
     @Mock KafkaTemplate<String, String> kafka;
+    @Mock dev.kaiwen.eventpulse.service.WalletService wallets;
+    @Mock dev.kaiwen.eventpulse.repository.WalletLedgerRepository walletLedgers;
+    @Mock dev.kaiwen.eventpulse.service.CheckoutService checkoutService;
 
     @AfterEach
     void clear() {
@@ -115,7 +118,7 @@ class CrudEnhancementTest {
         EventService eventService = new EventService(events);
         OutboxWriter writer = new OutboxWriter(outboxRepo, new ObjectMapper());
         OrganiserEventService service = new OrganiserEventService(
-                events, bookings, tickets, audits, eventService, users, writer, new ObjectMapper(),
+                events, bookings, tickets, audits, eventService, wallets, writer, new ObjectMapper(),
                 new PopularCache());
         assertThatThrownBy(() -> service.list(null, null, null, null, null, null))
                 .isInstanceOf(BusinessException.class)
@@ -194,7 +197,7 @@ class CrudEnhancementTest {
         props.setSecretKey("test-secret-key-change-me-0123456789ab");
         EventService eventService = new EventService(events);
         OrganiserEventService organiser = new OrganiserEventService(
-                events, bookings, tickets, audits, eventService, users, new OutboxWriter(outboxRepo, new ObjectMapper()),
+                events, bookings, tickets, audits, eventService, wallets, new OutboxWriter(outboxRepo, new ObjectMapper()),
                 new ObjectMapper(), new PopularCache());
         TicketService ticketService = new TicketService(tickets, organiser, props);
         when(tickets.save(any())).thenAnswer(inv -> {
@@ -346,8 +349,12 @@ class CrudEnhancementTest {
         when(events.findByIdAndOrganiserId(21L, 2L)).thenReturn(Optional.of(leftover));
         orgApi.delete(21L);
         EventService eventServiceForOps = new EventService(events);
-        BookingService bookingService = new BookingService(bookings, eventServiceForOps, events, ticketService, tickets, users,
+        BookingService bookingService = new BookingService(bookings, eventServiceForOps, events, ticketService, tickets,
+                checkoutService, wallets, walletLedgers,
                 new OutboxWriter(outboxRepo, new ObjectMapper()), new PopularCache());
+        when(events.findAllById(any())).thenReturn(List.of(event(20L, EventStatus.PUBLISHED, 2L)));
+        when(tickets.countGroupedByBookingIds(any())).thenReturn(List.of());
+        when(walletLedgers.findByBookingIdInAndBizTypeIn(any(), any())).thenReturn(List.of());
         OrganiserOpsController ops = new OrganiserOpsController(organiser, ticketService, bookings, users, bookingService);
         Booking confirmed = new Booking();
         confirmed.setId(30L);
@@ -357,8 +364,6 @@ class CrudEnhancementTest {
         confirmed.setStatus("CONFIRMED");
         confirmed.setCreatedAt(Instant.now());
         when(bookings.findByEventIdOrderByCreatedAtDesc(20L)).thenReturn(List.of(confirmed));
-        when(events.findById(20L)).thenReturn(Optional.of(event(20L, EventStatus.PUBLISHED, 2L)));
-        when(tickets.countByBookingIdAndStatus(any(), any())).thenReturn(0L);
         when(tickets.findByBookingIdOrderByIdAsc(30L)).thenReturn(List.of());
         when(users.findById(2L)).thenReturn(Optional.of(new User()));
         ops.eventBookings(20L);

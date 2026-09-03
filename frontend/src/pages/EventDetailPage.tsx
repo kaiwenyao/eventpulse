@@ -17,6 +17,7 @@ function BookingPanel({ event, onError }: { event: EventVo; onError: (msg: strin
   const maxQty = Math.max(1, Math.min(event.maxQuantityPerBooking || 10, event.remaining || 1))
   const [qty, setQty] = useState(1)
   const [busy, setBusy] = useState(false)
+  const [addingToCart, setAddingToCart] = useState(false)
 
   async function confirm() {
     setBusy(true)
@@ -30,6 +31,21 @@ function BookingPanel({ event, onError }: { event: EventVo; onError: (msg: strin
       notify(message, 'error')
     } finally {
       setBusy(false)
+    }
+  }
+
+  // 加购不扣余额、不占库存；合并数量规则由后端校验。
+  async function addToCart() {
+    setAddingToCart(true)
+    try {
+      await api('POST', '/api/cart/items', { eventId: event.id, quantity: qty })
+      notify(t('detail.addedToCart'), 'success')
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : t('detail.addToCartFailed')
+      onError(message)
+      notify(message, 'error')
+    } finally {
+      setAddingToCart(false)
     }
   }
 
@@ -63,6 +79,9 @@ function BookingPanel({ event, onError }: { event: EventVo; onError: (msg: strin
       </p>
       <button className="btn-primary btn-block" disabled={busy} onClick={confirm}>
         {busy ? t('detail.submitting') : t('detail.confirm')}
+      </button>
+      <button className="btn-secondary btn-block" disabled={addingToCart} onClick={addToCart}>
+        {addingToCart ? t('detail.addingToCart') : t('detail.addToCart')}
       </button>
     </div>
   )

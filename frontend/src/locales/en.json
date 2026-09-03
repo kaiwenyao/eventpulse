@@ -16,7 +16,8 @@
     "closeToast": "Dismiss notification",
     "remainingTickets": "{{count}} tickets left",
     "requestFailed": "Request failed",
-    "all": "All"
+    "all": "All",
+    "retry": "Retry"
   },
   "nav": {
     "events": "Events",
@@ -32,7 +33,8 @@
     "themeToLight": "Switch to light theme",
     "themeToDark": "Switch to dark theme",
     "switchToEn": "Switch to English",
-    "switchToZh": "切换到中文"
+    "switchToZh": "切换到中文",
+    "cart": "Cart"
   },
   "footer": {
     "tagline": "A city-event booking demo · Spring Boot + Kafka + React"
@@ -125,7 +127,11 @@
     "notes": "Attendance notes",
     "contact": "Organiser contact: {{contact}}",
     "cancelled": "Event cancelled: {{reason}}",
-    "loginToBook": "Sign in to book"
+    "loginToBook": "Sign in to book",
+    "addToCart": "Add to cart",
+    "addingToCart": "Adding…",
+    "addedToCart": "Added to cart",
+    "addToCartFailed": "Could not add to cart"
   },
   "login": {
     "asideTitle": "Keep booking the city nights you love",
@@ -170,7 +176,30 @@
     "placedAt": "Placed",
     "orderId": "Order no.",
     "eTickets": "E-tickets",
-    "ticketId": "Ticket #{{id}}"
+    "ticketId": "Ticket #{{id}}",
+    "loadFailed": "Failed to load orders",
+    "statusFilter": "Status",
+    "from": "From",
+    "to": "To",
+    "searchLabel": "Search",
+    "searchPlaceholder": "Order id or event title",
+    "paidLine": "Paid {{amount}}",
+    "refundLine": "Refunded {{amount}}",
+    "pagerAria": "Order pagination",
+    "unitPrice": "Unit price",
+    "paidAmount": "Amount paid",
+    "refundAmount": "Refunded",
+    "cancelledAt": "Cancelled at",
+    "eventTime": "Event time",
+    "checkoutGroup": "Other orders from checkout #{{id}}",
+    "blockReason": {
+      "ALREADY_CANCELLED": "Order already cancelled",
+      "TICKET_CHECKED_IN": "A ticket has been checked in, refund not allowed",
+      "EVENT_MISSING": "Event details unavailable",
+      "EVENT_NOT_PUBLISHED": "Event state does not allow refunds",
+      "EVENT_CANCELLED": "Event was cancelled, refunds go through the event cancellation flow",
+      "EVENT_STARTED": "Event already started, refund not allowed"
+    }
   },
   "favourites": {
     "title": "Saved",
@@ -214,7 +243,8 @@
     "doRecharge": "Top up",
     "rechargeOk": "Topped up. Balance {{amount}}",
     "rechargeFailed": "Top-up failed",
-    "hint": "Demo only: no real payments. Balance can be spent in-app."
+    "hint": "Demo only: no real payments. Balance can be spent in-app.",
+    "ledgerLink": "Wallet details"
   },
   "organiser": {
     "brand": "Organiser console",
@@ -477,6 +507,66 @@
       },
       "thinkingReading": "Reading what you filled in…",
       "thinkingWriting": "Drafting the copy…"
+    }
+  },
+  "cart": {
+    "title": "Cart",
+    "sub": "Check out everything selected at once; each event becomes its own order and one unavailable item fails the whole checkout.",
+    "emptyTitle": "Your cart is empty",
+    "emptyHint": "Browse events and add the ones you like, then check out in one go.",
+    "goEvents": "Browse events",
+    "loadFailed": "Failed to load the cart",
+    "unitPrice": "Unit price {{price}}",
+    "selectAria": "Select {{title}}",
+    "remove": "Remove",
+    "clear": "Clear cart",
+    "clearTitle": "Clear the cart?",
+    "clearDesc": "All events will be removed from the cart. This cannot be undone.",
+    "selectedTotal": "{{count}} selected",
+    "checkoutHint": "The server re-validates availability, stock, quantities and prices at checkout; price changes need your confirmation.",
+    "checkout": "Check out selected",
+    "checkingOut": "Checking out…",
+    "checkoutOk": "Checkout complete: {{count}} order(s) created",
+    "checkoutFailed": "Checkout failed, your cart is untouched",
+    "priceChangedTitle": "Prices have changed",
+    "priceChangedDesc": "Some selected events no longer match the price when added. Confirming settles them at the current price — never silently at the old one.",
+    "priceChangedConfirm": "Settle at new prices",
+    "issue": {
+      "EVENT_NOT_FOUND": "Event no longer exists",
+      "EVENT_CANCELLED": "Event cancelled, no longer purchasable",
+      "EVENT_NOT_OPEN": "Event is not open for booking",
+      "SALES_NOT_STARTED": "Sales have not started",
+      "SALES_ENDED": "Sales have ended",
+      "EVENT_STARTED": "Event has already started",
+      "SOLD_OUT": "Sold out",
+      "PRICE_CHANGED": "Price changed, needs re-confirmation",
+      "OVER_LIMIT": "Quantity exceeds the per-booking limit",
+      "LOW_STOCK": "Fewer tickets left than selected"
+    }
+  },
+  "ledger": {
+    "title": "Wallet details",
+    "sub": "Every recharge, payment and refund is recorded; the balance in the database is authoritative.",
+    "type": "Type",
+    "from": "From",
+    "to": "To",
+    "apply": "Filter",
+    "loadFailed": "Failed to load the ledger",
+    "emptyTitle": "No entries yet",
+    "emptyHint": "Recharge, book or refund to see wallet activity here.",
+    "balanceAfter": "Balance after {{amount}}",
+    "orderLink": "Order #{{id}}",
+    "seq": "Seq #{{seq}}",
+    "pagerAria": "Ledger pagination",
+    "prev": "Previous",
+    "next": "Next",
+    "pageOf": "Page {{page}} / {{total}}",
+    "typeName": {
+      "RECHARGE": "Recharge",
+      "BOOKING_PAYMENT": "Booking payment",
+      "BOOKING_REFUND": "Booking refund",
+      "EVENT_CANCEL_REFUND": "Event cancellation refund",
+      "OPENING_BALANCE": "Opening balance"
     }
   }
 }

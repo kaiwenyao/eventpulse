@@ -4,6 +4,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -51,9 +52,11 @@ public class AuthController {
         return Result.success(authService.profile(BaseContext.getUserId()));
     }
 
-    /** 演示充值：直接给演示钱包加钱，不做真实支付。 */
+    /** 演示充值：直接给演示钱包加钱，不做真实支付。
+     *  可选 Idempotency-Key：相同键的重试不重复入账，不同键的两笔充值各自成功。 */
     @PostMapping("/wallet/recharge")
-    public Result<ProfileVo> recharge(@Valid @RequestBody WalletRechargeRequest request) {
-        return Result.success(authService.recharge(BaseContext.getUserId(), request));
+    public Result<ProfileVo> recharge(@Valid @RequestBody WalletRechargeRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return Result.success(authService.recharge(BaseContext.getUserId(), request, idempotencyKey));
     }
 }

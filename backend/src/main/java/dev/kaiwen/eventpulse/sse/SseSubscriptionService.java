@@ -49,4 +49,17 @@ public class SseSubscriptionService {
         }
         return registry.register(bookingId, userId);
     }
+
+    /**
+     * 用户级刷新频道：购物车 / 钱包 / 订单列表页面订阅。
+     * 只验证「已登录」，连接只能收到自己账号的变化提醒；
+     * 提醒不含业务数据，页面正确性始终以 REST 重新查询为准。
+     */
+    public SseEmitter subscribeUser() {
+        Long userId = BaseContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException("Please sign in");
+        }
+        return registry.registerUserChannel(userId);
+    }
 }
