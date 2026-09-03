@@ -58,7 +58,7 @@ class ToolLedger:
 
 class SearchArgs(BaseModel):
     q: str | None = Field(default=None, description="关键词，匹配标题或摘要")
-    city: str | None = Field(default=None, description="城市名，例如 Shanghai 或 上海")
+    city: str | None = Field(default=None, description="城市名，例如 Berlin 或 柏林")
     category: str | None = Field(default=None, description="活动类别，例如 music / tech / sports / food / art")
     date_from: str | None = Field(default=None, description="开始时间下限，ISO 8601，例如 2026-09-05T00:00:00Z")
     date_to: str | None = Field(default=None, description="开始时间上限，ISO 8601")

@@ -24,7 +24,7 @@ const event = {
   title: 'Indie Rock Night',
   description: 'd',
   category: 'music',
-  city: 'Shanghai',
+  city: 'Berlin',
   startsAt: '2026-09-10T12:00:00Z',
   priceCents: 18000,
   capacity: 10,
@@ -197,8 +197,8 @@ describe('organiser event form', () => {
 
     // Loaded values, not blank defaults — the old form always opened on "新活动".
     await waitFor(() => expect(screen.getByLabelText('标题')).toHaveValue('Indie Rock Night'))
-    expect(screen.getByLabelText('城市')).toHaveValue('Shanghai')
-    expect(screen.getByLabelText('票价（元）')).toHaveValue(180)
+    expect(screen.getByLabelText('城市')).toHaveValue('Berlin')
+    expect(screen.getByLabelText('票价（欧元）')).toHaveValue(180)
 
     await userEvent.type(screen.getByLabelText('标题'), '加')
     await userEvent.type(screen.getByLabelText('摘要'), '短')
@@ -399,7 +399,7 @@ describe('audience flows', () => {
     })
     renderApp('/')
     await waitFor(() => expect(screen.getByText('Indie Rock Night')).toBeInTheDocument())
-    await userEvent.type(screen.getByLabelText('城市'), 'Shanghai')
+    await userEvent.type(screen.getByLabelText('城市'), 'Berlin')
     await userEvent.selectOptions(screen.getByLabelText('排序'), 'price')
     await userEvent.click(screen.getByRole('button', { name: '附近' }))
     cleanup()

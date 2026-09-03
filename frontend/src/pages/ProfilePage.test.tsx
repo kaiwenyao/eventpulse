@@ -51,9 +51,9 @@ describe('ProfilePage', () => {
     })
     renderProfile()
     expect(await screen.findByRole('heading', { name: '个人中心' })).toBeInTheDocument()
-    // Wallet reads cents as ¥
-    expect(screen.getByText('¥888.00')).toBeInTheDocument()
-    expect(screen.getByText('累计消费 ¥180.00')).toBeInTheDocument()
+    // Wallet reads cents as €
+    expect(screen.getByText('€888.00')).toBeInTheDocument()
+    expect(screen.getByText('累计消费 €180.00')).toBeInTheDocument()
     // Stats
     expect(screen.getByText('3')).toBeInTheDocument()
     expect(screen.getByText('5')).toBeInTheDocument()
@@ -71,14 +71,14 @@ describe('ProfilePage', () => {
       return Promise.resolve([])
     })
     renderProfile()
-    await screen.findByText('¥888.00')
+    await screen.findByText('€888.00')
 
-    await userEvent.click(screen.getByRole('button', { name: '¥50' }))
+    await userEvent.click(screen.getByRole('button', { name: '€50' }))
     await userEvent.click(screen.getByRole('button', { name: '充值' }))
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/auth/wallet/recharge', {
       amountCents: 5000,
     }))
-    expect(await screen.findByText('¥938.00')).toBeInTheDocument()
+    expect(await screen.findByText('€938.00')).toBeInTheDocument()
     expect(apiMock.fn).toHaveBeenCalled()
   })
 
@@ -90,12 +90,12 @@ describe('ProfilePage', () => {
       return Promise.resolve([])
     })
     renderProfile()
-    await screen.findByText('¥888.00')
+    await screen.findByText('€888.00')
 
     await userEvent.click(screen.getByRole('button', { name: '充值' }))
     // The message appears both as the inline error note and the toast.
     expect((await screen.findAllByText('Invalid amount')).length).toBeGreaterThan(0)
-    expect(screen.getByText('¥888.00')).toBeInTheDocument()
+    expect(screen.getByText('€888.00')).toBeInTheDocument()
   })
 
   it('navigates to profile from the top bar avatar', async () => {

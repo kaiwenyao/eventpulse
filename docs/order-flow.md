@@ -47,7 +47,7 @@ Outbox 在稍后把消息发送给通知、统计等功能
 活动单价 × 预订数量
 ```
 
-例如单价 ¥120，订 2 张，总价就是 ¥240。系统把这个金额以“分”保存，避免小数计算带来的误差。
+例如单价 €120，订 2 张，总价就是 €240。系统把这个金额以“分”保存，避免小数计算带来的误差。
 
 免费活动的总价是 0，依然会照常生成订单和电子票，只是不减少余额。
 
@@ -303,4 +303,4 @@ Outbox 待办
 - 防止重复退款的订单取消操作：[BookingRepository.java](../backend/src/main/java/dev/kaiwen/eventpulse/repository/BookingRepository.java)
 - 协调取消与核销的电子票锁：[TicketRepository.java](../backend/src/main/java/dev/kaiwen/eventpulse/repository/TicketRepository.java)
 - 写入待办消息：[OutboxWriter.java](../backend/src/main/java/dev/kaiwen/eventpulse/outbox/OutboxWriter.java)
-- 订单实付金额字段：[V7__booking_wallet_payments.sql](../backend/src/main/resources/db/migration/V7__booking_wallet_payments.sql)
+- 订单实付金额字段 `bookings.paid_cents`：[V1__init.sql](../backend/src/main/resources/db/migration/V1__init.sql)

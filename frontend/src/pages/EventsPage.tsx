@@ -9,8 +9,8 @@ import { AiDiscoveryAssistant } from '../components/AiDiscoveryAssistant'
 
 type DiscoveryMode = 'list' | 'nearby'
 
-/** Shanghai city centre — the demo origin for the "附近" radius query. */
-const NEARBY_ORIGIN = { lat: 31.23, lng: 121.47, radiusKm: 30 }
+/** Berlin city centre — the demo origin for the "附近" radius query; the seeder clusters most venues there. */
+const NEARBY_ORIGIN = { lat: 52.52, lng: 13.405, radiusKm: 30 }
 
 function buildPath(mode: DiscoveryMode, params: URLSearchParams) {
   if (mode === 'nearby') {

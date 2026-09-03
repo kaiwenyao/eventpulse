@@ -156,7 +156,7 @@ export function ProfilePage() {
               className={`chip ${Number(amount) === v ? 'active' : ''}`}
               onClick={() => setAmount(String(v))}
             >
-              ¥{v}
+              €{v}
             </button>
           ))}
         </div>

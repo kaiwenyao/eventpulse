@@ -37,7 +37,7 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
 }
 
 export function formatMoney(cents: number) {
-  return `¥${(cents / 100).toFixed(2)}`
+  return `€${(cents / 100).toFixed(2)}`
 }
 
 export function formatTime(iso: string) {

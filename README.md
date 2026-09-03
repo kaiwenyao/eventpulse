@@ -93,7 +93,7 @@ make test-distributed # 起多实例 + 端到端冒烟
   Kubernetes Job 重试或人工重跑不会产生重复数据。
 
 `demo` profile 已由 `seeder` 角色取代：8 个账号、19 个活动（覆盖四个分类、
-六座城市和全部六种状态）、18 笔订单与对应电子票、收藏、行为流水、每日统计
+六座城市：柏林、纽约、伦敦、东京、墨尔本、圣保罗，以及全部六种状态）、18 笔订单与对应电子票、收藏、行为流水、每日统计
 和站内消息。种子内容集中在
 `backend/src/main/java/dev/kaiwen/eventpulse/seed/DemoCatalog.java`，
 改 demo 数据只改这一个文件。
@@ -107,10 +107,10 @@ make test-distributed # 起多实例 + 端到端冒烟
 | 主办方 | `organiser@eventpulse.dev` | `Organiser123456` | 拥有大部分活动，含草稿与已归档 |
 | 主办方 | `studio@eventpulse.dev` | `Organiser123456` | 声浪现场，含一个已取消的音乐节 |
 | 主办方 | `guild@eventpulse.dev` | `Organiser123456` | 城市漫游者 |
-| 普通用户 | `lin@eventpulse.dev` | `User123456` | 林可可 |
-| 普通用户 | `zhao@eventpulse.dev` | `User123456` | 赵一鸣 |
-| 普通用户 | `chen@eventpulse.dev` | `User123456` | 陈思远 |
-| 普通用户 | `wang@eventpulse.dev` | `User123456` | 王雨桐 |
+| 普通用户 | `priya@eventpulse.dev` | `User123456` | Priya Sharma |
+| 普通用户 | `diego@eventpulse.dev` | `User123456` | Diego Ramirez |
+| 普通用户 | `amara@eventpulse.dev` | `User123456` | Amara Okafor |
+| 普通用户 | `yuki@eventpulse.dev` | `User123456` | Yuki Tanaka |
 
 主办方账号之间的活动互相隔离，可以用来验证越权访问被正确拦截。
 

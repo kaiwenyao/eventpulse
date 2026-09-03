@@ -39,7 +39,7 @@ public final class AuthDtos {
             long notificationCount) {
     }
 
-    /** 演示充值：金额以分为单位，1–500,000 分（¥1–¥5,000）。 */
+    /** 演示充值：金额以分为单位，1–500,000 分（€1–€5,000）。 */
     public record WalletRechargeRequest(
             @Min(100) @Max(500000) int amountCents) {
     }

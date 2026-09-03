@@ -47,7 +47,7 @@ describe('uploadFile()', () => {
 
 describe('formatters', () => {
   it('formats money and time', () => {
-    expect(formatMoney(123456)).toBe('¥1234.56')
+    expect(formatMoney(123456)).toBe('€1234.56')
     expect(formatTime('2026-09-10T12:00:00Z')).toContain('2026')
   })
 })
