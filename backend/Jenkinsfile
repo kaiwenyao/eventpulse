@@ -1,6 +1,6 @@
 // EventPulse backend CI — modeled on dublin-bikes/backend/Jenkinsfile.
 // Kubernetes cloud agent (Jenkins kubernetes-plugin injects the jnlp sidecar):
-//   - maven:  tests (unit + Testcontainers ITs, one invocation), coverage, SBOM (JDK 21 + Maven).
+//   - maven:  tests (unit + Testcontainers ITs, one invocation), coverage (JDK 21 + Maven).
 //   - docker: on main, build & push ghcr.io/<user>/eventpulse-backend:<short-sha>
 //     (same tagging as nightdeal: commit short SHA, no latest).
 //
@@ -136,13 +136,10 @@ spec:
                             dir('backend') {
                                 // 单测与 Testcontainers IT 合并为一次 mvn 调用：每多一次启动，
                                 // 就多 1~2.5 分钟的 JVM/依赖解析开销（依赖在 NFS PVC 上）。
-                                // -Dcyclonedx.skip=true：starter-parent 4.x 默认在 generate-resources
-                                // 注入 makeAggregateBom，每次 mvn 要花 24s~2min 重解析依赖；
-                                // SBOM 只在 Coverage & Package 阶段随最终 jar 生成一次即可。
                                 sh '''
                                 java -version
                                 mvn -version
-                                mvn -B -ntp -Dcyclonedx.skip=true test
+                                mvn -B -ntp test
                                 '''
                             }
                         }
@@ -161,15 +158,14 @@ spec:
                                 sh '''
                                 echo "Generating merged JaCoCo report and enforcing coverage gate"
                                 # The test run appended into target/jacoco.exec. jacoco:report
-                                # is bound to test (re-run over cumulative data); jacoco:check and
-                                # the CycloneDX SBOM are bound to verify. -DskipTests avoids
-                                # re-running tests while still packaging the jar.
+                                # is bound to test (re-run over cumulative data) and jacoco:check
+                                # to verify. -DskipTests avoids re-running tests while still
+                                # packaging the jar.
                                 mvn -B -ntp verify -DskipTests
                                 '''
                             }
                         }
                         archiveArtifacts artifacts: 'backend/target/site/jacoco/**', allowEmptyArchive: false
-                        archiveArtifacts artifacts: 'backend/target/bom.json', allowEmptyArchive: false
                         script {
                             try {
                                 publishHTML(target: [
