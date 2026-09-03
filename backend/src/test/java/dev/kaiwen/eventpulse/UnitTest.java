@@ -631,6 +631,55 @@ class UnitTest {
         new EventPulseApplication();
     }
 
+    /**
+     * 回归测试：购物车数量修改 PATCH /api/cart/items/{id} 曾因 CORS 配置缺
+     * PATCH 返回 403。生产链路是 TLS 在代理终止，Spring 看到的是 http 而浏览器
+     * Origin 是 https，所以带 Origin 的实际请求也会被 CORS 处理器按方法校验
+     * （Spring 7 对实际请求与预检请求都校验，不只是预检）。
+     */
+    @Test
+    void corsAllowsPatchOnActualAndPreflightRequests() throws Exception {
+        AppProperties props = new AppProperties();
+        props.setCorsOrigins("https://eventpulse.kaiwen.dev");
+        WebMvcConfig web = new WebMvcConfig(new JwtInterceptor(new JwtService(props)),
+                new RequestLoggingInterceptor(),
+                new dev.kaiwen.eventpulse.interceptor.InternalServiceInterceptor(props, new JwtService(props)), props);
+        // getCorsConfigurations 在 Spring 7 里是 protected：在子类内部取回
+        // 生产代码 addCorsMappings 注册的真实配置。
+        java.util.Map<String, org.springframework.web.cors.CorsConfiguration> configs = corsConfigsOf(web);
+        org.springframework.web.cors.CorsConfiguration config = configs.get("/api/**");
+        org.springframework.web.cors.DefaultCorsProcessor processor = new org.springframework.web.cors.DefaultCorsProcessor();
+
+        // 实际 PATCH 请求：浏览器对非 GET/HEAD 请求带 Origin，与 Spring 端
+        // scheme 不一致即触发 CORS 校验，方法不在白名单就直接 403。
+        MockHttpServletRequest patch = new MockHttpServletRequest("PATCH", "/api/cart/items/1");
+        patch.addHeader("Origin", "https://eventpulse.kaiwen.dev");
+        MockHttpServletResponse patchRes = new MockHttpServletResponse();
+        assertThat(processor.processRequest(config, patch, patchRes)).isTrue();
+        assertThat(patchRes.getStatus()).isEqualTo(200);
+        assertThat(patchRes.getHeader("Access-Control-Allow-Origin")).isEqualTo("https://eventpulse.kaiwen.dev");
+
+        // 跨域场景的预检请求也必须放行 PATCH。
+        MockHttpServletRequest preflight = new MockHttpServletRequest("OPTIONS", "/api/cart/items/1");
+        preflight.addHeader("Origin", "https://eventpulse.kaiwen.dev");
+        preflight.addHeader("Access-Control-Request-Method", "PATCH");
+        MockHttpServletResponse preflightRes = new MockHttpServletResponse();
+        assertThat(processor.processRequest(config, preflight, preflightRes)).isTrue();
+        assertThat(preflightRes.getHeader("Access-Control-Allow-Methods")).contains("PATCH");
+    }
+
+    private static java.util.Map<String, org.springframework.web.cors.CorsConfiguration> corsConfigsOf(WebMvcConfig web) {
+        class Exposed extends org.springframework.web.servlet.config.annotation.CorsRegistry {
+            @Override
+            public java.util.Map<String, org.springframework.web.cors.CorsConfiguration> getCorsConfigurations() {
+                return super.getCorsConfigurations();
+            }
+        }
+        Exposed registry = new Exposed();
+        web.addCorsMappings(registry);
+        return registry.getCorsConfigurations();
+    }
+
     private static User user(Long id, String email, String password, String role) {
         User user = new User();
         user.setId(id);
