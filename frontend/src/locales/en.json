@@ -628,6 +628,7 @@
     "checkoutMissing": "That checkout could not be found.",
     "priceChanged": "The price changed. Review the new price before checking out.",
     "maxPerBooking": "At most {{max}} tickets per booking.",
+    "ticketsLeft": "Only {{count}} tickets left.",
     "quantityRange": "Quantity must be between 1 and {{max}}.",
     "bookingMissing": "That booking no longer exists.",
     "bookingAlreadyCancelled": "That booking is already cancelled.",

@@ -624,6 +624,7 @@
     "checkoutMissing": "找不到这次结算记录。",
     "priceChanged": "票价已变动，请确认新价格后再结算。",
     "maxPerBooking": "每单最多 {{max}} 张票。",
+    "ticketsLeft": "余票仅剩 {{count}} 张。",
     "quantityRange": "数量需在 1 到 {{max}} 之间。",
     "bookingMissing": "订单不存在，可能已被删除。",
     "bookingAlreadyCancelled": "订单已经取消过了。",

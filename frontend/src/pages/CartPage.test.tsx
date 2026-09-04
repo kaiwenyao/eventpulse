@@ -194,6 +194,59 @@ describe('CartPage', () => {
     expect(await screen.findByText('活动价格已变化')).toBeInTheDocument()
     expect(apiMock.fn.mock.calls.filter((call) => call[1] === '/api/cart/checkout')).toHaveLength(0)
   })
+
+  it('disables the plus button at the remaining tickets, not just the per-booking limit', async () => {
+    // Arrange — 限购 10、余票 4：详情页承诺「最多 4 张」，购物车步进器必须同口径。
+    apiMock.fn.mockImplementation((method: string, path: string) => {
+      if (path === '/api/auth/me') return Promise.resolve(user)
+      if (method === 'GET' && path === '/api/cart') {
+        return Promise.resolve({
+          items: [{ ...cartItem, quantity: 4, remaining: 4, lineTotalCents: 4800 }],
+          selectedTotalCents: 4800,
+          hasIssues: false,
+        })
+      }
+      return Promise.resolve({})
+    })
+
+    renderAt('/cart')
+
+    // Assert — 数量已到余票上限：加一张禁用，减一张不受影响。
+    await screen.findByText('Indie Rock Night')
+    expect(screen.getByRole('button', { name: '增加一张' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '减少一张' })).toBeEnabled()
+  })
+
+  it('still lets the stepper go up while below the remaining tickets', async () => {
+    // Arrange — 数量 2、余票 4：加到 3 张在余票内，应当照常放行。
+    apiMock.fn.mockImplementation((method: string, path: string) => {
+      if (path === '/api/auth/me') return Promise.resolve(user)
+      if (method === 'GET' && path === '/api/cart') {
+        return Promise.resolve({
+          items: [{ ...cartItem, quantity: 2, remaining: 4, lineTotalCents: 2400 }],
+          selectedTotalCents: 2400,
+          hasIssues: false,
+        })
+      }
+      if (method === 'PATCH' && path === '/api/cart/items/11') {
+        return Promise.resolve({
+          items: [{ ...cartItem, quantity: 3, remaining: 4, lineTotalCents: 3600 }],
+          selectedTotalCents: 3600,
+          hasIssues: false,
+        })
+      }
+      return Promise.resolve({})
+    })
+
+    renderAt('/cart')
+
+    // Act + Assert — 余票内加量仍然可用。
+    await screen.findByText('Indie Rock Night')
+    await userEvent.click(screen.getByRole('button', { name: '增加一张' }))
+    await waitFor(() =>
+      expect(apiMock.fn).toHaveBeenCalledWith('PATCH', '/api/cart/items/11', { quantity: 3 }),
+    )
+  })
 })
 
 describe('WalletLedgerPage', () => {

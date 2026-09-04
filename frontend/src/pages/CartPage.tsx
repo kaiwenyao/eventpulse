@@ -223,6 +223,8 @@ export function CartPage() {
                   )}
                 </div>
                 <div className="cart-side">
+                  {/* 数量上限与详情页「最多 N 张」同口径：min(限购, 余票)。
+                      余票降为 0 时 min 为 0，「加一张」恒禁用，减一张不受影响。 */}
                   <div className="stepper stepper-sm">
                     <button
                       type="button"
@@ -238,7 +240,7 @@ export function CartPage() {
                       type="button"
                       className="btn-secondary btn-icon"
                       aria-label={t('detail.plus')}
-                      disabled={busyItem === item.id || item.quantity >= item.maxQuantityPerBooking}
+                      disabled={busyItem === item.id || item.quantity >= Math.min(item.maxQuantityPerBooking, item.remaining)}
                       onClick={() => mutate(() => api<CartVo>('PATCH', `/api/cart/items/${item.id}`, { quantity: item.quantity + 1 }), item.id)}
                     >
                       +

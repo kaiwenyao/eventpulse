@@ -86,6 +86,7 @@ const EXACT: Readonly<Record<string, ErrorSpec>> = {
  */
 const PATTERNS: ReadonlyArray<{ test: RegExp; spec: ErrorSpec; params: readonly string[] }> = [
   { test: /^Maximum (\d+) tickets per booking/, spec: { key: 'errors.maxPerBooking' }, params: ['max'] },
+  { test: /^Only (\d+) tickets left/, spec: { key: 'errors.ticketsLeft' }, params: ['count'] },
   { test: /^Quantity must be between 1 and (\d+)$/, spec: { key: 'errors.quantityRange' }, params: ['max'] },
   { test: /^Cart is full: at most (\d+) events per cart$/, spec: { key: 'errors.cartFull' }, params: ['max'] },
   { test: /^Wallet entry already recorded: /, spec: { key: 'errors.walletDuplicate' }, params: [] },

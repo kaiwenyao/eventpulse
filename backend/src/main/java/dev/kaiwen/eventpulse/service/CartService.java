@@ -27,7 +27,11 @@ import dev.kaiwen.eventpulse.repository.EventRepository;
  * 加购不扣余额、不占库存；金额只是展示，结算由 CheckoutService 重新校验。
  *
  * 上限：每个用户最多 {@value #MAX_ITEMS_PER_USER} 个活动项；
- * 单项数量 1..min(活动限购, 99)（数据库另有 CHECK 约束兜底）。
+ * 单项数量 1..min(活动限购, 当前余票, 99)（数据库另有 CHECK 约束兜底）。
+ * 详情页对外展示的「最多 N 张」= min(活动限购, 余票)，写入校验必须同口径，
+ * 否则余票少于限购时会出现「详情页说最多 4 张、购物车却能加到 10 张」。
+ * 余票是时点值（加购不占库存，别人可能先买走），所以只拦「加数量」，
+ * 「减数量」永远放行，仍超余票的行靠 LOW_STOCK 提示 + 结算拦截兜底。
  * 同一用户同一活动由数据库唯一约束合并为一行。
  * 列表顺序：按加购时间倒序（created_at DESC，id DESC 兜底）。改数量 / 勾选 /
  * 价格确认都会刷新 updated_at，但不能作为排序键，否则刚操作过的物品会跳到最前。
@@ -58,7 +62,7 @@ public class CartService {
         return toVo(userId, items);
     }
 
-    /** 加购：同一活动合并为一行；合并后的数量仍受活动限购约束。 */
+    /** 加购：同一活动合并为一行；合并后的数量受活动限购与当前余票共同约束。 */
     @Transactional
     public CartVo add(Long eventId, int quantity) {
         Long userId = requireLogin();
@@ -74,6 +78,9 @@ public class CartService {
         int maxQty = maxPerBooking(event);
         if (quantity > maxQty) {
             throw new BusinessException("Maximum " + maxQty + " tickets per booking");
+        }
+        if (quantity > event.remaining()) {
+            throw new BusinessException("Only " + event.remaining() + " tickets left");
         }
         CartItem item = cartItems.findByUserIdAndEventId(userId, eventId).orElse(null);
         if (item == null) {
@@ -99,6 +106,9 @@ public class CartService {
             if (merged > maxQty) {
                 throw BusinessException.conflict("Maximum " + maxQty + " tickets per booking for this event");
             }
+            if (merged > event.remaining()) {
+                throw BusinessException.conflict("Only " + event.remaining() + " tickets left");
+            }
             item.setQuantity(merged);
             item.setUpdatedAt(Instant.now());
             item.setVersion(item.getVersion() + 1);
@@ -121,6 +131,11 @@ public class CartService {
             int maxQty = Math.min(maxPerBooking(event), HARD_MAX_QUANTITY);
             if (quantity < 1 || quantity > maxQty) {
                 throw new BusinessException("Quantity must be between 1 and " + maxQty);
+            }
+            // 余票是时点值：加购后可能变少，所以只拦「往上加」，往下减永远放行
+            //（减完仍超余票的行会挂 LOW_STOCK 提示，结算时再拦）。
+            if (quantity > item.getQuantity() && quantity > event.remaining()) {
+                throw new BusinessException("Only " + event.remaining() + " tickets left");
             }
             item.setQuantity(quantity);
         }
