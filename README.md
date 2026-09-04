@@ -1,286 +1,379 @@
-# EventPulse
+# 🚀 EventPulse
 
-## 运行
+**English** | [简体中文](README.zh-CN.md)
 
-本机需要 Docker Desktop（macOS / Windows）或 Docker Engine + Compose v2（Linux）。
+---
 
-同一个后端镜像通过 Spring Profile 运行三种角色（与 Kubernetes 部署一致）：
+**EventPulse** is a distributed event ticketing platform covering both sides of the
+business: attendees discover / search / favourite events, place bookings, manage
+a cart and a wallet ledger, and track orders and e-tickets in real time; organisers
+publish events and manage lifecycles and attendee data. A single backend image runs
+in three roles — **api / worker / seeder** — and `make up` starts 2 api + 2 worker
+replicas by default, because distributed behaviour is exactly what this project set
+out to exercise: cross-instance SSE delivery, multi-worker Outbox claiming, and
+Kafka partition rebalancing. One command brings up the full stack locally with
+Docker Compose, and the same images deploy straight to Kubernetes (k3s). 🎉
+
+| Layer | Technology |
+| --- | --- |
+| Backend | Java 21 · Spring Boot · PostgreSQL · Redis · Kafka |
+| Frontend | React 19 · TypeScript · Vite |
+| AI service | Python 3.12 · FastAPI · LangChain |
+| Infrastructure | Docker Compose · Kubernetes (k3s) · Jenkins · GitHub Actions |
+
+---
+
+## 📋 Table of Contents
+
+- [✨ Features](#-features)
+- [🚀 Getting Started](#-getting-started)
+  - [🔧 Prerequisites](#-prerequisites)
+  - [🐳 Docker Compose Startup](#-docker-compose-startup)
+  - [🔑 Configuration](#-configuration)
+- [💻 Usage](#-usage)
+- [🧩 Architecture & Multi-Instance Design](#-architecture--multi-instance-design)
+- [🤖 AI Assistant](#-ai-assistant)
+- [📷 Image Storage (SeaweedFS S3)](#-image-storage-seaweedfs-s3)
+- [📦 Kubernetes Deployment](#-kubernetes-deployment)
+- [🔨 Local Development](#-local-development)
+- [🧪 Testing](#-testing)
+- [🤝 Contributing](#-contributing)
+- [📝 License](#-license)
+- [📧 Contact](#-contact)
+
+---
+
+## ✨ Features
+
+- **🎫 End-to-end ticketing**: attendees discover / search / favourite events, place bookings, and track orders and e-tickets in real time; organisers publish events and manage lifecycles and attendee data.
+- **🛒 Cart & wallet**: a cross-device cart settled in a single transaction per checkout; cart checkout requires an `Idempotency-Key` (direct bookings and top-ups accept one optionally for the same retry protection), so retries never double-order or double-charge; the wallet ledger records the balance before and after every change.
+- **📡 Real-time notifications (SSE)**: order / wallet / cart changes flow through Outbox → Kafka → Redis broadcast to the browsers connected to any api instance; changes missed during a disconnection are backfilled on reconnect.
+- **🔁 Neither lost nor duplicated**: the Outbox is claimed by an atomic UPDATE with `FOR UPDATE SKIP LOCKED` (lease + heartbeat renewal), the consumer-side `consumed_events` idempotency table absorbs redeliveries, and `message_key` keeps a given order's messages in the same Kafka partition, in order.
+- **⚖️ Multi-instance safety**: hot events and statistics never live in a JVM's own fields (Redis cache with PostgreSQL fallback); concurrent bookings never oversell; event lifecycles are two conditional UPDATEs, so concurrent workers simply update 0 rows.
+- **🤖 AI assistant**: natural-language event discovery (a LangChain agent over read-only tools querying real events) + organiser copywriting polish (structured output); with no key configured it clearly reports unavailable and normal features are unaffected.
+- **📷 Image object storage**: S3-compatible SeaweedFS, configurable public direct URLs or `/api/media/images/{id}` proxying, soft delete + grace-period background cleanup.
+- **🧪 Tests & CI**: Testcontainers integration tests cover the distributed paths with a 90% backend line-coverage gate; the frontend has ESLint + Vitest + Playwright; the AI service is tested against a scripted LLM; GitHub Actions runs every check and Jenkins releases to k3s.
+
+---
+
+## 🚀 Getting Started
+
+### 🔧 Prerequisites
+
+You need Docker Desktop (macOS / Windows) or Docker Engine + Compose v2 (Linux).
+
+One backend image runs three roles via Spring profiles (matching the Kubernetes deployment):
 
 ```text
                      ┌──────────┐
-      seeder  Job    │  seeder  │ 一次性初始化演示数据，完成后退出
+      seeder  Job    │  seeder  │ one-off demo data seeding; exits when done
                      └──────────┘
-      api Deployment │   api    │ 只处理 HTTP 与 SSE，可多副本
+      api Deployment │   api    │ HTTP & SSE only; runs as multiple replicas
                      └──────────┘
-   worker Deployment │  worker  │ Kafka 消费 / Outbox 发送 / 活动生命周期
+   worker Deployment │  worker  │ Kafka consumption / Outbox relay / event lifecycle
                      └──────────┘
 ```
 
-先清掉可能残留的 Compose 环境和 Testcontainers 容器，再启动：
+### 🐳 Docker Compose Startup
+
+Clear any leftover Compose environment and Testcontainers containers first, then start:
 
 ```bash
-cp .env.example .env
-make down                    # 停掉全部容器并删数据卷（从干净状态开始）
-make testcontainers-cleanup  # 清掉 Testcontainers 残留容器
-make up                      # 构建并启动，默认 2 个 api + 2 个 worker
-make ps                      # postgres / redis / kafka / seeder / api ×2 / worker ×2 / frontend
+cp .env.example .env        # 1. Create the env file (demo defaults work as-is)
+make down                   # 2. Stop all containers and delete volumes (clean slate)
+make testcontainers-cleanup # 3. Remove leftover Testcontainers containers
+make up                     # 4. Build and start: 2 api + 2 worker by default
+make ps                     # 5. Check status: postgres / redis / kafka / seeder / api ×2 / worker ×2 / frontend
 ```
 
-`make up` 默认就是多实例（`API=2 WORKER=2`）：这个项目要验证的正是分布式行为，
-单实例跑不出 SSE 跨实例送达、Outbox 多 Worker 领取、Kafka 分区再均衡这些路径。
-副本数同时写在 `docker-compose.yml` 的 `deploy.replicas`，所以直接
-`docker compose up -d` 也是 2 + 2。临时改规模：
+`make up` is multi-instance by default (`API=2 WORKER=2`): a single instance cannot
+exercise cross-instance SSE delivery, multi-worker Outbox claiming, or Kafka
+partition rebalancing. Replica counts are also written into `docker-compose.yml` as
+`deploy.replicas`, so a plain `docker compose up -d` also gives 2 + 2. To change
+the scale temporarily:
 
 ```bash
-make up API=3 WORKER=1       # 3 个 api + 1 个 worker
+make up API=3 WORKER=1       # 3 api + 1 worker
 ```
 
-启动顺序：PostgreSQL / Redis / Kafka 健康 → `seeder` 播种并成功退出 →
-`api` 与 `worker` 启动（compose 的 `service_completed_successfully` 依赖）。
-第一次会构建镜像，大约几分钟；api 健康检查有 60s `start_period`。
+Startup order: PostgreSQL / Redis / Kafka healthy → `seeder` seeds and exits
+successfully → `api` and `worker` start (a compose `service_completed_successfully`
+dependency). The first run builds the images, which takes a few minutes; the api
+health check has a 60s `start_period`.
 
-| 端口 | 服务 |
+| Port | Service |
 | --- | --- |
-| 3000 | 前端（`/api` 反代到 api 服务，SSE 已做免缓冲） |
+| 3000 | frontend (`/api` reverse-proxied to the api service, SSE buffering disabled) |
 | 5432 | PostgreSQL |
 | 6379 | Redis |
-| 9092 | Kafka（宿主机侧 19092） |
+| 9092 | Kafka (container EXTERNAL listener on 19092) |
 
 ```bash
-# 走前端反代验证（api 不再固定占用宿主机 8080，才能 --scale 扩容）
+# Verify through the frontend proxy (api no longer binds a fixed host port 8080, which is what makes --scale possible)
 curl -s http://localhost:3000/actuator/health
-# 期望：{"status":"UP", ...}
+# Expected: {"status":"UP", ...}
 ```
 
-打开 http://localhost:3000
+Open http://localhost:3000 and you're in.
 
-`SECRET_KEY` 用于 JWT 签名，`DB_PASSWORD` 是 Postgres 密码；demo 可直接用 `.env.example` 默认值。
+### 🔑 Configuration
 
-### 分布式验证命令
+All configuration lives in `.env` at the repo root (copy from `.env.example`); the
+demo defaults run as-is. Key variables:
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `SECRET_KEY` | placeholder | JWT signing key; replace the dev default in real deployments (startup does not enforce it), and rotating it invalidates issued tokens |
+| `DB_PASSWORD` | `eventpulse` | PostgreSQL password |
+| `CORS_ORIGINS` | two localhost origins | allowed cross-origin sources (frontend proxy + Vite dev server) |
+| `LLM_MODEL` / `LLM_API_KEY` | `gpt-4o-mini` / empty | model and credentials for the AI service; with an empty key the AI endpoints clearly report unavailable |
+| `LLM_BASE_URL` | empty | OpenAI-compatible gateway base URL; must include the API prefix (e.g. `https://host/v1`) |
+| `LLM_MAX_OUTPUT_TOKENS` | `4096` | reasoning models spend thinking tokens from this budget; too small a budget yields empty replies |
+| `AI_SERVICE_TOKEN` / `AI_INTERNAL_TOKEN` | dev values | Spring Boot ↔ ai-service service-to-service credentials; must be replaced in real deployments |
+| `S3_ENABLED` | `false` | when true, images go to S3; multi-replica deployments (`API>1` or k3s) must enable it |
+| `S3_ENDPOINT` / `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | empty | SeaweedFS S3 endpoint and credentials |
+
+See `.env.example` for the full annotated list.
+
+#### Distributed verification commands
 
 ```bash
-make up-infra         # 只启动 PostgreSQL / Redis / Kafka
-make seed             # 只运行 seeder，退出码透传
-make up-runtime       # 启动 api / worker / frontend（同样默认各 2 个实例）
-make up-distributed   # 等价于 make up，保留的旧名字
-make test-distributed # 起多实例 + 端到端冒烟
+make up-infra         # start only PostgreSQL / Redis / Kafka
+make seed             # run only the seeder; exit code is passed through
+make up-runtime       # start api / worker / frontend (also 2 instances each by default)
+make up-distributed   # equivalent to make up, kept as the old name
+make test-distributed # multi-instance + end-to-end smoke test
 ```
 
-多 Worker 依赖 Outbox 领取机制（`claimed_until` 租约 + 心跳续租 + 数据库条件
-更新），不重不丢；api 多实例靠 Redis 广播做 SSE 跨实例送达。
+Multiple workers rely on the Outbox claiming mechanism (`claimed_until` lease +
+heartbeat renewal + conditional database updates) so messages are neither lost nor
+duplicated; multiple api instances rely on Redis broadcast for cross-instance SSE
+delivery. See [Architecture & Multi-Instance Design](#-architecture--multi-instance-design).
 
-### 多实例行为一览
+---
 
-- **热门与统计不落本机 JVM**：热门活动只缓存到 Redis（30s 过期 + 变更即删），
-  Redis 不可用时直接回源 PostgreSQL；缓存降级次数走 Micrometer 指标
-  （`eventpulse.cache.fallbacks`），不再保存在某个实例的字段里。
-- **SSE 跨实例送达**：浏览器连到任意 api 实例；worker 在数据库事务提交成功后
-  向 Redis 发一条轻量「有变化」提醒（`eventpulse:sse` 频道），所有 api 实例
-  订阅后推给连接在自己身上的浏览器。订单/票据的最终状态以 PostgreSQL 为准，
-  前端收到提醒后重新拉 REST，断线期间的变化在重连后自动补回。
-  SSE 订阅走 `Authorization: Bearer` 头并校验订单所有权；同一订单允许多个
-  标签页连接，心跳 25s，api 停机时主动关闭连接让浏览器立刻重连其他实例。
-- **多 Worker 安全**：Outbox 用一条带 `FOR UPDATE SKIP LOCKED` 的原子 UPDATE
-  领取（`claimed_by` / `claimed_until` 租约），每条发送前给整批续租——Worker
-  活着租约就不会在批中途过期，一条消息不会被两个 Worker 同时处理；Worker
-  崩溃后停止续租，租约到期其他 Worker 接手，重发由消费端 `consumed_events`
-  幂等表兜底。一轮结束（含提前退出）统一归还剩余租约，一次 Kafka 抖动不会
-  让中继停摆一个租约周期。同一订单的消息用 `message_key` 进同一 Kafka
-  partition 保序。活动生命周期是两条数据库条件更新，多 Worker 并发执行只会
-  更新 0 行，没有乐观锁冲突。活动生命周期是两条数据库条件更新，
-  多 Worker 并发执行只会更新 0 行，没有乐观锁冲突。
-- **Seeder 幂等**：`seed_runs` 表记录完成的版本（与播种同一事务），
-  Kubernetes Job 重试或人工重跑不会产生重复数据。
+## 💻 Usage
 
-## 购物车、历史订单与钱包流水
+The `seeder` creates 8 accounts and 19 events (covering four categories and six
+cities — Berlin, New York, London, Tokyo, Melbourne, São Paulo — plus all six
+lifecycle states), 18 orders with their e-tickets, favourites, behaviour logs,
+daily statistics, and in-app messages. Each of the 19 events has a cover: images
+are pre-uploaded to object storage in `DemoCatalog.EVENTS` order (fixed keys
+`seed/demo-covers/NN.jpeg`, NN being the event number); seeding only writes
+`media_assets` rows and wires them into the event's `coverAssetId` / `coverUrl`
+without any object-storage IO. If an object is missing from the bucket the cover
+404s — re-uploading the same key fixes it. Seed content is centralised in
+`backend/src/main/java/dev/kaiwen/eventpulse/seed/DemoCatalog.java`; change demo
+data only in that one file.
 
-- **购物车**：登录后可在活动详情页「加入购物车」（不扣款、不占库存），数据库持久化、跨设备可见；支持数量调整、勾选、移除与清空，失效原因（取消 / 停售 / 售罄 / 价格变化…）逐项展示。结算时勾选项一次事务结清：每个活动一张独立订单，任一项不可购买或余额不足整次回滚。结算必须带 `Idempotency-Key` 头，重试 / 重复点击不会重复下单或扣款。
-- **历史订单**：「我的预订」默认展示全部真实状态（含已取消），支持服务端分页、状态筛选、时间范围和订单号 / 活动名搜索；金额一律用订单快照展示，取消原因（已取消 / 已核销 / 活动已开始…）明确标注。`GET /api/bookings` 已从全量数组改为 `{total, records}` 分页结构（与前端同仓库同版本发布）。
-- **钱包流水**：充值、下单扣款、用户取消退款、活动取消退款都在业务事务里写入 `wallet_ledger`（带正负号金额、变动前后余额、业务去重标识）；个人中心「余额明细」页可按类型 / 时间筛选并跳转关联订单。老账户迁移时自动生成一条期初余额记录，不改变余额。充值仍是演示功能，支持 `Idempotency-Key` 幂等。
-- **事件**：在原有 `booking-events` 之外新增 `wallet-events`（流水已记账公告）与 `cart-events`（购物车变更公告），独立 consumer group、按用户分区、`consumed_events` 去重；Worker 在事务提交后经 Redis 向该用户的所有页面发 SSE 刷新提醒（`/api/user/events`）。Kafka 不可用时业务照常成功，消息留在 Outbox 恢复后投递。详见 [docs/order-flow.md](docs/order-flow.md)。
+Event times are computed relative to startup, so "upcoming / ongoing / ended" is
+always self-consistent; the statistics curves are derived from event IDs without
+random numbers, so every seed run produces the same numbers.
 
-`demo` profile 已由 `seeder` 角色取代：8 个账号、19 个活动（覆盖四个分类、
-六座城市：柏林、纽约、伦敦、东京、墨尔本、圣保罗，以及全部六种状态）、18 笔订单与对应电子票、收藏、行为流水、每日统计
-和站内消息。19 个活动各带封面：图片按 `DemoCatalog.EVENTS` 顺序预传到对象存储
-（key 固定为 `seed/demo-covers/NN.jpeg`，NN 为活动序号），播种时只写
-`media_assets` 行并把它接进活动的 `coverAssetId` / `coverUrl`，不做对象存储 IO；
-bucket 里对象缺失时封面会 404，重传同名 key 即可修复。种子内容集中在
-`backend/src/main/java/dev/kaiwen/eventpulse/seed/DemoCatalog.java`，
-改 demo 数据只改这一个文件。
+Demo accounts:
 
-活动时间都是相对启动时刻算的，所以「未开始 / 进行中 / 已结束」永远是自洽的；
-统计曲线由活动 ID 推导，不用随机数，每次播种得到的数字一致。
-
-| 角色 | 邮箱 | 密码 | 说明 |
+| Role | Email | Password | Notes |
 | --- | --- | --- | --- |
-| 普通用户 | `user@eventpulse.dev` | `User123456` | 有订单、电子票、收藏和消息 |
-| 主办方 | `organiser@eventpulse.dev` | `Organiser123456` | 拥有大部分活动，含草稿与已归档 |
-| 主办方 | `studio@eventpulse.dev` | `Organiser123456` | 声浪现场，含一个已取消的音乐节 |
-| 主办方 | `guild@eventpulse.dev` | `Organiser123456` | 城市漫游者 |
-| 普通用户 | `priya@eventpulse.dev` | `User123456` | Priya Sharma |
-| 普通用户 | `diego@eventpulse.dev` | `User123456` | Diego Ramirez |
-| 普通用户 | `amara@eventpulse.dev` | `User123456` | Amara Okafor |
-| 普通用户 | `yuki@eventpulse.dev` | `User123456` | Yuki Tanaka |
+| Regular user | `user@eventpulse.dev` | `User123456` | has orders, e-tickets, favourites, and messages |
+| Organiser | `organiser@eventpulse.dev` | `Organiser123456` | owns most events, including drafts and archived ones |
+| Organiser | `studio@eventpulse.dev` | `Organiser123456` | Soundwave Live, including one cancelled music festival |
+| Organiser | `guild@eventpulse.dev` | `Organiser123456` | City Wanderers |
+| Regular user | `priya@eventpulse.dev` | `User123456` | Priya Sharma |
+| Regular user | `diego@eventpulse.dev` | `User123456` | Diego Ramirez |
+| Regular user | `amara@eventpulse.dev` | `User123456` | Amara Okafor |
+| Regular user | `yuki@eventpulse.dev` | `User123456` | Yuki Tanaka |
 
-主办方账号之间的活动互相隔离，可以用来验证越权访问被正确拦截。
+Events owned by different organiser accounts are isolated from one another, which
+is handy for verifying that unauthorised access is properly rejected. For a
+hands-on walkthrough of the cart / orders / wallet flow, see
+[docs/acceptance-walkthrough.md](docs/acceptance-walkthrough.md) (about 15 minutes
+from scratch).
+
+Day to day:
 
 ```bash
-make logs        # 跟随 api / worker 日志
-make stop        # 停掉全部容器，保留数据卷（演示数据、账号、订单都还在）
-make down        # 停掉全部容器并删数据卷；下次 make up 会重跑迁移并重新 seed
+make logs        # follow api / worker logs
+make stop        # stop all containers, keep volumes (demo data, accounts, and orders survive)
+make down        # stop all containers and delete volumes; the next make up reruns migrations and reseeds
 ```
 
-`make down` 会清数据：它用 `docker compose down -v --remove-orphans`，
-连 `--scale` 起的额外实例和改过服务定义后残留的孤儿容器一起停掉，
-并删除 `pgdata` 卷。想保留数据只停容器，用 `make stop`。
-（`make down-v` 保留为 `make down` 的旧名字。）
+`make down` wipes data: it runs `docker compose down -v --remove-orphans`, which
+also stops extra instances started with `--scale` and orphan containers left
+behind by edited service definitions, and deletes the `pgdata` volume. To keep the
+data and merely stop the containers, use `make stop`. (`make down-v` remains as
+the old name for `make down`.)
 
-## Kubernetes 部署
+---
 
-`deploy/k8s/` 下是同一镜像的三种角色清单：
+## 🧩 Architecture & Multi-Instance Design
+
+### Multi-instance behaviour at a glance
+
+- **Hot events and statistics never live in a JVM's own fields**: hot events are
+  cached only in Redis (30s TTL + invalidate on change) and fall straight back to
+  PostgreSQL when Redis is unavailable; cache fallbacks are counted by the
+  Micrometer metric `eventpulse.cache.fallbacks` rather than a field on some
+  instance.
+- **Cross-instance SSE delivery**: browsers connect to any api instance. After the
+  database transaction commits, the worker publishes a lightweight "something
+  changed" reminder to Redis (the `eventpulse:sse` channel); every api instance
+  subscribes and pushes it to the browsers connected to it. The final order /
+  ticket state always comes from PostgreSQL — the frontend re-fetches over REST
+  upon the reminder, and changes missed during a disconnection are backfilled
+  after reconnecting. SSE subscriptions use the `Authorization: Bearer` header
+  and verify order ownership; multiple tabs may watch the same order, the
+  heartbeat is 25s, and a shutting-down api proactively closes its connections so
+  browsers reconnect to another instance immediately.
+- **Multi-worker safety**: the Outbox is claimed by a single atomic UPDATE with
+  `FOR UPDATE SKIP LOCKED` (a `claimed_by` / `claimed_until` lease), and the whole
+  batch's lease is renewed before each send — as long as a worker is alive its
+  lease cannot expire mid-batch, so a message is never processed by two workers at
+  once. If a worker crashes it stops renewing; the lease expires, another worker
+  takes over, and redeliveries are absorbed by the consumer-side
+  `consumed_events` idempotency table. At the end of a round (early exits
+  included) leftover leases are returned in one go, so one Kafka hiccup cannot
+  stall the relay for a whole lease period. Messages for the same order carry a
+  `message_key` so they land in the same Kafka partition, preserving order. Event
+  lifecycles are two conditional UPDATEs — concurrent workers simply update 0
+  rows, with no optimistic-lock conflicts.
+- **Idempotent seeder**: the `seed_runs` table records completed versions (in the
+  same transaction as the seeding), so Kubernetes Job retries or manual re-runs
+  never produce duplicate data.
+
+### Cart, order history & wallet ledger
+
+- **Cart**: signed-in users can "add to cart" from an event page (no charge, no
+  stock held); the cart is persisted in the database and visible across devices,
+  supports quantity adjustment, per-item selection, removal, and clearing, and
+  shows per-item invalidation reasons (cancelled / off-sale / sold out / price
+  changed…). Checkout settles all selected items in one transaction: one order per
+  event, and the whole checkout rolls back if any item is unbuyable or the balance
+  is insufficient. Checkout must carry an `Idempotency-Key` header — retries /
+  double clicks never double-order or double-charge.
+- **Order history**: "My bookings" lists all real statuses by default (cancelled
+  included) with server-side pagination, status filters, time ranges, and
+  order-number / event-name search; amounts always come from the order snapshot,
+  and cancellation reasons (already cancelled / already redeemed / event already
+  started…) are clearly annotated. `GET /api/bookings` moved from a full array to
+  a `{total, records}` paginated structure (shipped in the same release as the
+  frontend).
+- **Wallet ledger**: top-ups, booking charges, user-initiated cancellation
+  refunds, and event-cancellation refunds are all written to `wallet_ledger`
+  inside the business transaction (signed amount, balance before and after,
+  business dedup key); the profile's "balance details" page filters by type /
+  time and links to the related order. Migrating old accounts generates an
+  opening-balance record without changing the balance. Top-up remains a demo
+  feature and is `Idempotency-Key` idempotent.
+- **Events**: alongside `booking-events` there are now `wallet-events`
+  (ledger-recorded announcements) and `cart-events` (cart-change announcements) —
+  separate consumer groups, partitioned per user, deduplicated via
+  `consumed_events`; after commit the worker sends an SSE refresh reminder over
+  Redis to all of that user's pages (`/api/user/events`). If Kafka is unavailable
+  the business operation still succeeds; messages wait in the Outbox and are
+  delivered after recovery. See [docs/order-flow.md](docs/order-flow.md).
+
+---
+
+## 🤖 AI Assistant
+
+AI is an external LLM capability invoked at runtime (no model training, no
+embeddings). Architecture:
 
 ```text
-configmap.yml         普通配置（数据库 / Kafka / Redis 地址、partition、心跳、批量、AI 网关地址、S3 地址）
-ai-configmap.yml      AI 服务非敏感配置（LLM provider / model / 超时）
-secret.example.yml    敏感配置示例（DB_PASSWORD / SECRET_KEY / AI 服务间凭证 / S3 凭证），复制为 secret.yml 使用
-api-deployment.yml    api，2 副本，readiness/liveness 分离，优雅停机 40s
-api-service.yml       ClusterIP Service
-worker-deployment.yml worker，第一版 1 副本（可安全扩到 2），只暴露 Actuator
-seeder-job.yml        Job（名称带版本，backoffLimit=3，restartPolicy=Never）
-ai-service-deployment.yml  Python AI 服务（FastAPI + LangChain），1 副本起，可扩
-ai-service-service.yml     ClusterIP Service（仅集群内，不在 Ingress 暴露）
-ingress.yml           /api 转发到 api Service；关闭缓冲、放长超时以支持 SSE
+Browser ──> Spring Boot /api/ai/** ──> Python AI Service ──> external LLM
+                      │  (when the Agent needs business data)
+                      └────< /internal/ai-tools/** (service-to-service credentials + short-term signed user context) ──> PostgreSQL
 ```
 
-```bash
-kubectl apply -f deploy/k8s/configmap.yml -f deploy/k8s/ai-configmap.yml
-kubectl apply -f deploy/k8s/secret.example.yml   # 先填好真实值或换成 sealed-secrets
-kubectl apply -f deploy/k8s/seeder-job.yml
-kubectl wait --for=condition=complete job/eventpulse-seeder-v1 --timeout=300s
-kubectl apply -f deploy/k8s/api-deployment.yml -f deploy/k8s/api-service.yml \
-              -f deploy/k8s/worker-deployment.yml \
-              -f deploy/k8s/ai-service-deployment.yml -f deploy/k8s/ai-service-service.yml \
-              -f deploy/k8s/ingress.yml
-```
+Two features:
 
-发布流程：先等 Seeder Job 成功（`kubectl wait ... condition=complete`），
-再确认 API / Worker 滚动更新完成；Job 失败时停止发布并保留日志。
-镜像名目前是占位的 `eventpulse/backend:v1.0`，发布前替换成 registry 实际镜像
-（例如 `ghcr.io/<owner>/eventpulse-backend:<commit-sha>`）。
-所有 API 实例共享同一 `SECRET_KEY`，api / worker / seeder 共用同一套数据库连接。
-
-### Jenkins 自动更新 k3s-home
-
-Backend 流水线通过一次 `mvn verify` 完成单测、Testcontainers 集成测试、JaCoCo
-报告、90% 行覆盖率检查及 JAR 打包；随后的 Coverage 阶段只发布报告。
-Maven 仓库使用节点本地 `hostPath`，宿主机路径为
-`/var/cache/jenkins/maven/repository`，容器挂载路径为 `/var/cache/maven/repository`，
-供同一节点上的 Java 项目和分支共享，不再按项目或任务分目录，也不使用 NFS。
-Kubelet 通过 `DirectoryOrCreate` 创建目录，Maven 容器沿用镜像默认的 root 用户写入；
-构建节点需允许该 hostPath，并将该路径保留在本地磁盘上。
-所有接入项目需统一挂载上述 hostPath、使用兼容的 Maven 3.9.x，并在 Maven 命令中
-传入以下参数，确保不同进程使用相同的文件锁协调共享仓库的读写：
-
-```sh
--Dmaven.repo.local=/var/cache/maven/repository \
--Daether.syncContext.named.factory=file-lock \
--Daether.syncContext.named.nameMapper=file-gav
-```
-
-`disableConcurrentBuilds()` 只串行化同一 Jenkins 任务，跨项目的仓库并发由上述文件锁
-处理。缓存跨 Pod 保留；每个节点首次使用时需要下载依赖，其他项目可复用已有依赖。
-`cleanWs()` 不清除此缓存；维护清理应在所有使用该节点缓存的构建停止后进行。
-执行 `mvn install` 的项目应另行隔离本地产物，避免同坐标的分支产物互相覆盖；
-EventPulse 使用 `verify`，不会向共享仓库安装项目产物。
-构建日志输出所用仓库路径和 Maven verify 耗时。旧的项目专用缓存不会自动迁移或删除。
-
-Backend Jenkins 控制台保留 Maven 阶段进度、测试统计和失败摘要。Surefire 将测试的
-stdout/stderr 写入 `target/surefire-reports/*-output.txt`，成功用例的 XML 不再重复
-嵌入这些输出。无论测试成功或失败，已有测试报告都会压缩为构建附件
-`backend/target/backend-test-logs.tar.gz`，可从 Jenkins 的 Artifacts 下载排查；
-JUnit 测试结果仍正常发布，测试或覆盖率失败仍阻止后续发布。
-CI 通过 `SQL_LOG_LEVEL=WARN` 关闭逐条 SQL DEBUG 输出；Kafka 不可用测试仅将
-`AdminMetadataManager` 的重复重连 INFO 日志调到 WARN，保留警告、错误和断言。
-
-AI 流水线使用节点本地的 `emptyDir` 工作卷，把 uv 缓存和 `.venv` 放在同一
-文件系统，通过硬链接安装依赖，避免从 NFS 逐个复制大量小文件。缓存随构建 Pod
-删除，每次新构建会重新下载依赖；不再使用共享 Maven PVC 保存 uv 缓存。
-依赖同步仍使用 `uv sync --frozen --extra dev`，测试通过 `uv run --no-sync pytest`
-复用刚安装的环境。同步阶段输出 uv 缓存路径与耗时，便于比较实际 CI 性能。
-
-三个 Jenkinsfile 沿用 nightdeal 的发布方式：main 分支推送 GHCR 镜像成功后，
-在独立的 `gitops` 容器中更新 `kaiwenyao/k3s-home` 的 main 分支。PR 和普通分支
-不会写入配置仓库；流水线失败或变为 unstable 时也不会继续发布。
-
-| 流水线 | 自动更新的清单（位于 `apps/eventpulse/`） |
-| --- | --- |
-| backend | `api-deployment.yaml`、`worker-deployment.yaml`、`seeder-job.yaml` |
-| frontend | `frontend-deployment.yaml` |
-| ai-service | `ai-service-deployment.yaml` |
-
-Jenkins 需能访问与 nightdeal 相同的 `k3s-home-write` 凭据（Username with password，
-密码为拥有 k3s-home Contents 写权限的 GitHub token）。镜像推送继续使用 `ghcr-token`。
-`scripts/update-k3s-home.sh` 直接使用刚推送的 `FULL_IMAGE`，只替换对应镜像行；
-版本未变化时不创建提交，目标清单缺失或镜像不匹配时让构建失败。三个任务同时推送
-发生冲突时，会从远端最新 main 重新应用本服务的修改，最多尝试五次，不强推。
-
-API、Worker 和 Seeder 在同一次 Git 提交中更新为同一个后端镜像，保证三者携带
-一致的 Flyway 迁移文件；任一清单缺失或镜像匹配异常时，整个更新失败，不推送
-部分修改。Job 名保持 `eventpulse-seeder`；已创建 Job 的 Pod 模板不可变，镜像
-变化后由 `k3s-home/apps/eventpulse/seeder-job.yaml` 上的资源级注解
-`argocd.argoproj.io/sync-options: Force=true,Replace=true` 让 Argo CD 删除旧 Job 并重建。
-该 Job 仍在 wave 0，数据库就绪后执行、成功后才更新 wave 10 的应用；再次运行时
-`seed_runs` 会跳过已完成的播种。直接使用 `kubectl apply` 则仍需手动删除旧 Job。
-GitOps 脚本只更新镜像并保留上述注解，不修改数据库迁移历史。集成测试使用临时本地仓库，
-不访问 GitHub：
-
-```bash
-python3 -m unittest discover -s scripts/tests -v
-```
-
-## 图片存储（SeaweedFS S3）
-
-图片（活动封面等）存在自建 SeaweedFS 的 S3 兼容接口上，不落在 api Pod 的本地
-磁盘：两个 api 副本读写同一份对象，前端不用改。业务语义全部保留——上传仍要
-登录、限 2MB、仅 JPEG/PNG/WebP，上传响应结构不变。对象 key 由后端
-生成（UUID 前缀），Content-Type 随对象保存；上传成功但数据库保存失败会补偿
-删除刚上传的对象；S3 不可达 / 凭证错误映射为 503（读取与上传），对象缺失
-404，不会把存储故障说成请求错误。
-
-删除是软删除：`DELETE` 只改数据库审计字段（`status=DELETED` + `deleted_at`），
-权限校验不变；S3 对象由 worker 的清理任务在宽限期后统一删除并标记 `PURGED`
-（只清理数据库里记录的、过了宽限期的 DELETED 对象；删除失败保持 DELETED 等
-下轮重试；S3 delete 幂等，对象不存在视为已删除）。
-
-配置（`application.yml` 的 `eventpulse.s3.*`，全部可被环境变量覆盖）：
-
-| 变量 | 默认 | 说明 |
+| Feature | Entry point | Notes |
 | --- | --- | --- |
-| `S3_ENABLED` | `false` | true 时图片走 S3；false 回落本地磁盘（仅本地单机） |
-| `S3_ENDPOINT` | 空 | 例如 `https://s3.kaiwen.dev` |
-| `S3_REGION` | `us-east-1` | S3 兼容服务常为 us-east-1 |
-| `S3_BUCKET` | `eventpulse` | 必须已存在；应用不创建 bucket、不改公开权限 |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | 空 | 专属身份的凭证，走环境变量 / K8s Secret，不入 git |
-| `S3_PATH_STYLE` | `true` | SeaweedFS 用 path-style（`https://endpoint/bucket/key`） |
-| `S3_PUBLIC_BASE_URL` | 空 | 浏览器直连基址（见下）；留空则图片走 `/api/media/images/{id}` 代理 |
-| `S3_CONNECT_TIMEOUT` / `S3_READ_TIMEOUT` / `S3_API_CALL_TIMEOUT` | 2000 / 10000 / 30000 | 毫秒 |
+| Organiser copywriting polish | `POST /api/ai/organiser/improve-event` (JWT ORGANISER) | a plain LLM call with structured output; review in the frontend first, then use the normal save / publish endpoints — nothing is auto-saved |
+| Natural-language event discovery | `POST /api/ai/discovery/chat` (JWT optional) | a LangChain agent queries real events through read-only tools; signed-in users get sessions persisted to PostgreSQL and guests get single turns; Spring Boot re-verifies event visibility before returning |
 
-### 图片的取址方式
+Boundaries and degradation:
 
-后端在 `public_url` 字段里下发图片地址，**前端把它当不透明字符串直接用**，不要
-自己拼 endpoint 和 key——换 CDN、换 bucket、或某类资产改走预签名时才不用动前端。
+- The browser never talks to the Python service directly; the LLM API key exists
+  only in the ai-service Secret.
+- `/internal/**` requires service-to-service credentials and is never exposed
+  through the public Ingress; the userId comes from a short-term token signed by
+  Spring Boot — neither the model nor the request body can determine identity.
+- Without `LLM_API_KEY` configured, the AI endpoints clearly report unavailable;
+  search, editing, and booking are unaffected.
+- Rate limits (per user / IP per minute), tool-call counts, input / output
+  lengths, timeouts, and retries all have caps; LLM output is treated as
+  untrusted data — fabricated or delisted event IDs are discarded.
+- Every request is recorded in `ai_requests` (status, latency, token usage) —
+  no keys, no full prompts.
 
-配了 `S3_PUBLIC_BASE_URL` 就是**公开直连**：`public_url` 指向对象存储，图片字节
-不经过 api 进程，浏览器与 CDN 可长期缓存（对象上带
-`Cache-Control: public, max-age=31536000, immutable`，key 含 UUID 内容不变）。
-地址由 key 拼出，是纯字符串操作，不发起任何存储请求。
+Configuration lives in the `AI` section of `.env.example` (provider / model / key /
+base_url / timeouts / service credentials). Any OpenAI-compatible gateway works
+(set `LLM_BASE_URL`). **A note on reasoning-style models (e.g. deepseek-v4)**:
+thinking tokens count against the `LLM_MAX_OUTPUT_TOKENS` output budget — a
+budget that is too small (e.g. 1024) yields empty replies; the default is 4096.
+For local debugging: after `make up`, open http://localhost:3000 and ask away via
+"AI event search" on the home page; organisers sign in and click "AI polish copy"
+in the event form.
 
-留空则回落到 `/api/media/images/{id}` **代理**：后端校验数据库状态后从存储读
-内容回传。本地磁盘模式（`S3_ENABLED=false`）永远走这条路。两条路都保留，
-`MediaController` 的 GET 端点不会下线。
+---
 
-直连要求 bucket 已授予匿名读，**应用不检查也不修改这个权限**。SeaweedFS 侧加
-bucket policy（只给对象级 `s3:GetObject`）：
+## 📷 Image Storage (SeaweedFS S3)
+
+Images (event covers etc.) live on a self-hosted SeaweedFS S3-compatible endpoint
+rather than an api pod's local disk: both api replicas read and write the same
+objects and the frontend needs no changes. All business semantics are preserved —
+uploads still require sign-in, are capped at 2MB, accept only JPEG / PNG / WebP,
+and the upload response shape is unchanged. Object keys are backend-generated
+(UUID prefix) and Content-Type is stored with the object; if the database save
+fails after a successful upload, the just-uploaded object is deleted in
+compensation; S3 unreachability / bad credentials map to 503 (reads and uploads
+alike) and a missing object to 404 — storage failures are never reported as
+request errors.
+
+Deletion is soft: `DELETE` only changes database audit fields (`status=DELETED` +
+`deleted_at`) with permission checks unchanged; the S3 object is deleted by the
+worker's cleanup task after a grace period and then marked `PURGED` (it only
+cleans DELETED objects recorded in the database whose grace period has passed; a
+failed delete stays DELETED for the next round; S3 delete is idempotent — a
+missing object counts as deleted).
+
+Configuration (`eventpulse.s3.*` in `application.yml`, all overridable via
+environment variables):
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `S3_ENABLED` | `false` | true routes images to S3; false falls back to local disk (single-instance local only) |
+| `S3_ENDPOINT` | empty | e.g. `https://s3.kaiwen.dev` |
+| `S3_REGION` | `us-east-1` | S3-compatible services usually use us-east-1 |
+| `S3_BUCKET` | `eventpulse` | must already exist; the app neither creates buckets nor changes public permissions |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | empty | credentials of a dedicated identity, via env vars / K8s Secret, never committed |
+| `S3_PATH_STYLE` | `true` | SeaweedFS uses path-style (`https://endpoint/bucket/key`) |
+| `S3_PUBLIC_BASE_URL` | empty | browser-direct base URL (see below); leave empty to serve images via the `/api/media/images/{id}` proxy |
+| `S3_CONNECT_TIMEOUT` / `S3_READ_TIMEOUT` / `S3_API_CALL_TIMEOUT` | 2000 / 10000 / 30000 | milliseconds |
+
+### How image URLs are resolved
+
+The backend hands out the image URL in the `public_url` field, and **the frontend
+treats it as an opaque string** — never assemble endpoint and key yourself. That
+way switching CDN, switching bucket, or moving an asset class to pre-signed URLs
+never touches the frontend.
+
+With `S3_PUBLIC_BASE_URL` set you get **public direct URLs**: `public_url` points
+at object storage, image bytes never pass through the api process, and browsers
+and CDNs can cache long-term (objects carry
+`Cache-Control: public, max-age=31536000, immutable`, and keys contain a UUID so
+the content behind them never changes). The URL is assembled from the key by pure
+string operations — no storage request is made.
+
+Leave it empty and images fall back to the `/api/media/images/{id}` **proxy**: the
+backend checks database state and streams content from storage. Local-disk mode
+(`S3_ENABLED=false`) always uses this path. Both paths are here to stay — the
+`MediaController` GET endpoint is not going away.
+
+Direct URLs require the bucket to grant anonymous reads — **the application
+neither checks nor modifies that permission**. On the SeaweedFS side, add a bucket
+policy (object-level `s3:GetObject` only):
 
 ```json
 {
@@ -297,23 +390,26 @@ bucket policy（只给对象级 `s3:GetObject`）：
 }
 ```
 
-`Resource` 结尾的 `/*` 是对象级，不能写成 bucket 本身；`Action` 不要加
-`s3:ListBucket`——用户上传的 key 带 UUID 不可枚举，列举权一旦开出去这层保护就
-没了（也会暴露软删除宽限期内尚未清理的对象）。改完用不带凭证的请求核实：
+The trailing `/*` on `Resource` marks object level — it must not be the bucket
+itself; do not add `s3:ListBucket` to `Action` — user-uploaded keys contain a UUID
+and are unenumerable, and once listing is granted that protection is gone (it
+would also expose objects still inside the soft-delete grace period). Verify
+afterwards with unauthenticated requests:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" https://s3.kaiwen.dev/eventpulse/seed/demo-covers/01.jpeg   # 期望 200
-curl -s -o /dev/null -w "%{http_code}\n" https://s3.kaiwen.dev/eventpulse/                            # 期望 403
+curl -s -o /dev/null -w "%{http_code}\n" https://s3.kaiwen.dev/eventpulse/seed/demo-covers/01.jpeg   # expect 200
+curl -s -o /dev/null -w "%{http_code}\n" https://s3.kaiwen.dev/eventpulse/                            # expect 403
 ```
 
-清理任务（worker 执行）：`MEDIA_PURGE_ENABLED`（默认 true）、
-`MEDIA_PURGE_AFTER_DAYS`（宽限期天数，默认 7）、`MEDIA_PURGE_BATCH_SIZE`（50）、
-`MEDIA_PURGE_FIXED_DELAY_MS`（3600000）。
+Cleanup task (run by the worker): `MEDIA_PURGE_ENABLED` (default true),
+`MEDIA_PURGE_AFTER_DAYS` (grace period in days, default 7),
+`MEDIA_PURGE_BATCH_SIZE` (50), `MEDIA_PURGE_FIXED_DELAY_MS` (3600000).
 
-### 本地开发
+### Local-disk fallback (default)
 
-默认 `S3_ENABLED=false`，图片仍落在 `MEDIA_DIR`（默认 `data/media`），行为和
-以前一致。要用 SeaweedFS，在运行环境设置上面几个变量即可：
+By default `S3_ENABLED=false` and images still land in `MEDIA_DIR` (default
+`data/media`) — behaviour unchanged. To use SeaweedFS, set the variables above in
+the runtime environment:
 
 ```bash
 S3_ENABLED=true S3_ENDPOINT=https://s3.kaiwen.dev S3_BUCKET=eventpulse \
@@ -321,160 +417,321 @@ S3_ACCESS_KEY=... S3_SECRET_KEY=... \
 mvn -pl backend spring-boot:run -Dspring-boot.run.profiles=api
 ```
 
-compose 里同样把这几个变量放进 `.env`（已在 `docker-compose.yml` 透传）；
-`.env.example` 有完整清单。多副本（`API>1` 或 k3s）必须启用 S3。
+Under compose the same variables go into `.env` (already passed through in
+`docker-compose.yml`); `.env.example` has the full list. Multi-replica setups
+(`API>1` or k3s) must enable S3.
 
 ### k3s
 
-`k3s-home/apps/eventpulse/configmap.yaml` 已带 S3 的非敏感变量（三个角色共用
-同一套 envFrom：api 读写对象，worker 执行清理，seeder 仅需能启动），凭证
-`S3_ACCESS_KEY` / `S3_SECRET_KEY` 封进 `sealed-secret.yaml`。SeaweedFS 侧的
-身份、bucket 与权限核实见 k3s-home 仓库 README 的「S3 图片存储」。
+`k3s-home/apps/eventpulse/configmap.yaml` already carries the non-sensitive S3
+variables (all three roles share one envFrom: api reads and writes objects, the
+worker runs cleanup, the seeder only needs to boot); the `S3_ACCESS_KEY` /
+`S3_SECRET_KEY` credentials are sealed in `sealed-secret.yaml`. For the
+SeaweedFS-side identity, bucket, and permission verification, see the k3s-home
+repo README's "S3 image storage" section.
 
-### 已有本地图片怎么办（迁移方案，未执行）
+### What about existing local images? (migration plan, not executed)
 
-历史图片在各 api 容器的 `data/media` 里，compose / k8s 都没有给它挂持久卷，
-容器重建即丢，通常无需迁移。若确有要保留的本地文件，按下面顺序迁（不删除
-本地文件，出问题可重来）：
+Historical images sit in `data/media` inside each api container; neither compose
+nor k8s mounts a persistent volume for it, so recreating the container loses them
+— usually there is nothing to migrate. If you do have local files worth keeping,
+migrate in this order (local files are not deleted, so you can start over if
+anything goes wrong):
 
-1. 对象 key 直接沿用数据库里的 `storage_key`，无需改任何数据库记录：
+1. Object keys reuse the `storage_key` already in the database — no database
+   records change:
    `aws s3 sync ./data/media/ s3://eventpulse/ --endpoint-url https://s3.kaiwen.dev`
-   （key 以 `.png` / `.jpg` / `.webp` 结尾，CLI 能猜对 Content-Type；
-   `S3_ACCESS_KEY` / `S3_SECRET_KEY` 走环境变量。）
-2. sync 完成后，把 `S3_ENABLED=true` 随新镜像一起滚动更新。
-3. 切换后新上传直接进 S3；若有实例在切换窗口内还往本地写过文件，再 sync 一次
-   补齐。确认无误前不要删本地目录，确认后删除也只影响本机残留。
+   (keys end in `.png` / `.jpg` / `.webp`, so the CLI infers Content-Type; pass
+   `S3_ACCESS_KEY` / `S3_SECRET_KEY` through environment variables.)
+2. After the sync completes, roll out `S3_ENABLED=true` together with the new image.
+3. New uploads go straight to S3 after the switch; if any instance still wrote
+   files locally during the switchover window, sync once more to catch up. Don't
+   delete the local directory until you're sure; afterwards, deletion only
+   affects local leftovers.
 
-## AI 助手
+---
 
-AI 是运行时调用的外部 LLM 能力（不训练模型、不做向量化）。架构：
+## 📦 Kubernetes Deployment
+
+`deploy/k8s/` holds the manifests for the three roles of the same image:
 
 ```text
-浏览器 ──> Spring Boot /api/ai/** ──> Python AI Service ──> 外部 LLM
-                      │  （Agent 需要业务数据时）
-                      └────< /internal/ai-tools/**（服务间凭证 + 短期签名用户上下文）──> PostgreSQL
+configmap.yml               common config (DB / Kafka / Redis addresses, partitions, heartbeat, batches, AI gateway address, S3 address)
+ai-configmap.yml            AI service non-sensitive config (LLM provider / model / timeouts)
+secret.example.yml          example secrets (DB_PASSWORD / SECRET_KEY / AI service credentials / S3 credentials); copy to secret.yml before use
+api-deployment.yml          api, 2 replicas, readiness/liveness split, 40s graceful shutdown
+api-service.yml             ClusterIP Service
+worker-deployment.yml       worker, 1 replica for the first release (safe to scale to 2), exposes only Actuator
+seeder-job.yml              Job (versioned name, backoffLimit=3, restartPolicy=Never)
+ai-service-deployment.yml   Python AI service (FastAPI + LangChain), starts at 1 replica, scalable
+ai-service-service.yml      ClusterIP Service (cluster-internal only, not exposed through Ingress)
+ingress.yml                 /api routes to the api Service; buffering off and long timeouts for SSE
 ```
 
-两个功能：
+```bash
+kubectl apply -f deploy/k8s/configmap.yml -f deploy/k8s/ai-configmap.yml
+kubectl apply -f deploy/k8s/secret.example.yml   # fill in real values first, or switch to sealed-secrets
+kubectl apply -f deploy/k8s/seeder-job.yml
+kubectl wait --for=condition=complete job/eventpulse-seeder-v1 --timeout=300s
+kubectl apply -f deploy/k8s/api-deployment.yml -f deploy/k8s/api-service.yml \
+              -f deploy/k8s/worker-deployment.yml \
+              -f deploy/k8s/ai-service-deployment.yml -f deploy/k8s/ai-service-service.yml \
+              -f deploy/k8s/ingress.yml
+```
 
-| 功能 | 入口 | 说明 |
-| --- | --- | --- |
-| 主办方文案完善 | `POST /api/ai/organiser/improve-event`（JWT ORGANISER） | 普通 LLM 调用 + 结构化输出；建议先在前端确认，再走普通保存/发布接口；不自动保存 |
-| 自然语言找活动 | `POST /api/ai/discovery/chat`（可选 JWT） | LangChain Agent 通过只读工具查真实活动；登录用户的会话存 PostgreSQL，游客单轮；Spring Boot 返回前再次复核活动可见性 |
+Release flow: wait for the Seeder Job to succeed (`kubectl wait ...
+condition=complete`) before confirming the API / Worker rollouts; if the Job
+fails, halt the release and keep the logs. The image name is currently the
+placeholder `eventpulse/backend:v1.0` — replace it with the real registry image
+before releasing (e.g. `ghcr.io/<owner>/eventpulse-backend:<commit-sha>`). All
+API instances share the same `SECRET_KEY`, and api / worker / seeder share the
+same database connection settings.
 
-边界与降级：
+### Jenkins auto-updates k3s-home
 
-- 浏览器永远不直接访问 Python 服务；LLM API Key 只存在于 ai-service 的 Secret。
-- `/internal/**` 需要服务间凭证，不经公网 Ingress 暴露；userId 来自 Spring Boot
-  签发的短期 token，模型与请求体都决定不了身份。
-- 未配置 `LLM_API_KEY` 时 AI 接口明确返回不可用，普通搜索、编辑、预订不受影响。
-- 限流（用户/IP 每分钟）、工具调用次数、输入输出长度、超时与重试都有上限；
-  LLM 输出按不可信数据处理，编造或已下架的活动 ID 会被丢弃。
-- 全链路记录 `ai_requests`（状态、耗时、token 用量），不含密钥与完整提示词。
+The backend pipeline runs unit tests, Testcontainers integration tests, the JaCoCo
+report, the 90% line-coverage gate, and JAR packaging in a single `mvn verify`;
+the subsequent Coverage stage only publishes the report. The Maven repository
+uses a node-local `hostPath` — host path `/var/cache/jenkins/maven/repository`,
+container mount path `/var/cache/maven/repository` — shared by Java projects and
+branches on the same node, no longer per-project or per-job directories, and no
+NFS. Kubelet creates the directory via `DirectoryOrCreate` and the Maven container
+writes with the image's default root user; build nodes must allow that hostPath
+and keep the path on local disk. Every onboarded project must mount the same
+hostPath, use a compatible Maven 3.9.x, and pass the following arguments in its
+Maven commands so that separate processes coordinate reads and writes on the
+shared repository with the same file locks:
 
-配置在 `.env.example` 的 `AI` 段（provider / model / key / base_url / 超时 /
-服务间凭证）。模型是 OpenAI 兼容的任意网关均可（配 `LLM_BASE_URL`）；
-**reasoning 类模型（如 deepseek-v4）注意**：思考 token 计入
-`LLM_MAX_OUTPUT_TOKENS` 输出预算，预算太小（如 1024）会导致空回复，
-默认已设 4096。本地调试：`make up` 后打开 http://localhost:3000，
-首页「AI 找活动」即可提问；主办方登录后进活动表单页点「AI 完善文案」。
+```sh
+-Dmaven.repo.local=/var/cache/maven/repository \
+-Daether.syncContext.named.factory=file-lock \
+-Daether.syncContext.named.nameMapper=file-gav
+```
 
-## 本地开发
+`disableConcurrentBuilds()` only serialises builds within the same Jenkins job;
+cross-project repository concurrency is handled by the file locks above. The cache
+survives across Pods; the first build on a node downloads the dependencies, which
+other projects then reuse. `cleanWs()` does not clear this cache; maintenance
+cleanup should happen after all builds that use the node's cache have stopped.
+Projects running `mvn install` should isolate their local artifacts separately so
+same-coordinate branch artifacts never overwrite each other; EventPulse uses
+`verify` and never installs project artifacts into the shared repository. Build
+logs print the repository path in use and the Maven verify duration. Old
+per-project caches are neither migrated nor deleted automatically.
 
-本机需要 JDK 21、Maven、Node.js。同样先清残留，再只起基础设施：
+The backend Jenkins console keeps Maven stage progress, test statistics, and
+failure summaries. Surefire writes each test's stdout/stderr to
+`target/surefire-reports/*-output.txt`, and successful cases' XML no longer embeds
+those outputs. Whether tests pass or fail, the existing test reports are
+compressed into the build attachment `backend/target/backend-test-logs.tar.gz`,
+downloadable from Jenkins Artifacts for troubleshooting; JUnit results are still
+published as usual, and test or coverage failures still block the release. CI sets
+`SQL_LOG_LEVEL=WARN` to silence per-statement SQL DEBUG output; the
+Kafka-unavailable tests only demote `AdminMetadataManager`'s repeated reconnect
+INFO logs to WARN, keeping warnings, errors, and assertions intact.
+
+The AI pipeline uses a node-local `emptyDir` working volume, keeping the uv cache
+and `.venv` on the same filesystem and installing dependencies via hard links,
+avoiding copying large numbers of small files off NFS one by one. The cache dies
+with the build Pod — every new build re-downloads dependencies; the shared Maven
+PVC is no longer used for the uv cache. Dependency sync still uses
+`uv sync --frozen --extra dev`, and tests run via `uv run --no-sync pytest`,
+reusing the freshly installed environment. The sync stage prints the uv cache path
+and duration so actual CI performance can be compared.
+
+The three Jenkinsfiles follow nightdeal's release approach: after main pushes
+GHCR images successfully, a separate `gitops` container updates the
+`kaiwenyao/k3s-home` main branch. PRs and ordinary branches never write to the
+config repo; a failed or unstable pipeline never proceeds to release either.
+
+| Pipeline | Manifests auto-updated (under `apps/eventpulse/`) |
+| --- | --- |
+| backend | `api-deployment.yaml`, `worker-deployment.yaml`, `seeder-job.yaml` |
+| frontend | `frontend-deployment.yaml` |
+| ai-service | `ai-service-deployment.yaml` |
+
+Jenkins needs access to the same `k3s-home-write` credentials as nightdeal
+(Username with password; the password is a GitHub token with Contents write
+access to k3s-home). Image pushes keep using `ghcr-token`.
+`scripts/update-k3s-home.sh` uses the just-pushed `FULL_IMAGE` directly and only
+replaces the corresponding image lines; when the version is unchanged no commit
+is created, and a missing target manifest or an image mismatch fails the build.
+When the three jobs push at the same time and conflict, the service's change is
+re-applied on top of the latest remote main, up to five attempts, never
+force-pushing.
+
+API, Worker, and Seeder are updated to the same backend image in a single Git
+commit so all three carry the same Flyway migration files; if any manifest is
+missing or an image match looks wrong the whole update fails — no partial pushes.
+The Job name stays `eventpulse-seeder`; an already-created Job's Pod template is
+immutable, so once the image changes, the resource-level annotation
+`argocd.argoproj.io/sync-options: Force=true,Replace=true` on
+`k3s-home/apps/eventpulse/seeder-job.yaml` makes Argo CD delete the old Job and
+recreate it. The Job remains in wave 0 — it runs once the database is ready, and
+only a successful run updates the wave-10 apps; on re-runs `seed_runs` skips
+seeding that already completed. With plain `kubectl apply` you still have to
+delete the old Job manually. The GitOps script only updates images and preserves
+the annotation above; it never touches database migration history. Integration
+tests use a temporary local repository and never reach GitHub:
+
+```bash
+python3 -m unittest discover -s scripts/tests -v
+```
+
+---
+
+## 🔨 Local Development
+
+You need JDK 21, Maven, and Node.js locally. Clean up leftovers first, then start
+only the infrastructure:
 
 ```bash
 make down
 make testcontainers-cleanup
-make up-infra    # 只启动 postgres / redis / kafka
+make up-infra    # start only postgres / redis / kafka
 ```
 
 ```bash
-# 终端 1：api 角色（只处理 HTTP 与 SSE）
+# Terminal 1: api role (HTTP & SSE only)
 mvn -pl backend spring-boot:run -Dspring-boot.run.profiles=api
 ```
 
 ```bash
-# 终端 2：worker 角色（Kafka / Outbox / 生命周期）
+# Terminal 2: worker role (Kafka / Outbox / lifecycle)
 mvn -pl backend spring-boot:run -Dspring-boot.run.profiles=worker
 ```
 
 ```bash
-# 终端 3：播种一次（seeder 角色，跑完即退出）
+# Terminal 3: seed once (seeder role, exits when done)
 mvn -pl backend spring-boot:run -Dspring-boot.run.profiles=seeder
 ```
 
 ```bash
-# 终端 4：Python AI 服务（LLM_API_KEY 留空时 AI 明确显示不可用）
+# Terminal 4: Python AI service (with an empty LLM_API_KEY the AI clearly reports unavailable)
 cd ai-service && uv sync && uv run uvicorn app.main:app --port 8090
 ```
 
 ```bash
-# 终端 5
+# Terminal 5
 cd frontend && npm ci && npm run dev
 ```
 
-前端：http://localhost:5173
+Frontend: http://localhost:5173
 
-### 前端结构
+### Frontend structure
 
 ```
 frontend/src
-├─ App.tsx           路由与应用外壳（顶栏 / Toast / 页脚）
-├─ api.ts  auth.tsx  网络层与会话
-├─ types.ts          与后端 DTO 对应的视图模型、分类与状态字典
-├─ lib/              纯函数工具（ISO ↔ datetime-local 转换、相对时间、SSE 订阅）
-├─ ui/               设计系统原语：Field / Badges / Modal / Toast / Skeleton / Icons
-├─ components/       跨页面组件（顶栏、活动票卡）
-├─ pages/            观众端页面（发现、详情、登录、预订、收藏、消息）
-├─ organiser/        主办方控制台（概览、活动表格、发布表单、生命周期、参与者、数据）
-└─ styles/           按关注点拆分的样式表，由 styles.css 汇总导入
+├─ App.tsx           routing and app shell (top bar / toasts / footer)
+├─ api.ts  auth.tsx  networking and session
+├─ types.ts          view models mapped from backend DTOs, category and status dictionaries
+├─ lib/              pure helpers (ISO ↔ datetime-local conversion, relative time, SSE subscription)
+├─ ui/               design-system primitives: Field / Badges / Modal / Toast / Skeleton / Icons
+├─ components/       cross-page components (top bar, event ticket card)
+├─ pages/            attendee pages (discover, detail, login, booking, favourites, messages)
+├─ organiser/        organiser console (overview, event table, publish form, lifecycle, attendees, data)
+└─ styles/           stylesheets split by concern, aggregated by styles.css
 ```
 
-发布活动的表单逻辑（默认值、字段校验、请求体映射）集中在
-`organiser/eventForm.ts`，是纯函数，单独做了单元测试；页面组件只负责把状态接到
-表单控件上。订单详情页通过 `lib/sse.ts` 订阅订单事件提醒（fetch 实现、
-Authorization 头、指数退避自动重连），收到提醒后重新拉取 REST 数据。
+The publish-form logic (defaults, field validation, request-body mapping) is
+centralised in `organiser/eventForm.ts` — pure functions with their own unit
+tests; page components only wire state into the form controls. The order detail
+page subscribes to order event reminders via `lib/sse.ts` (fetch-based,
+Authorization header, exponential-backoff auto-reconnect) and re-fetches REST data
+whenever a reminder arrives.
 
-## 测试
+---
 
-后端测试会拉 Testcontainers（本机需要 Docker），`*IT.java` 覆盖分布式行为：
+## 🧪 Testing
 
-| 测试 | 覆盖 |
+Backend tests pull Testcontainers (Docker required locally); `*IT.java` covers
+the distributed behaviour:
+
+| Test | Covers |
 | --- | --- |
-| `OutboxClaimIT` | 双 Worker 并发领取不重复、同键保序、租约到期接手、隔离不阻塞 |
-| `KafkaOutboxE2EIT` | 真实 Kafka：Outbox → Relay → Consumer → 通知落库，同键保序，topic 分区数 |
-| `KafkaPartitionIT` | topic 按配置建 3 分区、同组双 Worker 分摊分区且都消费、同键同分区有序 |
-| `SseReminderDeliveryIT` | 真实 Redis：发布 → 广播 → 订阅 → 本机连接，重放去重 |
-| `*ProfileWiringIT` | api / worker / seeder 三个 Profile 各自装配了什么、排除了什么 |
-| `JwtInterceptorAsyncTest` | SSE 异步请求的 ThreadLocal 清理、线程复用不串身份 |
-| `BookingConcurrencyIT` | 并发下单不超卖 |
-| `AiMigrationIT` | V9 迁移：全新建库 + 旧库升级两条路径，旧推荐表被删除 |
-| `AiGatewayServiceTest` / `AiServiceClientTest` / `InternalServiceInterceptorTest` | AI 网关限流、活动复核、编造 ID 过滤、服务间认证 |
-| `MediaServiceTest` / `S3MediaStorageTest` / `MediaPurgeWorkerTest` | 图片上传校验、key 生成、DB 失败补偿删除、读取 404/503 映射、软删除不碰对象、S3 异常翻译、清理任务语义 |
-| `MediaS3ProfileWiringIT` / `MediaS3WorkerProfileWiringIT` / `MediaS3SeederProfileWiringIT` | S3 启用后 api / worker / seeder 装配与启动兼容性（S3Client 构造不联网），默认回落本地磁盘 |
-| `S3LiveMediaStorageIT` | 真实 S3 读写删连通性（`MEDIA_S3_LIVE_TEST=true` 才运行，只用 `__eventpulse-selftest/` 临时前缀并自清理） |
+| `OutboxClaimIT` | two workers claim concurrently without duplicates, per-key ordering, lease-expiry takeover, isolation without blocking |
+| `KafkaOutboxE2EIT` | real Kafka: Outbox → Relay → Consumer → notification persisted; per-key ordering; topic partition count |
+| `KafkaPartitionIT` | topic created with 3 partitions per config; two workers in one group share the partitions and both consume; same key stays ordered in the same partition |
+| `SseReminderDeliveryIT` | real Redis: publish → broadcast → subscribe → local connection; replay dedup |
+| `*ProfileWiringIT` | what each of the api / worker / seeder profiles wires up and excludes |
+| `JwtInterceptorAsyncTest` | ThreadLocal cleanup for async SSE requests; thread reuse never mixes identities |
+| `BookingConcurrencyIT` | concurrent bookings never oversell |
+| `WalletLedgerMigrationIT` | two-phase V2 migration: old accounts get opening-balance records without changing balances, balances reconcile from opening + subsequent entries, pre-migration orders still refund correctly |
+| `AiGatewayServiceTest` / `AiServiceClientTest` / `InternalServiceInterceptorTest` | AI gateway rate limiting, event re-verification, fabricated-ID filtering, service-to-service auth |
+| `MediaServiceTest` / `S3MediaStorageTest` / `MediaPurgeWorkerTest` | image upload validation, key generation, compensation delete on DB failure, 404/503 mapping on reads, soft delete never touches objects, S3 exception translation, cleanup-task semantics |
+| `MediaS3ProfileWiringIT` / `MediaS3WorkerProfileWiringIT` / `MediaS3SeederProfileWiringIT` | S3-enabled wiring and startup compatibility for api / worker / seeder (S3Client construction makes no network calls); default falls back to local disk |
+| `S3LiveMediaStorageIT` | real S3 read/write/delete connectivity (runs only with `MEDIA_S3_LIVE_TEST=true`; uses only the `__eventpulse-selftest/` temp prefix and cleans up after itself) |
 
-Python AI 服务的测试（模拟 LLM 与工具响应，CI 不调用付费模型、不需要真实 Key）：
+The Python AI service tests (scripted LLM and tool responses — CI never calls
+paid models and needs no real key):
 
 ```bash
 make test-ai
 ```
 
 ```bash
-make testcontainers-cleanup  # 清掉 Testcontainers 残留容器
-make test                    # 后端 mvn verify（单测 + IT + JaCoCo 90% 线覆盖门槛）
+make testcontainers-cleanup  # remove leftover Testcontainers containers
+make test                    # backend mvn verify (unit + IT + JaCoCo 90% line-coverage gate)
 make test-frontend           # ESLint + Vitest + Playwright
-make test-all                # 后端 + 前端 + AI 服务三层
+make test-all                # backend + frontend + AI service, all three layers
 ```
 
-整栈冒烟（需要本机 `curl` 和 `python3`）：
+Full-stack smoke test (needs local `curl` and `python3`):
 
 ```bash
-make up                       # 默认 2 个 api + 2 个 worker
-make smoke                    # 默认打 http://localhost:3000（前端反代）
-# api 不再固定绑定宿主机端口（多实例会冲突），统一从前端 Nginx 进；
-# 要直连某个实例：docker compose exec api curl -s localhost:8080/actuator/health
+make up                       # 2 api + 2 worker by default
+make smoke                    # targets http://localhost:3000 by default (frontend proxy)
+# api no longer binds a fixed host port (multi-instance would conflict); everything
+# goes through the frontend Nginx; to hit one instance directly:
+# docker compose exec api curl -s localhost:8080/actuator/health
 ```
 
-全部 PASS 会打印 `SMOKE TEST: ALL GREEN`。
+When everything passes it prints `SMOKE TEST: ALL GREEN`.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! The workflow follows the repo's existing habits
+(Conventional Commits + PRs):
+
+1. Fork the repo (or branch off `main` in-repo):
+   ```bash
+   git checkout -b feat/your-feature
+   ```
+2. Commit with a Conventional Commits message (`feat:` / `fix:` / `ci:` / `docs:`
+   + description; this repo writes commit subjects in Chinese):
+   ```bash
+   git commit -m 'feat: 支持按城市筛选活动'
+   ```
+3. Push the branch:
+   ```bash
+   git push origin feat/your-feature
+   ```
+4. Open a Pull Request and merge once CI is green.
+
+PRs run GitHub Actions (gitleaks secret scan, dependency checks, backend
+Testcontainers integration tests, frontend ESLint + Vitest + typecheck + build +
+Playwright, AI service pytest, and Compose / K8s config validation); a successful
+main push is then released by Jenkins — GHCR images plus the k3s config-repo
+update. Backend changes should keep `make test` green (including the JaCoCo 90%
+line-coverage gate); frontend changes should keep `make test-frontend` green.
+
+---
+
+## 📝 License
+
+No open-source license has been declared for this project yet; all rights are
+reserved by default. If you want to reuse the code, please reach out via
+[Issues](https://github.com/kaiwenyao/eventpulse/issues) first.
+
+---
+
+## 📧 Contact
+
+- **GitHub Issues**: <https://github.com/kaiwenyao/eventpulse/issues>
+- **Author**: <https://github.com/kaiwenyao>
+
+---
+
+Made with ❤️ by [kaiwenyao](https://github.com/kaiwenyao)
