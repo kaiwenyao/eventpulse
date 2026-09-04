@@ -40,8 +40,10 @@ public class EventService {
             String city, String category, String q, Instant dateFrom, Instant dateTo,
             Integer minPrice, Integer maxPrice, Boolean hasRemaining, String sort, boolean desc,
             Integer page, Integer size) {
+        String cityQuery = city == null ? "" : city.trim().toLowerCase(Locale.ROOT);
         List<EventVo> all = events.findByStatusInOrderByStartsAtAsc(EventStatus.PUBLIC_LIST).stream()
-                .filter(event -> city == null || city.isBlank() || event.getCity().equalsIgnoreCase(city))
+                .filter(event -> cityQuery.isBlank()
+                        || event.getCity().toLowerCase(Locale.ROOT).contains(cityQuery))
                 .filter(event -> category == null || category.isBlank()
                         || event.getCategory().equalsIgnoreCase(category))
                 .filter(event -> q == null || q.isBlank()
