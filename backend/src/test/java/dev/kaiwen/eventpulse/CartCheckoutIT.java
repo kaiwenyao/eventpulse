@@ -28,6 +28,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.domain.EventStatus;
 import dev.kaiwen.eventpulse.dto.AuthDtos.WalletRechargeRequest;
+import dev.kaiwen.eventpulse.dto.CartDtos.CartItemVo;
 import dev.kaiwen.eventpulse.dto.CartDtos.CartVo;
 import dev.kaiwen.eventpulse.dto.CartDtos.CheckoutItemRequest;
 import dev.kaiwen.eventpulse.dto.CartDtos.CheckoutVo;
@@ -210,6 +211,35 @@ class CartCheckoutIT {
     }
 
     @Test
+    void updatingQuantityKeepsCartOrderStable() {
+        User buyer = newUser("USER", 0);
+        User organiser = newUser("ORGANISER", 0);
+        Event first = newEvent(organiser.getId(), 1200, 100, EventStatus.PUBLISHED);
+        Event second = newEvent(organiser.getId(), 800, 100, EventStatus.PUBLISHED);
+        Event third = newEvent(organiser.getId(), 600, 100, EventStatus.PUBLISHED);
+
+        login(buyer.getId());
+        carts.add(first.getId(), 1);
+        carts.add(second.getId(), 2);
+        carts.add(third.getId(), 3);
+        // 顺序按加购时间倒序：最新加购的在最前
+        assertThat(carts.view().items()).extracting(CartItemVo::eventId)
+                .containsExactly(third.getId(), second.getId(), first.getId());
+
+        // 改数量 / 勾选不移动行：最早加购的行改完仍在最后
+        Long firstItemId = itemIdOf(carts.view(), first.getId());
+        CartVo cart = carts.update(firstItemId, 5, false);
+        assertThat(cart.items()).extracting(CartItemVo::eventId)
+                .containsExactly(third.getId(), second.getId(), first.getId());
+        assertThat(cart.items().get(2).quantity()).isEqualTo(5);
+        assertThat(cart.items().get(2).selected()).isFalse();
+
+        // 再次查询依然稳定
+        assertThat(carts.view().items()).extracting(CartItemVo::eventId)
+                .containsExactly(third.getId(), second.getId(), first.getId());
+    }
+
+    @Test
     void cartShowsValidityReasonsAndPriceChangeRequiresConfirmation() {
         User buyer = newUser("USER", 0);
         User organiser = newUser("ORGANISER", 0);
@@ -333,14 +363,16 @@ class CartCheckoutIT {
         auth.recharge(buyer.getId(), new WalletRechargeRequest(3000), null);
         CartVo cart = carts.add(a.getId(), 1);
         cart = carts.add(b.getId(), 1);
-        // 未勾选第二项：只结算第一项
-        cart = carts.update(cart.items().get(1).id(), null, false);
+        Long itemIdA = itemIdOf(cart, a.getId());
+        Long itemIdB = itemIdOf(cart, b.getId());
+        // 未勾选 a：结算只处理显式请求的 b，a 仍留在购物车
+        carts.update(itemIdA, null, false);
         CheckoutService.Settlement result = checkouts.settleCart(buyer.getId(), "checkout-partial-" + SEQ.get(),
-                List.of(new CheckoutItemRequest(cart.items().get(0).id(), 1)));
+                List.of(new CheckoutItemRequest(itemIdB, 1)));
         assertThat(result.bookings()).hasSize(1);
         CartVo after = carts.view();
         assertThat(after.items()).hasSize(1);
-        assertThat(after.items().get(0).eventId()).isEqualTo(b.getId());
+        assertThat(after.items().get(0).eventId()).isEqualTo(a.getId());
         assertThat(walletOf(buyer.getId())).isEqualTo(2000);
     }
 

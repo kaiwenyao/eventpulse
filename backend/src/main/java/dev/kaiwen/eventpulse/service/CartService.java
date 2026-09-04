@@ -29,6 +29,8 @@ import dev.kaiwen.eventpulse.repository.EventRepository;
  * 上限：每个用户最多 {@value #MAX_ITEMS_PER_USER} 个活动项；
  * 单项数量 1..min(活动限购, 99)（数据库另有 CHECK 约束兜底）。
  * 同一用户同一活动由数据库唯一约束合并为一行。
+ * 列表顺序：按加购时间倒序（created_at DESC，id DESC 兜底）。改数量 / 勾选 /
+ * 价格确认都会刷新 updated_at，但不能作为排序键，否则刚操作过的物品会跳到最前。
  */
 @Service
 public class CartService {
@@ -52,7 +54,7 @@ public class CartService {
     @Transactional(readOnly = true)
     public CartVo view() {
         Long userId = requireLogin();
-        List<CartItem> items = cartItems.findByUserIdOrderByUpdatedAtDesc(userId);
+        List<CartItem> items = cartItems.findByUserIdOrderByCreatedAtDescIdDesc(userId);
         return toVo(userId, items);
     }
 
@@ -145,7 +147,7 @@ public class CartService {
     @Transactional
     public CartVo clear() {
         Long userId = requireLogin();
-        List<CartItem> items = cartItems.findByUserIdOrderByUpdatedAtDesc(userId);
+        List<CartItem> items = cartItems.findByUserIdOrderByCreatedAtDescIdDesc(userId);
         items.forEach(item -> writeItemEvent("CART_ITEM_REMOVED", item, 0));
         cartItems.deleteAll(items);
         return view();
@@ -159,7 +161,7 @@ public class CartService {
     @Transactional
     public CartVo refreshPrices() {
         Long userId = requireLogin();
-        List<CartItem> items = cartItems.findByUserIdOrderByUpdatedAtDesc(userId);
+        List<CartItem> items = cartItems.findByUserIdOrderByCreatedAtDescIdDesc(userId);
         List<Event> related = events.findAllById(items.stream().map(CartItem::getEventId).toList());
         Map<Long, Event> byId = new HashMap<>();
         related.forEach(event -> byId.put(event.getId(), event));

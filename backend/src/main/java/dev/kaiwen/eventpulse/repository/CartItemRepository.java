@@ -15,7 +15,9 @@ import jakarta.persistence.LockModeType;
 
 public interface CartItemRepository extends JpaRepository<CartItem, Long> {
 
-    List<CartItem> findByUserIdOrderByUpdatedAtDesc(Long userId);
+    /** 按加购时间倒序：created_at 只在首次加购时写入，改数量 / 勾选 /
+     * 价格刷新都不会移动行；id 兜底保证同一毫秒加购的行顺序确定。 */
+    List<CartItem> findByUserIdOrderByCreatedAtDescIdDesc(Long userId);
 
     Optional<CartItem> findByIdAndUserId(Long id, Long userId);
 

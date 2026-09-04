@@ -53,7 +53,7 @@ class SchemaBaselineIT {
                 .migrate();
 
         // Assert
-        assertThat(result.migrationsExecuted).isEqualTo(2);
+        assertThat(result.migrationsExecuted).isEqualTo(3);
         for (String table : EXPECTED_TABLES) {
             assertThat(tableExists(table)).as(table).isTrue();
         }
