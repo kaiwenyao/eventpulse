@@ -17,7 +17,10 @@
     "remainingTickets": "{{count}} 张余票",
     "requestFailed": "请求失败",
     "all": "全部",
-    "retry": "重试"
+    "retry": "重试",
+    "moreFilters": "更多筛选",
+    "totalRows": "共 {{count}} 条",
+    "search": "搜索"
   },
   "nav": {
     "events": "活动",
@@ -199,7 +202,21 @@
       "EVENT_NOT_PUBLISHED": "活动当前状态不支持退款",
       "EVENT_CANCELLED": "活动已取消，退款由取消活动流程处理",
       "EVENT_STARTED": "活动已开始，不能退款"
-    }
+    },
+    "kpiOrders": "订单总数",
+    "kpiSpent": "累计消费",
+    "kpiTickets": "电子票",
+    "placedAt2": "下单 {{time}}",
+    "checkinProgress": "核销 {{done}}/{{total}}",
+    "pendingCheckin": "{{count}} 张待核销",
+    "cancelConfirmTitle": "确认取消订单？",
+    "cancelConfirmDesc": "取消后库存立即释放，实付金额将退回钱包余额。",
+    "checkoutRef": "同次结算 #{{id}}",
+    "colEvent": "活动",
+    "colWhen": "活动时间",
+    "colQty": "数量",
+    "colPaid": "实付",
+    "colStatus": "状态"
   },
   "favourites": {
     "title": "收藏",
@@ -244,7 +261,8 @@
     "rechargeOk": "充值成功，余额 {{amount}}",
     "rechargeFailed": "充值失败",
     "hint": "演示功能：充值不接入真实支付渠道；余额可用于站内预订。",
-    "ledgerLink": "余额明细"
+    "ledgerLink": "余额明细",
+    "spentLabel": "累计消费"
   },
   "organiser": {
     "brand": "主办方控制台",
@@ -542,7 +560,11 @@
       "PRICE_CHANGED": "价格已变化，需重新确认",
       "OVER_LIMIT": "数量超过单次限购",
       "LOW_STOCK": "余票不足所选数量"
-    }
+    },
+    "walletBalance": "钱包余额",
+    "shortfall": "还差",
+    "shortTitle": "钱包余额不足",
+    "shortBody": "当前余额不足以支付所选订单，还差 {{amount}}。可以先去充值，或取消勾选部分活动。"
   },
   "ledger": {
     "title": "余额明细",
@@ -567,6 +589,53 @@
       "BOOKING_REFUND": "订单退款",
       "EVENT_CANCEL_REFUND": "活动取消退款",
       "OPENING_BALANCE": "期初余额"
-    }
+    },
+    "balanceNow": "当前余额",
+    "spentTotal": "累计消费",
+    "entryCount": "流水条数",
+    "topUp": "去充值",
+    "pageIn": "本页收入",
+    "pageOut": "本页支出",
+    "balanceFlow": "{{before}} → {{after}}",
+    "checkoutRef": "结算 #{{id}}"
+  },
+  "errors": {
+    "action": {
+      "topUp": "去充值",
+      "signIn": "去登录",
+      "openCart": "查看购物车"
+    },
+    "insufficientBalance": "钱包余额不足，无法完成本次支付。",
+    "walletLimit": "超出钱包余额上限，请先消费一部分再充值。",
+    "amountPositive": "金额必须大于 0。",
+    "idempotencyTooLong": "请求标识过长，请刷新页面重试。",
+    "idempotencyAmount": "同一次充值请求的金额不一致，请刷新页面重新发起。",
+    "idempotencyRequest": "同一个请求标识已用于另一次操作，请刷新页面重试。",
+    "walletDuplicate": "这笔流水已经记过账了，无需重复操作。",
+    "signInRequired": "登录后才能继续。",
+    "badCredentials": "邮箱或密码不正确。",
+    "emailTaken": "这个邮箱已经注册过了。",
+    "userNotFound": "找不到该用户。",
+    "cartItemMissing": "购物车里没有这一项，可能已被移除。",
+    "cartStale": "购物车在其他设备上有改动，请刷新后重试。",
+    "cartItemStale": "该商品数量在其他设备上有改动，请刷新后重试。",
+    "cartFull": "购物车最多放 {{max}} 个活动，请先结算或移除部分条目。",
+    "checkoutInFlight": "上一次结算还在处理中，请稍后重试。",
+    "checkoutMissing": "找不到这次结算记录。",
+    "priceChanged": "票价已变动，请确认新价格后再结算。",
+    "maxPerBooking": "每单最多 {{max}} 张票。",
+    "quantityRange": "数量需在 1 到 {{max}} 之间。",
+    "bookingMissing": "订单不存在，可能已被删除。",
+    "bookingAlreadyCancelled": "订单已经取消过了。",
+    "refundBlockedCheckedIn": "已有电子票核销入场，不能退款。",
+    "notYourBooking": "这个订单不属于你。",
+    "ticketMissing": "找不到这张电子票。",
+    "eventMissing": "活动不存在或已下架。",
+    "eventNotCancellable": "活动已开始或当前状态不支持取消。",
+    "eventStale": "活动信息已被他人修改，请刷新后重试。",
+    "notificationMissing": "找不到这条消息。",
+    "notYourNotification": "这条消息不属于你。",
+    "tooManyConnections": "实时连接数过多，请关闭多余的标签页后重试。",
+    "aiRateLimited": "AI 请求过于频繁，请一分钟后再试。"
   }
 }

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError } from '../api'
+import { api } from '../api'
 import { CATEGORIES, EventVo } from '../types'
 import { EmptyState, ErrorNote, EventStatusBadge } from '../ui/Badges'
 import { Field, fieldAria } from '../ui/Field'
@@ -19,6 +19,8 @@ import {
   toOrganiserRequest,
   validateEventForm,
 } from './eventForm'
+import { Alert } from '../ui/Alert'
+import { resolveApiError } from '../lib/apiError'
 
 const CITY_SUGGESTIONS = ['Berlin', 'London', 'Paris', 'New York', 'Toronto', 'Tokyo', 'Melbourne', 'Sao Paulo']
 
@@ -60,7 +62,7 @@ export function OrganiserFormPage() {
         setExisting(event)
         setForm(formFromEvent(event))
       })
-      .catch((e) => setLoadError(e instanceof ApiError ? e.message : t('organiser.form.loadEventFailed')))
+      .catch((e) => setLoadError(resolveApiError(e, 'organiser.form.loadEventFailed').message))
       .finally(() => setLoading(false))
   }, [id, t])
 
@@ -96,7 +98,7 @@ export function OrganiserFormPage() {
       notify(publish ? t('organiser.form.published') : t('organiser.form.draftSaved'), 'success')
       navigate('/organiser/events')
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : t('common.failed')
+      const { message } = resolveApiError(e, 'common.failed')
       setError(message)
       notify(t('organiser.form.saveFailed', { message }), 'error')
     } finally {
@@ -148,8 +150,7 @@ export function OrganiserFormPage() {
           <div className="form-columns">
             <div className="form-fields">
               {submitted && errorList.length > 0 && (
-                <div className="callout callout-error" role="alert">
-                  <p className="callout-title">{t('organiser.form.fixCount', { count: errorList.length })}</p>
+                <Alert tone="error" title={t('organiser.form.fixCount', { count: errorList.length })}>
                   <ul>
                     {errorList.map((item) => (
                       <li key={String(item.key)}>
@@ -157,7 +158,7 @@ export function OrganiserFormPage() {
                       </li>
                     ))}
                   </ul>
-                </div>
+                </Alert>
               )}
 
               <ErrorNote message={error} />

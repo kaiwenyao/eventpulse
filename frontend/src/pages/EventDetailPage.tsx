@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, formatMoney, formatTime } from '../api'
+import { api, formatMoney, formatTime } from '../api'
 import { useAuth } from '../auth'
 import { relativeTime } from '../lib/datetime'
 import { EventVo } from '../types'
@@ -9,6 +9,7 @@ import { CategoryPill, EmptyState, ErrorNote, EventStatusBadge, SoldBar } from '
 import { ClockIcon, HeartIcon, PinIcon } from '../ui/Icons'
 import { SkeletonCard } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
+import { resolveApiError } from '../lib/apiError'
 
 function BookingPanel({ event, onError }: { event: EventVo; onError: (msg: string) => void }) {
   const { t } = useTranslation()
@@ -26,9 +27,9 @@ function BookingPanel({ event, onError }: { event: EventVo; onError: (msg: strin
       notify(t('detail.booked'), 'success')
       navigate(`/bookings/${booking.id}`)
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : t('detail.bookFailed')
+      const { message, action } = resolveApiError(e, 'detail.bookFailed')
       onError(message)
-      notify(message, 'error')
+      notify({ message, action, tone: 'error' })
     } finally {
       setBusy(false)
     }
@@ -41,9 +42,9 @@ function BookingPanel({ event, onError }: { event: EventVo; onError: (msg: strin
       await api('POST', '/api/cart/items', { eventId: event.id, quantity: qty })
       notify(t('detail.addedToCart'), 'success')
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : t('detail.addToCartFailed')
+      const { message, action } = resolveApiError(e, 'detail.addToCartFailed')
       onError(message)
-      notify(message, 'error')
+      notify({ message, action, tone: 'error' })
     } finally {
       setAddingToCart(false)
     }
@@ -109,7 +110,7 @@ export function EventDetailPage() {
       setEvent({ ...event, favourite: !event.favourite })
       notify(event.favourite ? t('detail.unfavourited') : t('detail.favourited'), 'success')
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : t('common.operationFailed'), 'error')
+      notify({ ...resolveApiError(e, 'common.operationFailed'), tone: 'error' })
     }
   }
 

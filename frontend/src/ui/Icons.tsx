@@ -112,3 +112,20 @@ export const MoonIcon = ({ className }: IconProps) => (
     <path d="M12.6 9.4A5 5 0 0 1 6.6 3.4a5 5 0 1 0 6 6Z" />
   </Icon>
 )
+
+/* A square-cornered warning mark — the system has no triangle radius to soften. */
+export const AlertIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M8 1.5 15 14H1L8 1.5Z" />
+    <path d="M8 6.5v3.2" />
+    <path d="M8 11.6v.4" />
+  </Icon>
+)
+
+export const InfoIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <circle cx="8" cy="8" r="6.5" />
+    <path d="M8 7.2v4" />
+    <path d="M8 4.6v.4" />
+  </Icon>
+)

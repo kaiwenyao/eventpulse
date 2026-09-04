@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, ApiError, formatTime } from '../api'
+import { api, formatTime } from '../api'
 import { NotificationVo } from '../types'
 import { EmptyState } from '../ui/Badges'
 import { SkeletonCard } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
+import { resolveApiError } from '../lib/apiError'
 
 export function NotificationsPage() {
   const { t } = useTranslation()
@@ -24,7 +25,7 @@ export function NotificationsPage() {
       await api('POST', `/api/notifications/${id}/read`)
       setItems((prev) => prev.filter((x) => x.id !== id))
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : t('common.operationFailed'), 'error')
+      notify({ ...resolveApiError(e, 'common.operationFailed'), tone: 'error' })
     }
   }
 

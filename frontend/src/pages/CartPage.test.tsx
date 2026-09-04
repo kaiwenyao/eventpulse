@@ -26,6 +26,20 @@ vi.mock('../lib/sse', async (importOriginal) => {
 
 const user: SessionUser = { id: 1, email: 'u@t.dev', name: '阿达', role: 'USER' }
 
+/** 余额明细页顶部的 KPI 条读这份资料（钱包余额、累计消费）。 */
+const walletProfile = {
+  id: 1,
+  email: 'u@t.dev',
+  name: '阿达',
+  role: 'USER',
+  walletCents: 47600,
+  totalSpentCents: 2400,
+  bookingCount: 1,
+  ticketCount: 1,
+  favouriteCount: 0,
+  notificationCount: 0,
+}
+
 const cartItem = {
   id: 11,
   eventId: 1,
@@ -62,6 +76,40 @@ describe('CartPage', () => {
   })
 
   afterEach(cleanup)
+
+  it('warns about the shortfall before checkout when the wallet cannot cover the total', async () => {
+    // Arrange — 应付 €24.00，钱包只有 €10.00。
+    apiMock.fn.mockImplementation((_method: string, path: string) => {
+      if (path === '/api/auth/me') return Promise.resolve(user)
+      if (path === '/api/auth/profile') return Promise.resolve({ ...walletProfile, walletCents: 1000 })
+      if (path === '/api/cart') return Promise.resolve(cart)
+      return Promise.resolve({})
+    })
+
+    // Act
+    renderAt('/cart')
+
+    // Assert — 差额与「去充值」在点结算之前就可见。
+    expect(await screen.findByText('钱包余额不足')).toBeInTheDocument()
+    expect(screen.getByText(/还差 €14\.00/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '去充值' }).getAttribute('href')).toBe('/profile')
+    // 服务端才是权威，所以按钮不禁用 —— 只是把问题提前说清楚。
+    expect(screen.getByRole('button', { name: '结算勾选项' })).toBeEnabled()
+  })
+
+  it('stays quiet when the wallet covers the total', async () => {
+    apiMock.fn.mockImplementation((_method: string, path: string) => {
+      if (path === '/api/auth/me') return Promise.resolve(user)
+      if (path === '/api/auth/profile') return Promise.resolve(walletProfile)
+      if (path === '/api/cart') return Promise.resolve(cart)
+      return Promise.resolve({})
+    })
+    renderAt('/cart')
+
+    await screen.findByText('Indie Rock Night')
+    expect(screen.queryByText('钱包余额不足')).not.toBeInTheDocument()
+    expect(screen.getByText('钱包余额')).toBeInTheDocument()
+  })
 
   it('shows items with totals and supports removing them', async () => {
     apiMock.fn.mockImplementation((method: string, path: string) => {
@@ -159,6 +207,7 @@ describe('WalletLedgerPage', () => {
   it('lists ledger entries with amounts, balance after and order links', async () => {
     apiMock.fn.mockImplementation((_method: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(user)
+      if (path === '/api/auth/profile') return Promise.resolve(walletProfile)
       if (path.startsWith('/api/wallet/ledger')) {
         return Promise.resolve({
           records: [
@@ -190,26 +239,72 @@ describe('WalletLedgerPage', () => {
     })
     renderAt('/wallet/ledger')
 
-    // 「充值 / 下单扣款」也出现在筛选下拉里，必须等真实流水行渲染完成再断言。
+    // 类型名也出现在筛选 chips 里，且本页小计与流水行金额文本相同，
+    // 所以断言范围收敛到流水行自身的 `.ledger-amount`。
     const amountText = (text: string) =>
-      screen.findByText((_, element) => element?.tagName === 'STRONG' && element.textContent === text)
+      screen.findByText(
+        (_, element) => element?.classList.contains('ledger-amount') === true && element.textContent === text,
+      )
     expect(await amountText('+€500.00')).toBeInTheDocument()
-    expect(await amountText('-€24.00')).toBeInTheDocument()
+    expect(await amountText('−€24.00')).toBeInTheDocument()
     expect(await screen.findByText('变动后余额 €476.00')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '订单 #9' }).getAttribute('href')).toBe('/bookings/9')
+  })
+
+  it('leads with the current balance — the page used to show no balance at all', async () => {
+    apiMock.fn.mockImplementation((_method: string, path: string) => {
+      if (path === '/api/auth/me') return Promise.resolve(user)
+      if (path === '/api/auth/profile') return Promise.resolve(walletProfile)
+      if (path.startsWith('/api/wallet/ledger')) return Promise.resolve({ records: [], total: 0 })
+      return Promise.resolve({})
+    })
+    renderAt('/wallet/ledger')
+
+    expect(await screen.findByText('当前余额')).toBeInTheDocument()
+    expect(screen.getByText('€476.00')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '去充值' }).getAttribute('href')).toBe('/profile')
+  })
+
+  it('renders the balance flow and checkout reference that the old row dropped', async () => {
+    apiMock.fn.mockImplementation((_method: string, path: string) => {
+      if (path === '/api/auth/me') return Promise.resolve(user)
+      if (path === '/api/auth/profile') return Promise.resolve(walletProfile)
+      if (path.startsWith('/api/wallet/ledger')) {
+        return Promise.resolve({
+          records: [
+            {
+              id: 2,
+              bizType: 'BOOKING_PAYMENT',
+              amountCents: -2400,
+              balanceBeforeCents: 50000,
+              balanceAfterCents: 47600,
+              checkoutId: 3,
+              seqNo: 2,
+              createdAt: '2026-09-02T00:00:00Z',
+            },
+          ],
+          total: 1,
+        })
+      }
+      return Promise.resolve({})
+    })
+    renderAt('/wallet/ledger')
+
+    expect(await screen.findByText('€500.00 → €476.00')).toBeInTheDocument()
+    expect(screen.getByText('结算 #3')).toBeInTheDocument()
   })
 
   it('passes the type filter to the server and paginates', async () => {
     apiMock.fn.mockImplementation((_method: string, path: string) => {
       if (path === '/api/auth/me') return Promise.resolve(user)
+      if (path === '/api/auth/profile') return Promise.resolve(walletProfile)
       if (path.startsWith('/api/wallet/ledger')) return Promise.resolve({ records: [], total: 0 })
       return Promise.resolve({})
     })
     renderAt('/wallet/ledger')
 
     await screen.findByText('还没有流水')
-    await userEvent.selectOptions(screen.getByLabelText('收支类型'), 'RECHARGE')
-    await userEvent.click(screen.getByRole('button', { name: '筛选' }))
+    await userEvent.click(screen.getByRole('button', { name: '充值' }))
     await waitFor(() => {
       const call = apiMock.fn.mock.calls.find((entry) => entry[1].includes('type=RECHARGE'))
       expect(call).toBeTruthy()

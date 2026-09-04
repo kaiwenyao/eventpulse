@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, ApiError } from '../api'
+import { api } from '../api'
 import { AiThinkingTurn } from './AiThinking'
 import { EventTicket } from './EventTicket'
 import { EventVo } from '../types'
+import { Alert } from '../ui/Alert'
+import { resolveApiError } from '../lib/apiError'
 
 interface AiEventMention {
   event: EventVo
@@ -75,7 +77,7 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
         },
       ])
     } catch (e) {
-      const messageText = e instanceof ApiError ? e.message : t('ai.discovery.failed')
+      const { message: messageText } = resolveApiError(e, 'ai.discovery.failed')
       setError(messageText)
     } finally {
       setLoading(false)
@@ -161,12 +163,11 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
 
         {loading && <AiThinkingTurn />}
         {error && (
-          <div className="callout callout-error" role="alert">
-            <p className="callout-title">{error}</p>
+          <Alert tone="error" title={error}>
             <button type="button" className="btn-secondary btn-sm" onClick={retry}>
               {t('ai.discovery.retry')}
             </button>
-          </div>
+          </Alert>
         )}
       </div>
 

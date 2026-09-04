@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, ApiError } from '../api'
+import { api } from '../api'
 import { EventVo, PageVo } from '../types'
 import { EmptyState, ErrorNote } from '../ui/Badges'
 import { SkeletonCard } from '../ui/Skeleton'
+import { resolveApiError } from '../lib/apiError'
 
 interface MetricRow {
   metricDate: string
@@ -58,7 +59,7 @@ export function OrganiserAnalyticsPage() {
         setData(next)
         setError('')
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : t('common.loadFailed')))
+      .catch((e) => setError(resolveApiError(e, 'common.loadFailed').message))
       .finally(() => setLoading(false))
   }, [eventId, t])
 

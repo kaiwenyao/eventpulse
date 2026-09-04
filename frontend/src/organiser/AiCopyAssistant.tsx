@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, ApiError } from '../api'
+import { api } from '../api'
 import { ErrorNote } from '../ui/Badges'
 import { AiThinking } from '../components/AiThinking'
 import type { EventFormState } from './eventForm'
 import { localInputToIso } from '../lib/datetime'
+import { Alert } from '../ui/Alert'
+import { resolveApiError } from '../lib/apiError'
 
 interface CopySuggestion {
   title: string
@@ -94,7 +96,7 @@ export function AiCopyAssistant({
         attendanceNotes: next.attendanceNotes !== '',
       })
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : t('ai.copy.failed')
+      const { message } = resolveApiError(e, 'ai.copy.failed')
       setError(message)
       setSuggestion(null)
     } finally {
@@ -147,14 +149,13 @@ export function AiCopyAssistant({
       {suggestion && !loading && (
         <div className="ai-copy-suggestion">
           {suggestion.warnings.length > 0 && (
-            <div className="callout callout-warn" role="status">
-              <p className="callout-title">{t('ai.copy.warnings')}</p>
+            <Alert tone="warn" title={t('ai.copy.warnings')}>
               <ul>
                 {suggestion.warnings.map((warning) => (
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>
-            </div>
+            </Alert>
           )}
           {SUGGESTION_FIELDS.map((field) => (
             <label key={field} className="ai-copy-field">

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
-import { api, ApiError } from '../api'
+import { api } from '../api'
 import { formatDayTime } from '../lib/datetime'
 import { EventVo, OrganiserDashboardVo, PageVo } from '../types'
 import { EmptyState, ErrorNote, EventStatusBadge, SoldBar } from '../ui/Badges'
 import { PlusIcon } from '../ui/Icons'
 import { SkeletonLine } from '../ui/Skeleton'
+import { Alert } from '../ui/Alert'
+import { resolveApiError } from '../lib/apiError'
 
 const RECENT_LIMIT = 5
 
@@ -38,7 +40,7 @@ export function OrganiserDashboardPage() {
     Promise.all([
       api<OrganiserDashboardVo>('GET', '/api/organiser/dashboard').catch(() => null),
       api<PageVo<EventVo>>('GET', '/api/organiser/events?sort=startsAt').catch((e) => {
-        setError(e instanceof ApiError ? e.message : t('organiser.loadFailed'))
+        setError(resolveApiError(e, 'organiser.loadFailed').message)
         return null
       }),
     ])
@@ -99,10 +101,9 @@ export function OrganiserDashboardPage() {
       )}
 
       {lowStock.length > 0 && (
-        <div className="callout callout-warn">
-          <p className="callout-title">{t('organiser.lowStock')}</p>
+        <Alert tone="warn" title={t('organiser.lowStock')}>
           <p className="muted">{lowStock.join('、')}</p>
-        </div>
+        </Alert>
       )}
 
       <section>

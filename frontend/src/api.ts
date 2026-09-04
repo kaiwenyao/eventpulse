@@ -37,7 +37,10 @@ export async function api<T>(method: string, path: string, body?: unknown, extra
 }
 
 export function formatMoney(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  // 金额来自网络，字段缺失时 `cents` 可能是 undefined —— 宁可显示 €0.00，
+  // 也不要把 "€NaN" 摆到用户面前。
+  const safe = Number.isFinite(cents) ? cents : 0
+  return `€${(safe / 100).toFixed(2)}`
 }
 
 export function formatTime(iso: string) {

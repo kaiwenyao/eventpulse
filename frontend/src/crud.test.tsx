@@ -221,7 +221,7 @@ describe('organiser event form', () => {
         expect.objectContaining({ version: 3, maxQuantityPerBooking: 4, coverUrl: '/api/media/images/1' }),
       ),
     )
-    expect(await screen.findByText('Event was modified by someone else, refresh and try again')).toBeInTheDocument()
+    expect(await screen.findByText('活动信息已被他人修改，请刷新后重试。')).toBeInTheDocument()
   })
 
   it('reports a load failure instead of showing a blank form', async () => {

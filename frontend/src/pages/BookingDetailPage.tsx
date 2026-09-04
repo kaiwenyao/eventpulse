@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, useParams } from 'react-router-dom'
-import { api, ApiError, formatMoney, formatTime } from '../api'
+import { api, formatMoney, formatTime } from '../api'
 import { streamBookingEvents, INITIAL_BACKOFF_MS } from '../lib/sse'
 import { BookingVo, TicketVo } from '../types'
 import { BookingStatusBadge, EmptyState, EventStatusBadge, TicketStatusBadge } from '../ui/Badges'
 import { SkeletonCard } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
+import { resolveApiError } from '../lib/apiError'
 
 /**
  * Deterministic pseudo-QR rendered from the ticket code.
@@ -55,7 +56,7 @@ export function BookingDetailPage() {
           setBooking(data)
           setError('')
         })
-        .catch((e) => setError(e instanceof ApiError ? e.message : t('bookings.missing')))
+        .catch((e) => setError(resolveApiError(e, 'bookings.missing').message))
       api<TicketVo[]>('GET', `/api/bookings/${bookingId}/tickets`)
         .then((data) => setTickets(Array.isArray(data) ? data : []))
         .catch(() => setTickets([]))
@@ -73,7 +74,7 @@ export function BookingDetailPage() {
       setBooking(updated)
       notify(t('bookings.cancelled'), 'success')
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : t('bookings.cancelFailed'), 'error')
+      notify({ ...resolveApiError(e, 'bookings.cancelFailed'), tone: 'error' })
     } finally {
       setCancelling(false)
     }

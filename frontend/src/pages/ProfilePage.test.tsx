@@ -53,7 +53,8 @@ describe('ProfilePage', () => {
     expect(await screen.findByRole('heading', { name: '个人中心' })).toBeInTheDocument()
     // Wallet reads cents as €
     expect(screen.getByText('€888.00')).toBeInTheDocument()
-    expect(screen.getByText('累计消费 €180.00')).toBeInTheDocument()
+    expect(screen.getByText('累计消费')).toBeInTheDocument()
+    expect(screen.getByText('€180.00')).toBeInTheDocument()
     // Stats
     expect(screen.getByText('3')).toBeInTheDocument()
     expect(screen.getByText('5')).toBeInTheDocument()

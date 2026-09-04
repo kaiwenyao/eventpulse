@@ -1,7 +1,8 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
-import { api, ApiError, formatMoney } from '../api'
+import { api, formatMoney } from '../api'
+import { resolveApiError } from '../lib/apiError'
 import { streamUserEvents, INITIAL_BACKOFF_MS } from '../lib/sse'
 import { UserProfile } from '../types'
 import { ErrorNote } from '../ui/Badges'
@@ -56,9 +57,8 @@ export function ProfilePage() {
       setProfile(updated)
       notify(t('profile.rechargeOk', { amount: formatMoney(updated.walletCents) }), 'success')
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : t('profile.rechargeFailed')
-      setError(message)
-      notify(message, 'error')
+      // 只留行内提示：改版前这里同时 setError + notify，同一句话说两遍。
+      setError(resolveApiError(err, 'profile.rechargeFailed').message)
     } finally {
       setBusy(false)
     }
@@ -116,36 +116,35 @@ export function ProfilePage() {
           <p className="muted">{profile.email}</p>
           <p className="muted small">{t('profile.role', { role: roleLabel })}</p>
         </div>
-        <div className="profile-balance">
-          <span className="muted small">{t('profile.wallet')}</span>
-          <strong className="balance-num">{formatMoney(profile.walletCents)}</strong>
-          <span className="muted small">{t('profile.spent', { amount: formatMoney(profile.totalSpentCents) })}</span>
-          <NavLink to="/wallet/ledger" className="btn-ghost btn-sm ledger-link">
-            {t('profile.ledgerLink')}
-          </NavLink>
+      </section>
+
+      {/* 余额与账户统计合成一条 KPI 带：改版前它们是两套并列的展示，
+          余额在 hero 右侧、统计在下面另起一格，同一件事说了两遍。 */}
+      <div className="stat-grid stat-grid-compact">
+        <NavLink to="/wallet/ledger" className="stat-card stat-accent">
+          <p className="stat-label">{t('profile.wallet')}</p>
+          <p className="stat-value num">{formatMoney(profile.walletCents)}</p>
+          <p className="stat-caption">{t('profile.ledgerLink')}</p>
+        </NavLink>
+        <div className="stat-card">
+          <p className="stat-label">{t('profile.spentLabel')}</p>
+          <p className="stat-value num">{formatMoney(profile.totalSpentCents)}</p>
         </div>
-      </section>
-
-      <section className="section-head">
-        <h2 className="section-title">{t('profile.stats')}</h2>
-      </section>
-
-      <div className="stats-grid">
         <NavLink to="/bookings" className="stat-card">
-          <strong>{profile.bookingCount}</strong>
-          <span>{t('profile.orders')}</span>
+          <p className="stat-label">{t('profile.orders')}</p>
+          <p className="stat-value num">{profile.bookingCount}</p>
         </NavLink>
         <NavLink to="/bookings" className="stat-card">
-          <strong>{profile.ticketCount}</strong>
-          <span>{t('profile.tickets')}</span>
+          <p className="stat-label">{t('profile.tickets')}</p>
+          <p className="stat-value num">{profile.ticketCount}</p>
         </NavLink>
         <NavLink to="/favourites" className="stat-card">
-          <strong>{profile.favouriteCount}</strong>
-          <span>{t('profile.favourites')}</span>
+          <p className="stat-label">{t('profile.favourites')}</p>
+          <p className="stat-value num">{profile.favouriteCount}</p>
         </NavLink>
         <NavLink to="/notifications" className="stat-card">
-          <strong>{profile.notificationCount}</strong>
-          <span>{t('profile.messages')}</span>
+          <p className="stat-label">{t('profile.messages')}</p>
+          <p className="stat-value num">{profile.notificationCount}</p>
         </NavLink>
       </div>
 

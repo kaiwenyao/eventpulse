@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
-import { api, ApiError, formatMoney } from '../api'
+import { api, formatMoney } from '../api'
 import { formatDayTime } from '../lib/datetime'
 import { EVENT_STATUSES, EventVo, PageVo } from '../types'
 import { CategoryPill, EmptyState, ErrorNote, EventStatusBadge, SoldBar } from '../ui/Badges'
 import { PlusIcon } from '../ui/Icons'
 import { SkeletonCard } from '../ui/Skeleton'
+import { resolveApiError } from '../lib/apiError'
 
 export function OrganiserEventsPage() {
   const { t } = useTranslation()
@@ -22,7 +23,7 @@ export function OrganiserEventsPage() {
         setMine(page?.records ?? [])
         setError('')
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : t('organiser.loadFailed')))
+      .catch((e) => setError(resolveApiError(e, 'organiser.loadFailed').message))
       .finally(() => setLoading(false))
   }, [q, status, t])
 

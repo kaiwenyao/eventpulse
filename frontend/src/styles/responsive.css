@@ -266,7 +266,6 @@
     flex: 1;
   }
 
-  .booking-row,
   .notification-row {
     flex-wrap: wrap;
   }
@@ -284,8 +283,64 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-4);
   }
+}
 
-  .profile-balance {
+/* Dense list rows fold before the general mobile breakpoint: six aligned
+   columns stop fitting well before 720px. Below it the line stops being a grid
+   and becomes a wrapping flex row — a two-column fold leaves one column three
+   rows tall and the other empty. */
+@media (max-width: 900px) {
+  .booking-line,
+  .ledger-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+  }
+
+  .booking-title,
+  .ledger-type {
+    flex: 1 0 100%;
+  }
+
+  .booking-actions {
+    margin-left: auto;
+  }
+
+  .booking-qty,
+  .booking-paid,
+  .ledger-amount,
+  .ledger-balance {
     text-align: left;
+  }
+
+  .ledger-amount {
+    margin-left: auto;
+  }
+
+  /* 42px display figures do not fit three-across on a phone. */
+  .stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .stat-value {
+    font-size: 26px;
+  }
+
+  .stat-card {
+    padding: 16px var(--gutter);
+  }
+
+  .filter-main {
+    align-items: stretch;
+  }
+
+  .filter-search {
+    width: 100%;
+  }
+
+  .filter-search input {
+    flex: 1;
+    min-width: 0;
   }
 }

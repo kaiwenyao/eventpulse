@@ -1,12 +1,13 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { api, ApiError } from '../api'
+import { api } from '../api'
 import { useAuth } from '../auth'
 import { EventVo } from '../types'
 import { Field, fieldAria } from '../ui/Field'
 import { ErrorNote } from '../ui/Badges'
 import { useToast } from '../ui/Toast'
+import { resolveApiError } from '../lib/apiError'
 
 /**
  * The two accounts `DemoDataSeeder` creates under the `demo` profile, also
@@ -59,9 +60,9 @@ export function LoginPage() {
       notify(mode === 'login' ? t('login.successLogin') : t('login.successRegister'), 'success')
       navigate('/')
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : t('common.failed')
+      const { message, action } = resolveApiError(err, 'common.failed')
       setError(message)
-      notify(message, 'error')
+      notify({ message, action, tone: 'error' })
     } finally {
       setBusy(false)
     }

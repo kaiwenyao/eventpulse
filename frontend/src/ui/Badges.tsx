@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { CATEGORIES } from '../types'
+import { Alert } from './Alert'
 
 const CATEGORY_KEYS = new Set<string>(CATEGORIES.map((c) => c.key))
 
@@ -63,21 +64,28 @@ export function SoldBar({ sold, capacity }: { sold?: number; capacity?: number }
 }
 
 export function EmptyState({ title, hint, action }: { title: string; hint: string; action?: React.ReactNode }) {
+  // 加载失败时 hint 常常就是 title 的回退文案（非 ApiError 的情况），
+  // 同一句话印两遍读起来像出了两个问题。
+  const showHint = Boolean(hint) && hint !== title
   return (
     <div className="empty">
       <div className="empty-dot" aria-hidden />
       <p className="empty-title">{title}</p>
-      <p className="muted">{hint}</p>
+      {showHint && <p className="muted">{hint}</p>}
       {action && <div className="empty-action">{action}</div>}
     </div>
   )
 }
 
-export function ErrorNote({ message }: { message: string }) {
+/**
+ * 行内错误提示。薄封装 `<Alert tone="error">`，让 CartPage / EventDetailPage /
+ * ProfilePage 这些既有调用点自动升级成完整提示条，而不必逐个改。
+ */
+export function ErrorNote({ message, action }: { message: string; action?: { label: string; to: string } }) {
   if (!message) return null
   return (
-    <p className="error-text" role="alert">
+    <Alert tone="error" action={action}>
       {message}
-    </p>
+    </Alert>
   )
 }

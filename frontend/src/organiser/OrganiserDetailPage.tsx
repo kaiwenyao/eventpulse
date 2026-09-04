@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, formatMoney, formatTime } from '../api'
+import { api, formatMoney, formatTime } from '../api'
 import { EVENT_STATUSES, EventVo } from '../types'
 import { CategoryPill, EmptyState, ErrorNote, EventStatusBadge, SoldBar } from '../ui/Badges'
 import { ConfirmDialog } from '../ui/Modal'
 import { SkeletonCard } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
+import { Alert } from '../ui/Alert'
+import { resolveApiError } from '../lib/apiError'
 
 /** Visual order of the happy path; CANCELLED is terminal and sits outside it. */
 const LIFECYCLE = EVENT_STATUSES.filter((s) => s.key !== 'CANCELLED')
@@ -46,7 +48,7 @@ export function OrganiserDetailPage() {
   useEffect(() => {
     api<EventVo>('GET', `/api/organiser/events/${id}`)
       .then(setEvent)
-      .catch((e) => setError(e instanceof ApiError ? e.message : t('common.loadFailed')))
+      .catch((e) => setError(resolveApiError(e, 'common.loadFailed').message))
   }, [id, t])
 
   async function run(action: () => Promise<unknown>, successMessage: string, stay = false) {
@@ -56,7 +58,7 @@ export function OrganiserDetailPage() {
       notify(successMessage, 'success')
       if (!stay) navigate('/organiser/events')
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : t('common.operationFailed')
+      const { message } = resolveApiError(e, 'common.operationFailed')
       setError(message)
       notify(t('organiser.opFailed', { message }), 'error')
     } finally {
@@ -124,10 +126,9 @@ export function OrganiserDetailPage() {
       </div>
 
       {event.cancellationReason && (
-        <div className="callout callout-error">
-          <p className="callout-title">{t('organiser.cancelledBanner')}</p>
+        <Alert tone="error" title={t('organiser.cancelledBanner')}>
           <p className="muted">{event.cancellationReason}</p>
-        </div>
+        </Alert>
       )}
 
       <div className="row action-rail">

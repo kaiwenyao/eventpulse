@@ -572,8 +572,33 @@ html[lang="en"] .ticket-cover-empty::after {
   margin-right: calc(-1 * var(--gutter));
 }
 
+/* The compact strip packs more cells into the same width, so the 42px display
+   figure no longer fits a money value — step it down with the cell. */
 .stat-grid-compact {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.stat-grid-compact .stat-value {
+  font-size: 30px;
+}
+
+/* A stat cell may be a link; it must not take the accent link colour, or the
+   inverted cell stops being the one thing the accent names. */
+a.stat-card {
+  color: var(--paper);
+}
+
+a.stat-card:hover {
+  background: var(--hover-wash);
+}
+
+a.stat-card.stat-accent,
+a.stat-card.stat-accent:hover {
+  color: #fff;
+}
+
+a.stat-card.stat-accent:hover {
+  background: var(--accent-600);
 }
 
 .stat-card {
@@ -628,12 +653,31 @@ html[lang="en"] .ticket-cover-empty::after {
 
 /* --------------------------------------------------------------- callouts */
 
+/* The inline sibling of the toast: same grammar (icon + left bar + optional
+   title + optional action), laid into the page instead of over it. */
 .callout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3);
   padding: 16px 20px;
   border-radius: 0;
   border: var(--rule) solid var(--line-strong);
+  border-left-width: 6px;
   background: var(--surface);
   margin-bottom: var(--space-5);
+}
+
+.callout-icon {
+  margin-top: 3px;
+  font-size: 15px;
+}
+
+.callout-body {
+  min-width: 0;
+}
+
+.callout-body > p:last-child {
+  margin-bottom: 0;
 }
 
 .callout ul {
@@ -649,6 +693,13 @@ html[lang="en"] .ticket-cover-empty::after {
   font-size: 15px;
 }
 
+.callout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
 .callout-warn,
 .callout-error {
   border-color: var(--accent);
@@ -656,7 +707,9 @@ html[lang="en"] .ticket-cover-empty::after {
 }
 
 .callout-warn .callout-title,
-.callout-error .callout-title {
+.callout-error .callout-title,
+.callout-warn .callout-icon,
+.callout-error .callout-icon {
   color: var(--accent-700);
 }
 
@@ -664,6 +717,21 @@ html[lang="en"] .ticket-cover-empty::after {
 .callout-error p:not(.callout-title) {
   color: var(--n-800);
   margin-bottom: 0;
+}
+
+/* Info recedes to the neutral rule; success keeps the ink rule and just marks
+   itself with the check glyph — no second hue exists to tint it with. */
+.callout-info {
+  border-color: var(--line);
+  border-left-color: var(--muted);
+}
+
+.callout-info .callout-icon {
+  color: var(--muted);
+}
+
+.callout-success .callout-icon {
+  color: var(--accent);
 }
 
 /* ----------------------------------------------------------- data tables */
@@ -827,10 +895,8 @@ a.table-title:hover {
 
 /* ---------------------------------------------------------- events lists */
 
-/* Bookings and notifications render as ruled rows running the panel's full
-   width — no card per row. */
-.stack-list > li,
-.booking-row,
+/* Bookings, ledger entries and notifications render as ruled rows running the
+   panel's full width — no card per row. */
 .notification-row {
   display: flex;
   align-items: center;
@@ -838,14 +904,136 @@ a.table-title:hover {
   gap: var(--space-4);
 }
 
+.booking-row,
+.ledger-row,
+.skeleton-row,
 .card.booking-row,
+.card.ledger-row,
 .card.notification-row,
 li > .card {
   margin: 0;
   border: 0;
   border-bottom: 1px solid var(--line);
   background: transparent;
-  padding: 22px var(--gutter);
+  padding: 16px var(--gutter);
+}
+
+.stack-list > li:last-child {
+  border-bottom: 0;
+}
+
+/* The dense row: one aligned line of columns, one muted line of secondary
+   clues underneath. Weight and alignment carry the hierarchy — the palette has
+   only one accent to spend, and it is not spent here. */
+.booking-line,
+.ledger-line {
+  display: grid;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+}
+
+/* Fixed track widths, not `auto`: each row is its own grid, so `auto` sizes to
+   that row's content and the figures wobble from row to row. Fixed tracks make
+   the columns actually line up down the list. */
+.booking-line {
+  grid-template-columns: minmax(0, 1fr) 178px 78px 104px 92px 84px;
+}
+
+.ledger-line {
+  grid-template-columns: minmax(0, 1fr) 178px 104px 168px;
+}
+
+.booking-when,
+.ledger-when {
+  text-align: left;
+}
+
+.booking-qty,
+.booking-paid,
+.ledger-amount,
+.ledger-balance {
+  text-align: right;
+}
+
+.booking-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.booking-title a {
+  color: inherit;
+}
+
+.booking-title a:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.booking-paid,
+.ledger-amount {
+  font-size: 17px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.booking-when,
+.booking-qty,
+.ledger-when,
+.ledger-balance {
+  white-space: nowrap;
+}
+
+.ledger-type {
+  font-size: 15px;
+  font-weight: 800;
+  min-width: 0;
+}
+
+.booking-status,
+.booking-actions {
+  display: flex;
+  align-items: center;
+}
+
+/* The secondary line: dot-separated clues that used to be crammed into the
+   same grey sentence as the amount. */
+.booking-meta,
+.ledger-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  margin: var(--space-1) 0 0;
+}
+
+/* Separator trails its own item rather than leading the next one: when the
+   line wraps, a dot at the end of a line reads far better than one orphaned at
+   the start of the next. */
+.booking-meta > *:not(:last-child)::after,
+.ledger-meta > *:not(:last-child)::after {
+  content: '·';
+  margin-left: var(--space-2);
+  color: var(--n-500);
+}
+
+.ledger-subtotal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: var(--space-4) 0 0;
+}
+
+.ledger-subtotal strong {
+  color: var(--paper);
+}
+
+.skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .stack-list {
@@ -854,38 +1042,13 @@ li > .card {
   border-bottom: var(--rule) solid var(--line-strong);
 }
 
-.booking-copy,
 .notification-copy {
   min-width: 0;
   flex: 1;
 }
 
-.booking-copy .sold {
-  max-width: 460px;
-  margin-top: var(--space-2);
-}
-
-.booking-row h3,
 .notification-row p {
   margin: 0 0 var(--space-1);
-}
-
-.booking-row h3 {
-  font-size: 20px;
-  font-weight: 800;
-}
-
-.booking-row h3 a {
-  color: inherit;
-}
-
-.booking-row h3 a:hover {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.booking-actions {
-  flex: none;
 }
 
 .notification-row {
@@ -1093,9 +1256,11 @@ li > .card {
 
 /* ----------------------------------------------------------------- profile */
 
+/* Avatar + identity. The balance used to sit in a third track here; it now
+   lives in the shared KPI strip below, so the grid is two tracks. */
 .profile-hero {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: var(--space-5);
   margin-top: 0;
@@ -1123,13 +1288,6 @@ li > .card {
   margin: 0;
 }
 
-.profile-balance {
-  text-align: right;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
 .balance-num {
   font-family: var(--font-display);
   font-size: 42px;
@@ -1137,46 +1295,6 @@ li > .card {
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 0;
-  border-top: var(--rule) solid var(--line-strong);
-  border-left: var(--rule) solid var(--line-strong);
-}
-
-.stats-grid > * {
-  border-right: var(--rule) solid var(--line-strong);
-  border-bottom: var(--rule) solid var(--line-strong);
-}
-
-.stats-grid .stat-card {
-  background: var(--surface);
-  color: var(--paper);
-}
-
-.stat-card strong {
-  font-family: var(--font-display);
-  font-size: 28px;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-}
-
-.stat-card span {
-  font-family: var(--font-display);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.stats-grid a.stat-card:hover {
-  background: var(--n-200);
-  color: var(--paper);
-  text-decoration: none;
 }
 
 .recharge-field {
@@ -1544,47 +1662,109 @@ li > .card {
   justify-content: space-between;
 }
 
-.ledger-filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-3, 12px);
-  margin-bottom: var(--space-4, 16px);
-  align-items: end;
-}
-
-.ledger-filter-action {
-  display: flex;
-}
-
-.ledger-row {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-4, 16px);
-}
-
-.ledger-copy {
-  min-width: 0;
-}
-
-.ledger-copy strong {
-  display: block;
-  margin-bottom: 2px;
-}
-
-.ledger-side {
+/* The checkout summary: what you owe, what you hold, and — only when it bites —
+   the gap between them. Aligned figures so the three read as one column. */
+.cart-summary {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  text-align: right;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
 }
 
+.cart-summary > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.cart-summary dt {
+  font-weight: 600;
+}
+
+.cart-summary dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.cart-summary > div + div {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.cart-summary-short dt,
+.cart-summary-short dd {
+  color: var(--accent-700);
+}
+
+/* ------------------------------------------------------------- filter bar */
+
+/* Primary dimension as chips (visible and one click away), secondary ranges
+   folded into a disclosure — the four-field card this replaced outweighed the
+   content it was filtering. */
+.filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--space-2);
+}
+
+.filter-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.filter-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filter-search input {
+  min-width: 220px;
+}
+
+.filter-advanced > summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.filter-advanced > summary:hover {
+  color: var(--paper);
+}
+
+.filter-advanced-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.filter-advanced-body .field {
+  margin: 0;
+}
+
+/* Income keeps the ink weight, spending recedes to muted: the sign carries the
+   meaning. The palette has no true green, and the old rules referenced
+   `--success` / `--danger`, which this system never defined — they silently
+   fell back to off-palette hexes that broke in dark mode. */
 .ledger-in {
-  color: var(--success, #15803d);
+  color: var(--paper);
 }
 
 .ledger-out {
-  color: var(--danger, #dc2626);
+  color: var(--muted);
 }
 
 .pager {
@@ -1595,7 +1775,14 @@ li > .card {
   margin-top: var(--space-4, 16px);
 }
 
-.ledger-link {
-  margin-top: 4px;
-  align-self: flex-start;
+.pager-status {
+  display: flex;
+  gap: var(--space-2);
 }
+
+.pager-status > * + *::before {
+  content: '·';
+  margin-right: var(--space-2);
+  color: var(--n-500);
+}
+

@@ -1,7 +1,8 @@
 import { DragEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ApiError, uploadFile } from '../api'
+import { uploadFile } from '../api'
 import { ImageIcon } from '../ui/Icons'
+import { resolveApiError } from '../lib/apiError'
 
 const MAX_BYTES = 5 * 1024 * 1024
 const ACCEPTED = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
@@ -38,7 +39,7 @@ export function CoverUploader({ value, onChange, onError }: CoverUploaderProps) 
       const asset = await uploadFile<{ id: number; publicUrl: string }>('/api/media/images', file)
       onChange(asset.publicUrl)
     } catch (e) {
-      onError(e instanceof ApiError ? e.message : t('organiser.cover.uploadFailed'))
+      onError(resolveApiError(e, 'organiser.cover.uploadFailed').message)
     } finally {
       setBusy(false)
     }

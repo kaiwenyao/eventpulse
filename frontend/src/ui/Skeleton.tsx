@@ -25,3 +25,20 @@ export function SkeletonGrid({ count = 6, label }: { count?: number; label?: str
     </div>
   )
 }
+
+/**
+ * 行形骨架：与密集对齐行同高，加载时不会像整块卡片骨架那样把列表撑变形。
+ */
+export function SkeletonRows({ count = 5, label }: { count?: number; label?: string }) {
+  const { t } = useTranslation()
+  return (
+    <ul className="stack-list" role="status" aria-label={label ?? t('common.loading')}>
+      {Array.from({ length: count }, (_, i) => (
+        <li key={i} className="skeleton-row" aria-hidden>
+          <SkeletonLine width="42%" />
+          <SkeletonLine width="68%" />
+        </li>
+      ))}
+    </ul>
+  )
+}

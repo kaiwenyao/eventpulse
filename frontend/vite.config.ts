@@ -7,7 +7,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:8080', changeOrigin: true },
+      // 默认打本机直跑的后端；对着 docker compose 栈开发时用
+      // `VITE_API_TARGET=http://localhost:3000 npm run dev`（api 容器不对外暴露端口，
+      // 只有 frontend 容器的 nginx 会把 /api 转发进去）。
+      '/api': { target: process.env.VITE_API_TARGET ?? 'http://localhost:8080', changeOrigin: true },
     },
   },
   build: { outDir: 'dist' },

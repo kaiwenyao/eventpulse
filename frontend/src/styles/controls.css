@@ -550,6 +550,9 @@ label {
 
 /* ------------------------------------------------------------------ toast */
 
+/* Two live regions stack inside one fixed corner: polite (success/info) above,
+   assertive (errors) nearest the corner, so the loudest message sits closest to
+   where the eye lands. */
 .toast-stack {
   position: fixed;
   right: var(--space-5);
@@ -558,47 +561,111 @@ label {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-width: min(360px, calc(100vw - 32px));
+  max-width: min(400px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .toast {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: start;
+  gap: var(--space-2) var(--space-3);
   padding: var(--space-3) var(--space-4);
   background: var(--surface);
   border: var(--rule) solid var(--line-strong);
   border-radius: 0;
   box-shadow: var(--shadow);
   animation: toast-in 0.16s ease-out;
+  pointer-events: auto;
 }
 
-.toast p {
-  margin: 0;
-  font-size: 13.5px;
-  flex: 1;
-}
-
-/* A square mark, not a dot — same shape language as the notification list. */
+/* The mark is the tone's left bar — a solid rule, not a dot. The single-accent
+   system has no second hue, so tone reads from weight, bar and icon. */
 .toast-mark {
-  width: 10px;
-  height: 10px;
-  margin-top: 6px;
+  width: 6px;
+  align-self: stretch;
+  margin: calc(-1 * var(--space-3)) 0;
   border-radius: 0;
   flex: none;
   background: var(--paper);
 }
 
-.toast-success .toast-mark {
-  background: var(--accent);
+.toast-icon {
+  margin-top: 3px;
+  font-size: 15px;
+  color: var(--paper);
+}
+
+.toast-body {
+  min-width: 0;
+}
+
+.toast-title {
+  margin: 0 0 2px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.toast-message {
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.toast-count {
+  margin-left: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.toast-action {
+  display: inline-block;
+  margin-top: var(--space-2);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border-bottom: var(--rule) solid var(--accent);
+}
+
+.toast-action:hover {
+  color: var(--accent-600);
+  text-decoration: none;
+}
+
+/* success keeps the base ink bar; info recedes to the neutral rule. */
+.toast-info .toast-mark {
+  background: var(--muted);
+}
+
+.toast-info .toast-icon {
+  color: var(--muted);
+}
+
+/* Errors borrow the callout vocabulary: accent rule, accent wash, accent bar. */
+.toast-error {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .toast-error .toast-mark {
-  background: var(--accent-700);
+  background: var(--accent);
 }
 
-.toast-error {
-  border-color: var(--accent-700);
+.toast-error .toast-icon,
+.toast-error .toast-title {
+  color: var(--accent-700);
 }
 
 .toast-close {
@@ -624,5 +691,21 @@ label {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
+/* On narrow screens the stack spans the viewport instead of hugging a corner. */
+@media (max-width: 560px) {
+  .toast-stack {
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: var(--space-4);
+    max-width: none;
   }
 }

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -76,10 +76,10 @@ describe('LoginPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '登录' }))
 
     // Inline (form) and transient (toast) surfaces both report the failure.
-    await waitFor(() => expect(screen.getAllByText('Invalid email or password').length).toBe(2))
+    await waitFor(() => expect(screen.getAllByText('邮箱或密码不正确。').length).toBe(2))
 
     await userEvent.click(screen.getByRole('button', { name: '关闭提示' }))
-    await waitFor(() => expect(screen.getAllByText('Invalid email or password').length).toBe(1))
+    await waitFor(() => expect(screen.getAllByText('邮箱或密码不正确。').length).toBe(1))
   })
 
   it('clears a previous error when switching between login and register', async () => {
@@ -93,9 +93,12 @@ describe('LoginPage', () => {
     await userEvent.type(screen.getByLabelText('邮箱'), 'u@t.dev')
     await userEvent.type(screen.getByLabelText('密码'), 'wrong')
     await userEvent.click(screen.getByRole('button', { name: '登录' }))
-    await waitFor(() => expect(screen.getAllByText('Invalid email or password').length).toBe(2))
+    await waitFor(() => expect(screen.getAllByText('邮箱或密码不正确。').length).toBe(2))
 
+    // 切换模式只清掉表单里的行内提示；错误 toast 是独立的瞬时通道，
+    // 它自己的 assertive live region 也带 role="alert"，所以断言要限定在表单内。
     await userEvent.click(screen.getByRole('button', { name: '去注册' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    const form = screen.getByRole('button', { name: '注册' }).closest('form')!
+    expect(within(form).queryByRole('alert')).not.toBeInTheDocument()
   })
 })

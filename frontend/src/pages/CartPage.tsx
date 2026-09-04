@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { api, ApiError, formatMoney, formatTime } from '../api'
+import { api, formatMoney, formatTime } from '../api'
+import { resolveApiError } from '../lib/apiError'
 import { streamUserEvents, INITIAL_BACKOFF_MS } from '../lib/sse'
-import { CartVo, CheckoutVo } from '../types'
+import { CartVo, CheckoutVo, UserProfile } from '../types'
+import { Alert } from '../ui/Alert'
 import { EmptyState, ErrorNote, EventStatusBadge } from '../ui/Badges'
 import { ConfirmDialog } from '../ui/Modal'
 import { SkeletonCard } from '../ui/Skeleton'
@@ -42,6 +44,7 @@ export function CartPage() {
   const [checkingOut, setCheckingOut] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [priceConfirm, setPriceConfirm] = useState(false)
+  const [profile, setProfile] = useState<UserProfile | null>(null)
 
   const load = useCallback(() => {
     api<CartVo>('GET', '/api/cart')
@@ -50,25 +53,38 @@ export function CartPage() {
         setLoadError('')
       })
       .catch((e) => {
-        setLoadError(e instanceof ApiError ? e.message : t('cart.loadFailed'))
+        setLoadError(resolveApiError(e, 'cart.loadFailed').message)
       })
       .finally(() => setLoading(false))
-  }, [t])
+  }, [])
+
+  // 钱包余额用于结算前预检：让「钱不够」在点按钮之前就可见，而不是变成一条报错。
+  const loadProfile = useCallback(() => {
+    api<UserProfile>('GET', '/api/auth/profile')
+      .then(setProfile)
+      .catch(() => setProfile(null))
+  }, [])
 
   useEffect(() => {
     load()
+    loadProfile()
     // 其他页面 / 设备改了购物车（或结算完成）时收到提醒 → 重新拉取。
     const controller = new AbortController()
-    void streamUserEvents(load, controller.signal, INITIAL_BACKOFF_MS, load)
+    const refresh = () => {
+      load()
+      loadProfile()
+    }
+    void streamUserEvents(refresh, controller.signal, INITIAL_BACKOFF_MS, refresh)
     return () => controller.abort()
-  }, [load])
+  }, [load, loadProfile])
 
   async function mutate(action: () => Promise<CartVo>, itemId: number | null = null) {
     setBusyItem(itemId)
     try {
       setCart(await action())
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : t('common.operationFailed'), 'error')
+      const { message, action } = resolveApiError(e, 'common.operationFailed')
+      notify({ message, action, tone: 'error' })
       load()
     } finally {
       setBusyItem(null)
@@ -88,12 +104,14 @@ export function CartPage() {
         { 'Idempotency-Key': newCheckoutKey() },
       )
       clearCheckoutKey()
+      loadProfile()
       notify(t('cart.checkoutOk', { count: result.bookings?.length ?? 0 }), 'success')
       navigate('/bookings')
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : t('cart.checkoutFailed')
-      notify(message, 'error')
+      const { message, action } = resolveApiError(e, 'cart.checkoutFailed')
+      notify({ message, action, tone: 'error' })
       load()
+      loadProfile()
     } finally {
       setCheckingOut(false)
     }
@@ -105,7 +123,8 @@ export function CartPage() {
       setCart(await api<CartVo>('POST', '/api/cart/refresh-prices'))
       await checkout()
     } catch (e) {
-      notify(e instanceof ApiError ? e.message : t('common.operationFailed'), 'error')
+      const { message, action } = resolveApiError(e, 'common.operationFailed')
+      notify({ message, action, tone: 'error' })
       load()
     }
   }
@@ -145,6 +164,9 @@ export function CartPage() {
   const items = cart?.items ?? []
   const selectedItems = items.filter((item) => item.selected)
   const priceChanged = selectedItems.some((item) => item.issues.includes('PRICE_CHANGED'))
+  const selectedTotalCents = cart?.selectedTotalCents ?? 0
+  // 预检差额。结算按钮不因此禁用 —— 服务端才是权威，这里只是提前把问题说清楚。
+  const shortfallCents = profile ? Math.max(0, selectedTotalCents - profile.walletCents) : 0
 
   return (
     <div className="page">
@@ -237,11 +259,35 @@ export function CartPage() {
 
           <ErrorNote message={loadError} />
 
+          {shortfallCents > 0 && (
+            <Alert
+              tone="warn"
+              title={t('cart.shortTitle')}
+              action={{ label: t('errors.action.topUp'), to: '/profile' }}
+            >
+              {t('cart.shortBody', { amount: formatMoney(shortfallCents) })}
+            </Alert>
+          )}
+
           <div className="card cart-footer">
-            <div className="row">
-              <strong>{t('cart.selectedTotal', { count: selectedItems.length })}</strong>
-              <strong className="balance-num">{formatMoney(cart?.selectedTotalCents ?? 0)}</strong>
-            </div>
+            <dl className="cart-summary">
+              <div>
+                <dt>{t('cart.selectedTotal', { count: selectedItems.length })}</dt>
+                <dd className="balance-num num">{formatMoney(selectedTotalCents)}</dd>
+              </div>
+              {profile && (
+                <div>
+                  <dt>{t('cart.walletBalance')}</dt>
+                  <dd className="num">{formatMoney(profile.walletCents)}</dd>
+                </div>
+              )}
+              {shortfallCents > 0 && (
+                <div className="cart-summary-short">
+                  <dt>{t('cart.shortfall')}</dt>
+                  <dd className="num">{formatMoney(shortfallCents)}</dd>
+                </div>
+              )}
+            </dl>
             <p className="muted small">{t('cart.checkoutHint')}</p>
             <div className="row cart-actions">
               <button className="btn-ghost" onClick={() => setConfirmClear(true)} disabled={checkingOut}>

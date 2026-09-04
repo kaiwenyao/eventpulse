@@ -14,10 +14,15 @@
     "confirm": "Confirm",
     "back": "Back",
     "closeToast": "Dismiss notification",
-    "remainingTickets": "{{count}} tickets left",
+    "remainingTickets_one": "{{count}} ticket left",
+    "remainingTickets_other": "{{count}} tickets left",
     "requestFailed": "Request failed",
     "all": "All",
-    "retry": "Retry"
+    "retry": "Retry",
+    "moreFilters": "More filters",
+    "totalRows_one": "{{count}} row",
+    "totalRows_other": "{{count}} rows",
+    "search": "Search"
   },
   "nav": {
     "events": "Events",
@@ -172,7 +177,8 @@
     "detailTitle": "Order details",
     "cancelOrder": "Cancel order",
     "qty": "Tickets",
-    "qtyValue": "{{count}} tickets",
+    "qtyValue_one": "{{count}} ticket",
+    "qtyValue_other": "{{count}} tickets",
     "placedAt": "Placed",
     "orderId": "Order no.",
     "eTickets": "E-tickets",
@@ -199,7 +205,22 @@
       "EVENT_NOT_PUBLISHED": "Event state does not allow refunds",
       "EVENT_CANCELLED": "Event was cancelled, refunds go through the event cancellation flow",
       "EVENT_STARTED": "Event already started, refund not allowed"
-    }
+    },
+    "kpiOrders": "Orders",
+    "kpiSpent": "Total spent",
+    "kpiTickets": "E-tickets",
+    "placedAt2": "Placed {{time}}",
+    "checkinProgress": "Checked in {{done}}/{{total}}",
+    "pendingCheckin_one": "{{count}} awaiting check-in",
+    "pendingCheckin_other": "{{count}} awaiting check-in",
+    "cancelConfirmTitle": "Cancel this booking?",
+    "cancelConfirmDesc": "Stock is released immediately and the amount paid returns to your wallet.",
+    "checkoutRef": "Checkout #{{id}}",
+    "colEvent": "Event",
+    "colWhen": "Starts",
+    "colQty": "Qty",
+    "colPaid": "Paid",
+    "colStatus": "Status"
   },
   "favourites": {
     "title": "Saved",
@@ -244,7 +265,8 @@
     "rechargeOk": "Topped up. Balance {{amount}}",
     "rechargeFailed": "Top-up failed",
     "hint": "Demo only: no real payments. Balance can be spent in-app.",
-    "ledgerLink": "Wallet details"
+    "ledgerLink": "Wallet details",
+    "spentLabel": "Total spent"
   },
   "organiser": {
     "brand": "Organiser console",
@@ -542,7 +564,11 @@
       "PRICE_CHANGED": "Price changed, needs re-confirmation",
       "OVER_LIMIT": "Quantity exceeds the per-booking limit",
       "LOW_STOCK": "Fewer tickets left than selected"
-    }
+    },
+    "walletBalance": "Wallet balance",
+    "shortfall": "Short by",
+    "shortTitle": "Not enough balance",
+    "shortBody": "Your balance does not cover the selected items — {{amount}} short. Top up, or deselect some events."
   },
   "ledger": {
     "title": "Wallet details",
@@ -567,6 +593,53 @@
       "BOOKING_REFUND": "Booking refund",
       "EVENT_CANCEL_REFUND": "Event cancellation refund",
       "OPENING_BALANCE": "Opening balance"
-    }
+    },
+    "balanceNow": "Current balance",
+    "spentTotal": "Total spent",
+    "entryCount": "Entries",
+    "topUp": "Top up",
+    "pageIn": "In (this page)",
+    "pageOut": "Out (this page)",
+    "balanceFlow": "{{before}} → {{after}}",
+    "checkoutRef": "Checkout #{{id}}"
+  },
+  "errors": {
+    "action": {
+      "topUp": "Top up",
+      "signIn": "Sign in",
+      "openCart": "Open cart"
+    },
+    "insufficientBalance": "Your wallet balance is not enough to cover this payment.",
+    "walletLimit": "That would push your wallet over its limit. Spend some balance first.",
+    "amountPositive": "The amount must be greater than 0.",
+    "idempotencyTooLong": "The request key is too long. Refresh the page and try again.",
+    "idempotencyAmount": "The same top-up request was sent with a different amount. Refresh and start over.",
+    "idempotencyRequest": "That request key was already used for a different action. Refresh and try again.",
+    "walletDuplicate": "This entry has already been recorded — no need to repeat it.",
+    "signInRequired": "Sign in to continue.",
+    "badCredentials": "That email or password is not right.",
+    "emailTaken": "That email is already registered.",
+    "userNotFound": "No such user.",
+    "cartItemMissing": "That item is no longer in your cart.",
+    "cartStale": "Your cart changed on another device. Refresh and try again.",
+    "cartItemStale": "That quantity changed on another device. Refresh and try again.",
+    "cartFull": "A cart holds at most {{max}} events. Check out or remove some first.",
+    "checkoutInFlight": "The previous checkout is still processing. Try again shortly.",
+    "checkoutMissing": "That checkout could not be found.",
+    "priceChanged": "The price changed. Review the new price before checking out.",
+    "maxPerBooking": "At most {{max}} tickets per booking.",
+    "quantityRange": "Quantity must be between 1 and {{max}}.",
+    "bookingMissing": "That booking no longer exists.",
+    "bookingAlreadyCancelled": "That booking is already cancelled.",
+    "refundBlockedCheckedIn": "A ticket has already been checked in, so this cannot be refunded.",
+    "notYourBooking": "That booking is not yours.",
+    "ticketMissing": "That ticket could not be found.",
+    "eventMissing": "That event does not exist or is no longer listed.",
+    "eventNotCancellable": "The event has started, or its current state does not allow cancelling.",
+    "eventStale": "Someone else changed this event. Refresh and try again.",
+    "notificationMissing": "That message could not be found.",
+    "notYourNotification": "That message is not yours.",
+    "tooManyConnections": "Too many live connections. Close spare tabs and try again.",
+    "aiRateLimited": "Too many AI requests. Try again in a minute."
   }
 }

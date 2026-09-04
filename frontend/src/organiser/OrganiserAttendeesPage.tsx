@@ -1,11 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, useParams } from 'react-router-dom'
-import { api, ApiError, formatTime } from '../api'
+import { api, formatTime } from '../api'
 import { AttendeeRow } from '../types'
 import { EmptyState, ErrorNote, TicketStatusBadge } from '../ui/Badges'
 import { Field, fieldAria } from '../ui/Field'
 import { useToast } from '../ui/Toast'
+import { resolveApiError } from '../lib/apiError'
 
 export function OrganiserAttendeesPage() {
   const { t } = useTranslation()
@@ -20,7 +21,7 @@ export function OrganiserAttendeesPage() {
   useEffect(() => {
     api<AttendeeRow[]>('GET', `/api/organiser/events/${id}/attendees`)
       .then((data) => setRows(Array.isArray(data) ? data : []))
-      .catch((e) => setError(e instanceof ApiError ? e.message : t('common.loadFailed')))
+      .catch((e) => setError(resolveApiError(e, 'common.loadFailed').message))
   }, [id, t])
 
   const stats = useMemo(() => {
@@ -45,7 +46,7 @@ export function OrganiserAttendeesPage() {
       setCode('')
       notify(t('organiser.checkOk'), 'success')
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : t('common.failed')
+      const { message } = resolveApiError(err, 'common.failed')
       setError(message)
       notify(t('organiser.checkFailed', { message }), 'error')
     } finally {
