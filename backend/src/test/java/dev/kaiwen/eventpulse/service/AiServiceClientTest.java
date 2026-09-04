@@ -86,7 +86,7 @@ class AiServiceClientTest {
                         """, MediaType.APPLICATION_JSON));
 
         var result = client.discoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                "r2", "m", List.of(), "2026-09-02T00:00:00Z", "Asia/Shanghai", null, null));
+                "r2", "m", List.of(), "2026-09-02T00:00:00Z", "Asia/Shanghai", null, null, null));
 
         assertThat(result.events()).containsExactly(new DiscoveryEventRef(3L, "周六"));
         assertThat(result.followUpQuestions()).containsExactly("q1");
@@ -104,7 +104,7 @@ class AiServiceClientTest {
                 .isInstanceOf(AiUnavailableException.class);
 
         assertThatThrownBy(() -> client.discoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                "r2", "m", List.of(), null, null, null, null)))
+                "r2", "m", List.of(), null, null, null, null, null)))
                 .isInstanceOf(AiUnavailableException.class)
                 .hasMessageContaining("temporarily unavailable");
     }

@@ -9,7 +9,7 @@ class LlmNotConfigured(Exception):
     """未配置 API Key 或 provider 不受支持：明确报「AI 不可用」，不模拟回答。"""
 
 
-def build_chat_model(settings: Any) -> BaseChatModel:
+def build_chat_model(settings: Any, temperature: float) -> BaseChatModel:
     if not settings.llm_api_key.strip():
         raise LlmNotConfigured("LLM_API_KEY is not configured")
     if settings.llm_provider != "openai":
@@ -25,7 +25,7 @@ def build_chat_model(settings: Any) -> BaseChatModel:
         # max_retries=1 时一次调用最坏 60s，整轮死线 agent_total_budget_seconds
         # 就压不住 Spring 的 90s 读超时了。
         "max_retries": 0,
-        "temperature": 0.7,
+        "temperature": temperature,
         "max_tokens": settings.llm_max_output_tokens,
     }
     if settings.llm_base_url.strip():

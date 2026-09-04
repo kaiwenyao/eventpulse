@@ -66,9 +66,9 @@ def require_service_auth(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid service token")
 
 
-def get_chat_model(settings: Annotated[Settings, Depends(get_settings)]) -> BaseChatModel:
+def _chat_model(settings: Settings, temperature: float) -> BaseChatModel:
     try:
-        return build_chat_model(settings)
+        return build_chat_model(settings, temperature)
     except LlmNotConfigured as exc:
         # 不冒充 AI 结果：未配置 Key 时明确不可用，不影响普通业务。
         raise HTTPException(
@@ -77,8 +77,19 @@ def get_chat_model(settings: Annotated[Settings, Depends(get_settings)]) -> Base
         ) from exc
 
 
+def get_copy_model(settings: Annotated[Settings, Depends(get_settings)]) -> BaseChatModel:
+    """文案助手：结构化输出要的是稳定可解析，温度压低。"""
+    return _chat_model(settings, settings.llm_temperature_copy)
+
+
+def get_discovery_model(settings: Annotated[Settings, Depends(get_settings)]) -> BaseChatModel:
+    """发现助手：措辞与追问建议需要一些多样性，保持较高温度。"""
+    return _chat_model(settings, settings.llm_temperature_discovery)
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
-ModelDep = Annotated[BaseChatModel, Depends(get_chat_model)]
+CopyModelDep = Annotated[BaseChatModel, Depends(get_copy_model)]
+DiscoveryModelDep = Annotated[BaseChatModel, Depends(get_discovery_model)]
 AuthDep = Annotated[None, Depends(require_service_auth)]
 
 
@@ -89,7 +100,7 @@ def healthz() -> dict[str, Any]:
 
 
 @app.post("/internal/v1/improve-event", response_model=ImproveEventResponse)
-def improve_event(request: ImproveEventRequest, _: AuthDep, model: ModelDep, settings: SettingsDep) -> Any:
+def improve_event(request: ImproveEventRequest, _: AuthDep, model: CopyModelDep, settings: SettingsDep) -> Any:
     try:
         suggestion, warnings, usage = improve_event_copy(model, request)
     except LlmOutputError:
@@ -109,7 +120,7 @@ def improve_event(request: ImproveEventRequest, _: AuthDep, model: ModelDep, set
 
 
 @app.post("/internal/v1/discovery/chat", response_model=DiscoveryChatResponse)
-def discovery_chat(request: DiscoveryChatRequest, _: AuthDep, model: ModelDep, settings: SettingsDep) -> Any:
+def discovery_chat(request: DiscoveryChatRequest, _: AuthDep, model: DiscoveryModelDep, settings: SettingsDep) -> Any:
     client = BackendClient(settings, request.request_id, request.user_context_token or None)
     try:
         answer, usage, _tool_calls = run_discovery_agent(model, settings, request, client)

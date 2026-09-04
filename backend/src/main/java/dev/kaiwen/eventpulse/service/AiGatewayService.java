@@ -34,6 +34,7 @@ import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventPayload;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventRequest;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventResponse;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventResult;
+import dev.kaiwen.eventpulse.dto.AiDtos.ToolPreferenceVo;
 import dev.kaiwen.eventpulse.dto.EventDtos.EventVo;
 import dev.kaiwen.eventpulse.entity.AiConversation;
 import dev.kaiwen.eventpulse.entity.AiMessage;
@@ -44,6 +45,7 @@ import dev.kaiwen.eventpulse.repository.AiConversationRepository;
 import dev.kaiwen.eventpulse.repository.AiMessageRepository;
 import dev.kaiwen.eventpulse.repository.AiRequestLogRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
+import dev.kaiwen.eventpulse.repository.UserPreferenceRepository;
 import io.micrometer.core.instrument.MeterRegistry;
 
 /**
@@ -77,6 +79,7 @@ public class AiGatewayService {
     private final AiConversationRepository conversations;
     private final AiMessageRepository messages;
     private final AiRequestLogRepository requestLogs;
+    private final UserPreferenceRepository preferences;
     private final AiTokenBudget budget;
     private final AiResponseCache cache;
     private final MeterRegistry meterRegistry;
@@ -84,8 +87,8 @@ public class AiGatewayService {
     public AiGatewayService(AppProperties properties, AiServiceClient client, AiRateLimiter rateLimiter,
             JwtService jwtService, EventRepository events, EventService eventService,
             AiConversationRepository conversations, AiMessageRepository messages,
-            AiRequestLogRepository requestLogs, AiTokenBudget budget, AiResponseCache cache,
-            MeterRegistry meterRegistry) {
+            AiRequestLogRepository requestLogs, UserPreferenceRepository preferences,
+            AiTokenBudget budget, AiResponseCache cache, MeterRegistry meterRegistry) {
         this.properties = properties;
         this.client = client;
         this.rateLimiter = rateLimiter;
@@ -95,6 +98,7 @@ public class AiGatewayService {
         this.conversations = conversations;
         this.messages = messages;
         this.requestLogs = requestLogs;
+        this.preferences = preferences;
         this.budget = budget;
         this.cache = cache;
         this.meterRegistry = meterRegistry;
@@ -263,7 +267,8 @@ public class AiGatewayService {
                 Instant.now().toString(),
                 properties.getAi().getTimeZone(),
                 user,
-                contextToken);
+                contextToken,
+                preferencesOf(userId));
 
         long start = System.currentTimeMillis();
         try {
@@ -384,6 +389,20 @@ public class AiGatewayService {
                 .findFirst()
                 .map(m -> truncate(m.getContent(), CONVERSATION_PREVIEW_CHARS))
                 .orElse("");
+    }
+
+    /**
+     * 登录用户保存的偏好。没有偏好行时返回 null，不返回一个全空的对象 ——
+     * 让 Python 侧「有没有偏好」的判断保持简单。
+     */
+    private ToolPreferenceVo preferencesOf(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        return preferences.findById(userId)
+                .map(pref -> new ToolPreferenceVo(pref.getCategories(), pref.getCities(),
+                        pref.getLatitude(), pref.getLongitude(), pref.getRadiusKm()))
+                .orElse(null);
     }
 
     private void requireEnabled() {

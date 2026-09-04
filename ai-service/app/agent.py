@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from .backend_client import BackendClient
 from .chains import _content_to_text, extract_json
-from .prompts import DISCOVERY_SYSTEM_PROMPT, discovery_context
+from .prompts import DISCOVERY_SYSTEM_PROMPT, discovery_context, user_preferences_context
 from .schemas import DiscoveryChatRequest, DiscoveryEventRef
 from .tools import ToolLedger, ToolLimitExceeded, build_tools
 
@@ -154,6 +154,11 @@ def run_discovery_agent(
         + "\n\n"
         + discovery_context(request.now_iso, request.time_zone)
     )
+    # 偏好由 Spring 随请求带过来（它本来就持有这张表），省掉「模型决定调工具 +
+    # 一次 HTTP 往返」。get_my_preferences 工具保留，模型需要时仍可显式重查。
+    preferences_block = user_preferences_context(request.preferences)
+    if preferences_block:
+        system = system + "\n\n" + preferences_block
     agent = create_agent(model, tools=tools, system_prompt=system)
     deadline = time.monotonic() + settings.agent_total_budget_seconds
 
@@ -166,7 +171,6 @@ def run_discovery_agent(
         else HumanMessage(content=m.content or "")
         for m in request.history
     ]
-    start = time.monotonic()
     try:
         result = _invoke_agent(
             agent, history, request,
@@ -198,7 +202,6 @@ def run_discovery_agent(
         if isinstance(u, dict):
             usage["input_tokens"] += int(u.get("input_tokens") or 0)
             usage["output_tokens"] += int(u.get("output_tokens") or 0)
-    elapsed = int((time.monotonic() - start) * 1000)
     return answer, usage, ledger.calls
 
 

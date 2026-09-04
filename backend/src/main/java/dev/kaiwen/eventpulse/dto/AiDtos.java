@@ -128,7 +128,15 @@ public final class AiDtos {
             String nowIso,
             String timeZone,
             AiUser user,
-            String userContextToken) {
+            String userContextToken,
+            /**
+             * 登录用户主动保存的偏好，由 Spring 直接带过去。
+             *
+             * 之前要靠模型自己想起来调 get_my_preferences 工具，那是一次
+             * 「LLM 决策 + HTTP 往返」；而 Spring 本来就持有 UserPreferenceRepository，
+             * 一次进程内查询即可。工具仍然保留，模型需要时可以显式重查。
+             */
+            ToolPreferenceVo preferences) {
     }
 
     public record DiscoveryEventRef(Long eventId, String reason) {

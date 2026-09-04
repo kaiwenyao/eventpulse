@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     # reasoning 模型的思考 token 计入输出预算：1024 会在思考阶段耗尽，
     # 返回空 content 且没有 tool_calls（finish_reason=length）。
     llm_max_output_tokens: int = 4096
+    # 两条链的温度分开：文案助手要的是稳定可解析的结构化输出，发现助手要的是
+    # 自然的措辞与多样的追问建议。之前共用 0.7，对前者是纯粹的坏处。
+    llm_temperature_copy: float = 0.2
+    llm_temperature_discovery: float = 0.7
 
     # ---- Spring Boot 内部接口 ----
     backend_internal_url: str = "http://localhost:8080"

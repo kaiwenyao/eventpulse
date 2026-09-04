@@ -119,12 +119,7 @@ def _validate(parsed: dict[str, Any]) -> CopySuggestionOut:
     return CopySuggestionOut.model_validate(cleaned)
 
 
-def improve_event_copy(model: BaseChatModel, payload: Any) -> tuple[Suggestion, list[str], dict[str, int]]:
-    """根据主办方表单数据生成文案建议。
-
-    返回 (建议, 警告, token用量)。警告包括模型给出的 warnings 与本地的
-    资料缺失提示；模型两次都输出不合法结构时抛 LlmOutputError。
-    """
+def _build_messages(payload: Any) -> list[Any]:
     context = {
         "title": payload.title,
         "summary": payload.summary,
@@ -141,14 +136,55 @@ def improve_event_copy(model: BaseChatModel, payload: Any) -> tuple[Suggestion, 
         "请根据以下活动资料生成建议文案（输出 JSON）：\n"
         + json.dumps({k: v for k, v in context.items() if v}, ensure_ascii=False)
     )
-    messages = [SystemMessage(content=IMPROVE_SYSTEM_PROMPT), HumanMessage(content=human)]
+    return [SystemMessage(content=IMPROVE_SYSTEM_PROMPT), HumanMessage(content=human)]
 
-    usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
+
+def _accumulate(usage: dict[str, int], more: dict[str, int]) -> None:
+    for key, value in more.items():
+        usage[key] = usage.get(key, 0) + value
+
+
+def _try_structured_output(model: BaseChatModel, messages: list[Any], usage: dict[str, int]) -> Suggestion | None:
+    """结构化输出主路径；不可用或没解析出来时返回 None，交给手写解析兜底。
+
+    两个参数都是刻意选的：
+    - method="function_calling"：LLM_BASE_URL 可以指向任意 OpenAI 兼容网关，
+      tool calling 近乎通用，json_schema 不是。
+    - include_raw=True：不然拿不到 raw 消息上的 usage_metadata，token 会归零，
+      而 Spring 侧现在要按它扣预算。
+
+    注意 include_raw=True 时解析失败【不抛异常】，而是把错误放进 parsing_error，
+    所以两种失败都要判：软失败（parsed 为空）与硬失败（网关不支持，invoke 抛错）。
+    """
+    try:
+        runnable = model.with_structured_output(
+            CopySuggestionOut, method="function_calling", include_raw=True
+        )
+        result = runnable.invoke(messages)
+    except Exception:
+        # 网关不支持 tool calling 等硬失败。
+        return None
+    if not isinstance(result, dict):
+        return None
+    # 失败也要把这次的用量算进去：它一样是花掉的钱。
+    _accumulate(usage, _usage_of(result.get("raw")))
+    parsed = result.get("parsed")
+    if parsed is None or result.get("parsing_error") is not None:
+        return None
+    try:
+        return parsed.to_suggestion()
+    except Exception:
+        return None
+
+
+def _improve_with_text_parsing(
+    model: BaseChatModel, messages: list[Any], usage: dict[str, int]
+) -> tuple[Suggestion, list[str], dict[str, int]]:
+    """兜底：让模型直接吐 JSON 文本，解析失败时带着错误提示重试一次。"""
     last_error: str | None = None
-    for attempt in range(2):
+    for _attempt in range(2):
         response = model.invoke(messages)
-        for key, value in _usage_of(response).items():
-            usage[key] = usage.get(key, 0) + value
+        _accumulate(usage, _usage_of(response))
         parsed = extract_json(_content_to_text(response.content))
         if parsed is not None:
             try:
@@ -168,3 +204,20 @@ def improve_event_copy(model: BaseChatModel, payload: Any) -> tuple[Suggestion, 
             )),
         ]
     raise LlmOutputError(last_error or "invalid model output")
+
+
+def improve_event_copy(model: BaseChatModel, payload: Any) -> tuple[Suggestion, list[str], dict[str, int]]:
+    """根据主办方表单数据生成文案建议。
+
+    返回 (建议, 警告, token用量)。优先走结构化输出；网关不支持或没解析出来时
+    回落到手写 JSON 解析 + 一次重试，两条路径的 token 用量累加在同一个 usage 里。
+    两条路径都失败时抛 LlmOutputError，绝不把未校验的文本交给调用方。
+    """
+    messages = _build_messages(payload)
+    usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
+
+    structured = _try_structured_output(model, messages, usage)
+    if structured is not None:
+        return structured, structured.warnings, usage
+
+    return _improve_with_text_parsing(model, messages, usage)

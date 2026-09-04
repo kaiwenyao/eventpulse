@@ -51,6 +51,7 @@ import dev.kaiwen.eventpulse.repository.AiConversationRepository;
 import dev.kaiwen.eventpulse.repository.AiMessageRepository;
 import dev.kaiwen.eventpulse.repository.AiRequestLogRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
+import dev.kaiwen.eventpulse.repository.UserPreferenceRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 @ExtendWith(MockitoExtension.class)
@@ -62,6 +63,7 @@ class AiGatewayServiceTest {
     @Mock AiConversationRepository conversations;
     @Mock AiMessageRepository messages;
     @Mock AiRequestLogRepository requestLogs;
+    @Mock UserPreferenceRepository preferences;
 
     private AppProperties properties;
     private AiGatewayService gateway;
@@ -78,7 +80,8 @@ class AiGatewayServiceTest {
         budget = new AiTokenBudget(properties);
         cache = new AiResponseCache(new ObjectMapper(), registry);
         gateway = new AiGatewayService(properties, client, rateLimiter, new JwtService(properties), events,
-                new EventService(events), conversations, messages, requestLogs, budget, cache, registry);
+                new EventService(events), conversations, messages, requestLogs, preferences,
+                budget, cache, registry);
         BaseContext.clear();
     }
 
