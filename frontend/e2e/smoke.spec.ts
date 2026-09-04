@@ -86,6 +86,22 @@ test.describe('SPA smoke', () => {
     await expect(page.getByRole('button', { name: '注册' })).toBeVisible()
   })
 
+  test('two tabs share one localStorage login', async ({ context, page }) => {
+    // Regression: the token used to live in per-tab sessionStorage, so a second
+    // tab was always bounced to /login even though the first was logged in.
+    const other = await context.newPage()
+    await mockApi(page)
+    await mockApi(other)
+    await page.addInitScript(() => localStorage.setItem('ep_token', 'demo'))
+
+    await page.goto('/organiser')
+    await expect(page.getByRole('heading', { name: '主办方工作台' })).toBeVisible()
+
+    // The second tab seeds nothing; it inherits the first tab's login.
+    await other.goto('/organiser')
+    await expect(other.getByRole('heading', { name: '主办方工作台' })).toBeVisible()
+  })
+
   test('mocked audience discovery and booking CTA', async ({ page }) => {
     await mockApi(page)
     await page.goto('/')
@@ -98,7 +114,7 @@ test.describe('SPA smoke', () => {
   test('mocked organiser publishes an event from the console', async ({ page }) => {
     const requests: { url: string; body: unknown }[] = []
     await mockApi(page, requests)
-    await page.addInitScript(() => sessionStorage.setItem('ep_token', 'demo'))
+    await page.addInitScript(() => localStorage.setItem('ep_token', 'demo'))
 
     await page.goto('/organiser')
     await expect(page.getByRole('heading', { name: '主办方工作台' })).toBeVisible()
@@ -135,7 +151,7 @@ test.describe('SPA smoke', () => {
   test('mocked organiser cancels a live event through the confirm dialog', async ({ page }) => {
     const requests: { url: string; body: unknown }[] = []
     await mockApi(page, requests, { status: 'PUBLISHED' })
-    await page.addInitScript(() => sessionStorage.setItem('ep_token', 'demo'))
+    await page.addInitScript(() => localStorage.setItem('ep_token', 'demo'))
 
     await page.goto('/organiser/events/1')
     await page.getByRole('button', { name: '取消活动' }).click()
@@ -156,7 +172,7 @@ test.describe('SPA smoke', () => {
     // to 1440px on console pages, making the 工作台 layout jump wide).
     await page.setViewportSize({ width: 1600, height: 900 })
     await mockApi(page)
-    await page.addInitScript(() => sessionStorage.setItem('ep_token', 'demo'))
+    await page.addInitScript(() => localStorage.setItem('ep_token', 'demo'))
 
     const widths = async (route: string) => {
       await page.goto(route)
@@ -182,7 +198,7 @@ test.describe('SPA smoke', () => {
     // a blank strip of page ground to the left of the ink rail.
     await page.setViewportSize({ width: 1600, height: 900 })
     await mockApi(page)
-    await page.addInitScript(() => sessionStorage.setItem('ep_token', 'demo'))
+    await page.addInitScript(() => localStorage.setItem('ep_token', 'demo'))
     await page.goto('/organiser')
     await page.waitForSelector('.console-rail')
 
