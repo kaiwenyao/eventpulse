@@ -61,6 +61,16 @@ class RecordingChatModel(ScriptedChatModel):
         return super()._generate(messages, stop, run_manager, **kwargs)
 
 
+class BindRecordingChatModel(ScriptedChatModel):
+    """记录 bind_tools 收到的 kwargs（用于断言 tool_choice 显式生效）。"""
+
+    bind_kwargs: list[dict[str, Any]] = []
+
+    def bind_tools(self, tools, **kwargs):  # noqa: ANN001, ANN003
+        self.bind_kwargs.append(kwargs)
+        return self
+
+
 class ExplodingChatModel(BaseChatModel):
     """模拟 LLM 超时 / 服务端错误。"""
 

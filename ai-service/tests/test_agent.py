@@ -11,7 +11,7 @@ from app.backend_client import BackendClient
 from app.schemas import DiscoveryChatRequest, HistoryMessage, DiscoveryUser
 
 from conftest import FakeBackend, make_settings
-from fake_model import RecordingChatModel, scripted_model, tool_call_message
+from fake_model import BindRecordingChatModel, RecordingChatModel, scripted_model, tool_call_message
 
 
 def chat_request(**overrides) -> DiscoveryChatRequest:
@@ -162,6 +162,15 @@ class TestRunDiscoveryAgent:
         assert isinstance(first_call[2], AIMessage)
         assert isinstance(first_call[3], HumanMessage)
         assert first_call[2].content == "上周有两场技术活动"
+
+    def test_model_binding_requests_explicit_auto_tool_choice(self):
+        # 主路径必须显式 tool_choice="auto"：不能依赖各网关对缺失字段的默认解释，
+        # 也不能强制每次都调工具（"required" 会让寒暄类问题空跑一次查询）。
+        client = backend_returning(events_payload([1]))
+        model = BindRecordingChatModel(script=[AIMessage(content=answer_json("好的", []))])
+        run_discovery_agent(model, make_settings(), chat_request(), client)
+        assert model.bind_kwargs, "agent never bound tools to the model"
+        assert all(kwargs.get("tool_choice") == "auto" for kwargs in model.bind_kwargs)
 
     def test_total_time_budget_fails_the_round(self):
         client = backend_returning(events_payload([1]))
