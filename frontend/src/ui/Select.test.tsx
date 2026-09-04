@@ -71,6 +71,22 @@ describe('Select', () => {
     expect(screen.getByRole('combobox')).toHaveTextContent('科技')
   })
 
+  it('moves the highlight onto the hovered option and commits it with Enter', async () => {
+    const onChange = renderSelect('music')
+    await userEvent.click(screen.getByRole('combobox', { name: '分类' }))
+
+    // The highlight starts on the current choice, then follows the mouse.
+    expect(activeValue()).toBe('music')
+    await userEvent.hover(screen.getByRole('option', { name: '科技' }))
+    expect(activeValue()).toBe('tech')
+    // Hovering only highlights — the value changes on commit.
+    expect(onChange).not.toHaveBeenCalled()
+
+    await userEvent.keyboard('{Enter}')
+    expect(onChange).toHaveBeenLastCalledWith('tech')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
   it('opens with Enter, moves with arrows, commits with Enter', async () => {
     const onChange = renderSelect('music')
     const trigger = screen.getByRole('combobox')

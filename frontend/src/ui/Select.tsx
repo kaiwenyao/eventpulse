@@ -184,6 +184,9 @@ export function Select({
                 option.value === value ? ' is-selected' : ''
               }`}
               onMouseDown={(e) => e.preventDefault()}
+              // Hover moves the single highlight, so Enter commits what the
+              // mouse is on — same as a native select.
+              onMouseEnter={() => setActiveIndex(index)}
               onClick={() => commit(index)}
             >
               {option.label}
