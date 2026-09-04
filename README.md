@@ -130,6 +130,10 @@ demo defaults run as-is. Key variables:
 | `LLM_BASE_URL` | empty | OpenAI-compatible gateway base URL; must include the API prefix (e.g. `https://host/v1`) |
 | `LLM_MAX_OUTPUT_TOKENS` | `4096` | reasoning models spend thinking tokens from this budget; too small a budget yields empty replies |
 | `AI_SERVICE_TOKEN` / `AI_INTERNAL_TOKEN` | dev values | Spring Boot ↔ ai-service service-to-service credentials; must be replaced in real deployments |
+| `AI_DAILY_TOKEN_BUDGET_USER` / `_GLOBAL` | `200000` / `0` | per-day token budget (0 disables); complements the per-minute rate limit |
+| `AI_CACHE_ENABLED` | `true` | cache AI results in Redis; without Redis nothing is cached |
+| `AI_RETENTION_DAYS` / `AI_REQUEST_LOG_RETENTION_DAYS` | `90` / `180` | how long AI conversations and request logs are kept before the worker deletes them |
+| `AI_BREAKER_FAILURE_THRESHOLD` / `AI_BREAKER_OPEN_SECONDS` | `5` / `30` | upstream circuit breaker; only transport failures count |
 | `S3_ENABLED` | `false` | when true, images go to S3; multi-replica deployments (`API>1` or k3s) must enable it |
 | `S3_ENDPOINT` / `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | empty | SeaweedFS S3 endpoint and credentials |
 
@@ -291,6 +295,7 @@ Two features:
 | --- | --- | --- |
 | Organiser copywriting polish | `POST /api/ai/organiser/improve-event` (JWT ORGANISER) | a plain LLM call with structured output; review in the frontend first, then use the normal save / publish endpoints — nothing is auto-saved |
 | Natural-language event discovery | `POST /api/ai/discovery/chat` (JWT optional) | a LangChain agent queries real events through read-only tools; signed-in users get sessions persisted to PostgreSQL and guests get single turns; Spring Boot re-verifies event visibility before returning |
+| Conversation management | `GET/DELETE /api/ai/conversations[/{id}]` (JWT) | list, restore, and delete your own discovery sessions; restoring replays text only, because only `role`/`content` is stored |
 
 Boundaries and degradation:
 
@@ -306,9 +311,33 @@ Boundaries and degradation:
   untrusted data — fabricated or delisted event IDs are discarded.
 - Every request is recorded in `ai_requests` (status, latency, token usage) —
   no keys, no full prompts.
+- **Cost guardrails.** Per-minute rate limits cap bursts; a per-day token budget
+  (`AI_DAILY_TOKEN_BUDGET_USER` / `_GLOBAL`, shared across replicas via Redis)
+  caps the long tail. The budget checks before the call and accounts after it, so
+  the request that crosses the threshold is still served and overshoots slightly —
+  it is a cost guardrail, not a billing gate. Failed rounds are charged a flat
+  penalty: they really did burn tokens, but the upstream 502 carries no usage.
+- **Result cache** (Redis; without Redis nothing is cached). Copy suggestions are
+  cached by request content for an hour — "Regenerate" sends `refresh` to skip the
+  read, otherwise the button would return a byte-identical draft. Discovery answers
+  are cached for 120s **only for requests with no user context**: the Python side
+  then registers no personalised tools, so the answer cannot depend on identity.
+  Cached event cards are re-verified against the database on every hit; the prose
+  is not, which is why the TTL is short.
+- **Retention.** A worker deletes conversations after `AI_RETENTION_DAYS` (90) and
+  request logs after `AI_REQUEST_LOG_RETENTION_DAYS` (180), in bounded batches;
+  users can also delete a conversation themselves.
+- **Upstream circuit breaker.** Five consecutive *transport* failures (connect,
+  read timeout, 503/504) open it for 30s so later calls fail fast instead of each
+  holding a Tomcat thread. Application-level 502s are deliberately excluded: the
+  Python service returns 502 when the *model* misbehaves, and a healthy process
+  must not be tripped by a few bad generations. What actually bounds thread
+  occupancy is the per-endpoint read timeout — copy polish gets
+  `AI_READ_TIMEOUT_IMPROVE` (35s, it makes a single bounded LLM call) while
+  discovery keeps 90s.
 
 Configuration lives in the `AI` section of `.env.example` (provider / model / key /
-base_url / timeouts / service credentials). Any OpenAI-compatible gateway works
+base_url / timeouts / service credentials / budget / cache / retention / breaker). Any OpenAI-compatible gateway works
 (set `LLM_BASE_URL`). **A note on reasoning-style models (e.g. deepseek-v4)**:
 thinking tokens count against the `LLM_MAX_OUTPUT_TOKENS` output budget — a
 budget that is too small (e.g. 1024) yields empty replies; the default is 4096.
@@ -658,6 +687,8 @@ the distributed behaviour:
 | `BookingConcurrencyIT` | concurrent bookings never oversell |
 | `WalletLedgerMigrationIT` | two-phase V2 migration: old accounts get opening-balance records without changing balances, balances reconcile from opening + subsequent entries, pre-migration orders still refund correctly |
 | `AiGatewayServiceTest` / `AiServiceClientTest` / `InternalServiceInterceptorTest` | AI gateway rate limiting, event re-verification, fabricated-ID filtering, service-to-service auth |
+| `AiTokenBudgetTest` / `AiResponseCacheTest` / `AiCircuitBreakerTest` | per-day token budget, cache degradation, breaker threshold and half-open probe |
+| `AiRetentionWorkerTest` | AI retention batching, delete order (messages before conversations), and the off switch |
 | `MediaServiceTest` / `S3MediaStorageTest` / `MediaPurgeWorkerTest` | image upload validation, key generation, compensation delete on DB failure, 404/503 mapping on reads, soft delete never touches objects, S3 exception translation, cleanup-task semantics |
 | `MediaS3ProfileWiringIT` / `MediaS3WorkerProfileWiringIT` / `MediaS3SeederProfileWiringIT` | S3-enabled wiring and startup compatibility for api / worker / seeder (S3Client construction makes no network calls); default falls back to local disk |
 | `S3LiveMediaStorageIT` | real S3 read/write/delete connectivity (runs only with `MEDIA_S3_LIVE_TEST=true`; uses only the `__eventpulse-selftest/` temp prefix and cleans up after itself) |

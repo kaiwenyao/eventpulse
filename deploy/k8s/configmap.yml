@@ -25,6 +25,18 @@ data:
   AI_ENABLED: "true"
   # Agent 多轮调用总耗时可能远超单次 HTTP 请求，读超时放长。
   AI_READ_TIMEOUT: "90000"
+  # 文案助手单独一条读超时（只有一次 LLM 调用）。
+  AI_READ_TIMEOUT_IMPROVE: "35000"
+  # 成本护栏：每日 token 预算 + 结果缓存（缓存走 Redis）。
+  AI_DAILY_TOKEN_BUDGET_USER: "200000"
+  AI_DAILY_TOKEN_BUDGET_GLOBAL: "0"
+  AI_CACHE_ENABLED: "true"
+  # AI 会话 / 调用日志保留期（天），由 worker 分批清理。
+  AI_RETENTION_DAYS: "90"
+  AI_REQUEST_LOG_RETENTION_DAYS: "180"
+  # 上游熔断：只统计传输层故障，应用层 502 不计入。
+  AI_BREAKER_FAILURE_THRESHOLD: "5"
+  AI_BREAKER_OPEN_SECONDS: "30"
   # 图片对象存储（SeaweedFS 等 S3 兼容服务）。多副本部署必须启用；
   # 凭证 S3_ACCESS_KEY / S3_SECRET_KEY 在 Secret 中，不在这里。
   S3_ENABLED: "true"
