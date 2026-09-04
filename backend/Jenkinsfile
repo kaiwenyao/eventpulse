@@ -1,5 +1,5 @@
 // EventPulse backend CI — modeled on dublin-bikes/backend/Jenkinsfile.
-// Kubernetes cloud agent (Jenkins kubernetes-plugin injects the jnlp sidecar):
+// Kubernetes cloud agent (the plugin supplies jnlp's default image and connection args):
 //   - maven: tests (unit + Testcontainers ITs), coverage and packaging in one verify invocation.
 //   - docker: on main, build & push ghcr.io/<user>/eventpulse-backend:<short-sha>
 //     (same tagging as nightdeal: commit short SHA, no latest).
@@ -13,7 +13,7 @@ pipeline {
             cloud 'kubernetes'
             defaultContainer 'maven'
             // -----------------------------------------------------------------------------
-            // Pod definition. Three workload containers (maven + docker + gitops); Jenkins injects jnlp.
+            // Three workload containers (maven + docker + gitops), plus a resource-bounded jnlp.
             //
             // maven container (image has JDK 21 + Maven):
             //   - TESTCONTAINERS_HOST_OVERRIDE: the BookingConcurrencyIT uses Testcontainers.
@@ -35,7 +35,17 @@ kind: Pod
 metadata:
   labels:
     jenkins/label: eventpulse-backend-build
+    ci.kaiwen.dev/workload: maven-build
 spec:
+  # Shared with firmament and dublin-bikes, including their branch/PR builds.
+  # At most one labeled Maven build per node; queue when all eligible nodes are busy.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              ci.kaiwen.dev/workload: maven-build
+          topologyKey: kubernetes.io/hostname
   containers:
     - name: maven
       image: maven:3.9-eclipse-temurin-21
@@ -80,6 +90,7 @@ spec:
         - "9999999"
       tty: true
       workingDir: /home/jenkins/agent
+      # Bounds the CLI only, not sibling containers/builds created through the host socket.
       resources:
         requests:
           cpu: "100m"
@@ -107,6 +118,15 @@ spec:
         limits:
           cpu: "500m"
           memory: 256Mi
+    # Keep the plugin's default image/connection args; bound the injected agent as well.
+    - name: jnlp
+      resources:
+        requests:
+          cpu: "100m"
+          memory: 256Mi
+        limits:
+          cpu: "500m"
+          memory: 512Mi
   volumes:
     # Survives Pod deletion; each node warms its own cache on first use.
     - name: maven-repo
