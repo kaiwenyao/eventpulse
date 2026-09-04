@@ -236,4 +236,38 @@ test.describe('SPA smoke', () => {
     // The 2px ink border is the only inset; anything near --gutter (32px) is the bug.
     expect(gap.inset).toBeLessThanOrEqual(4)
   })
+
+  test('signed-in top bar does not overflow at tablet or desktop widths', async ({ page }) => {
+    await mockApi(page)
+    await page.addInitScript(() => {
+      localStorage.setItem('ep_token', 'demo')
+      localStorage.setItem('locale', 'en')
+    })
+
+    const probe = async (width: number) => {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/')
+      await page.waitForSelector('.topbar-inner a.github-link', { state: 'attached' })
+      return page.evaluate(() => {
+        const inner = document.querySelector('.topbar-inner')!
+        const toggle = document.querySelector('.nav-toggle')!
+        const children = [...inner.children] as HTMLElement[]
+        const rightmost = Math.max(...children.map((el) => el.getBoundingClientRect().right))
+        return {
+          hamburger: getComputedStyle(toggle).display !== 'none',
+          overflow: rightmost > inner.getBoundingClientRect().right + 1,
+        }
+      })
+    }
+
+    // Narrow desktop / tablet: hamburger must take over before the extra GitHub
+    // tab pushes theme / account / sign-out off the row.
+    const tablet = await probe(900)
+    expect(tablet.hamburger).toBe(true)
+    expect(tablet.overflow).toBe(false)
+
+    const desktop = await probe(1440)
+    expect(desktop.hamburger).toBe(false)
+    expect(desktop.overflow).toBe(false)
+  })
 })
