@@ -244,6 +244,9 @@ test.describe('SPA smoke', () => {
       localStorage.setItem('locale', 'en')
     })
 
+    // Keep in sync with the top-bar collapse media query in responsive.css.
+    const TOPBAR_COLLAPSE_PX = 1200
+
     const probe = async (width: number) => {
       await page.setViewportSize({ width, height: 900 })
       await page.goto('/')
@@ -260,14 +263,14 @@ test.describe('SPA smoke', () => {
       })
     }
 
-    // Narrow desktop / tablet: hamburger must take over before the extra GitHub
-    // tab pushes theme / account / sign-out off the row.
-    const tablet = await probe(900)
-    expect(tablet.hamburger).toBe(true)
-    expect(tablet.overflow).toBe(false)
+    const assertFits = async (width: number, hamburger: boolean) => {
+      const measured = await probe(width)
+      expect(measured, `${width}px`).toEqual({ hamburger, overflow: false })
+    }
 
-    const desktop = await probe(1440)
-    expect(desktop.hamburger).toBe(false)
-    expect(desktop.overflow).toBe(false)
+    await assertFits(900, true)
+    await assertFits(TOPBAR_COLLAPSE_PX, true)
+    await assertFits(TOPBAR_COLLAPSE_PX + 1, false)
+    await assertFits(1440, false)
   })
 })

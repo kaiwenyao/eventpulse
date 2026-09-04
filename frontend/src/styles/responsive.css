@@ -81,11 +81,11 @@
   }
 }
 
-/* The signed-in tab row (six member links + console + GitHub) no longer fits
-   a single 72px bar once the viewport is below the console fold. Collapse the
-   top bar here — earlier than the 720px phone layout — so the extra GitHub
-   tab cannot shove theme / account / sign-out off the row. */
-@media (max-width: 1080px) {
+/* The signed-in English organiser row (eight tabs + brand + toggles + account)
+   first fits around 1135px with no slack. Collapse until 1200px — earlier than
+   the 720px phone layout — so the GitHub tab cannot shove theme / account /
+   sign-out off the row. Keep in sync with TOPBAR_COLLAPSE_PX in smoke.spec.ts. */
+@media (max-width: 1200px) {
   .topbar-inner {
     flex-wrap: wrap;
     height: auto;
