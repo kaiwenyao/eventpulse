@@ -28,4 +28,10 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# eval 标记的用例会真的调用外部 LLM，默认排除：CI 跑的是裸 `uv run pytest`
+# （见 .github/workflows/ci.yml），不该花钱也不该需要真实 Key。
+# 本地想跑：LLM_API_KEY=... uv run pytest -m eval
+addopts = "-q -m 'not eval'"
+markers = [
+    "eval: 真实 LLM 回归集，opt-in（见 tests/evals/README.md）",
+]
