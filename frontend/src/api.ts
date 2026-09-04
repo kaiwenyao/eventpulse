@@ -8,13 +8,29 @@ export class ApiError extends Error {
   }
 }
 
-let accessToken: string | null = sessionStorage.getItem('ep_token')
+export const TOKEN_KEY = 'ep_token'
+
+// 旧版本把 token 存在 sessionStorage（按标签页隔离），部署后把还留在
+// 当前标签页的旧 token 迁进 localStorage，避免已登录用户被登出。
+const legacyToken = sessionStorage.getItem(TOKEN_KEY)
+if (legacyToken) {
+  if (!localStorage.getItem(TOKEN_KEY)) localStorage.setItem(TOKEN_KEY, legacyToken)
+  sessionStorage.removeItem(TOKEN_KEY)
+}
+
+let accessToken: string | null = localStorage.getItem(TOKEN_KEY)
 
 export function setAccessToken(token: string | null) {
   accessToken = token
-  if (token) sessionStorage.setItem('ep_token', token)
-  else sessionStorage.removeItem('ep_token')
+  if (token) localStorage.setItem(TOKEN_KEY, token)
+  else localStorage.removeItem(TOKEN_KEY)
 }
+
+// storage 事件只在“别的标签页”触发：登录/退出发生在另一标签页时，
+// 同步本页内存里的 token，避免旧标签页带着失效状态继续请求。
+window.addEventListener('storage', (e) => {
+  if (e.key === TOKEN_KEY) accessToken = e.newValue
+})
 
 export function getAccessToken() {
   return accessToken

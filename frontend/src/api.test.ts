@@ -51,3 +51,45 @@ describe('formatters', () => {
     expect(formatTime('2026-09-10T12:00:00Z')).toContain('2026')
   })
 })
+
+describe('token storage', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    setAccessToken(null)
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it('persists the token in localStorage so other tabs share the login', () => {
+    setAccessToken('tok-1')
+    expect(localStorage.getItem('ep_token')).toBe('tok-1')
+    expect(sessionStorage.getItem('ep_token')).toBeNull()
+    setAccessToken(null)
+    expect(localStorage.getItem('ep_token')).toBeNull()
+  })
+
+  it('follows login and logout made in another tab via the storage event', async () => {
+    setAccessToken('tab-a')
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ code: 1, data: {} }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    // 另一个标签页退出登录：本页下一次请求不再带 Authorization。
+    window.dispatchEvent(new StorageEvent('storage', { key: 'ep_token', newValue: null }))
+    await api('GET', '/api/events')
+    expect(JSON.stringify(fetchMock.mock.calls[0])).not.toContain('Bearer')
+
+    // 另一个标签页登录：本页随后的请求带上新 token。
+    window.dispatchEvent(new StorageEvent('storage', { key: 'ep_token', newValue: 'tab-b' }))
+    await api('GET', '/api/events')
+    expect(JSON.stringify(fetchMock.mock.calls[1])).toContain('Bearer tab-b')
+  })
+
+  it('migrates a legacy sessionStorage token into localStorage on load', async () => {
+    localStorage.removeItem('ep_token')
+    sessionStorage.setItem('ep_token', 'legacy')
+    vi.resetModules()
+    await import('./api')
+    expect(localStorage.getItem('ep_token')).toBe('legacy')
+    expect(sessionStorage.getItem('ep_token')).toBeNull()
+  })
+})

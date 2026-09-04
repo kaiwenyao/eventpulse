@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { api, getAccessToken, setAccessToken } from './api'
+import { ApiError, TOKEN_KEY, api, getAccessToken, setAccessToken } from './api'
 
 export interface SessionUser {
   id: number
@@ -22,18 +22,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [ready, setReady] = useState(false)
 
+  // Shared session probe. A /me response may only be applied while this tab
+  // still holds the token it was requested with, and only a definitive 401/403
+  // for a token we still hold kills the session — a transport error or a race
+  // with another tab's newer login must never wipe (and broadcast away) a
+  // perfectly good token.
+  const verifySession = useCallback(
+    (token: string) =>
+      api<SessionUser>('GET', '/api/auth/me')
+        .then((me) => {
+          if (getAccessToken() === token) setUser(me)
+        })
+        .catch((err: unknown) => {
+          if (getAccessToken() !== token) return
+          if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+            setAccessToken(null)
+            setUser(null)
+          }
+        }),
+    [],
+  )
+
   useEffect(() => {
-    if (!getAccessToken()) {
+    const token = getAccessToken()
+    if (!token) {
       // Token restore is an external session check; ready must flip after mount.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setReady(true)
       return
     }
-    api<SessionUser>('GET', '/api/auth/me')
-      .then(setUser)
-      .catch(() => setAccessToken(null))
-      .finally(() => setReady(true))
-  }, [])
+    verifySession(token).finally(() => setReady(true))
+  }, [verifySession])
+
+  // The session can change in another tab (login, logout, account switch);
+  // the storage event is the only signal this tab gets. Keep the React-level
+  // user in sync so the top bar and route guards never serve a stale identity.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== TOKEN_KEY) return
+      if (!e.newValue) {
+        setUser(null)
+        return
+      }
+      void verifySession(e.newValue)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [verifySession])
 
   const login = useCallback(async (email: string, password: string) => {
     const data = await api<{ token: string; user: SessionUser }>('POST', '/api/auth/login', { email, password })
