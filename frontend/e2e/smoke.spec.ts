@@ -256,21 +256,34 @@ test.describe('SPA smoke', () => {
         const toggle = document.querySelector('.nav-toggle')!
         const children = [...inner.children] as HTMLElement[]
         const rightmost = Math.max(...children.map((el) => el.getBoundingClientRect().right))
+        const links = [...inner.querySelectorAll('nav a')] as HTMLElement[]
+        const userBox = inner.querySelector('.user-box') as HTMLElement
         return {
           hamburger: getComputedStyle(toggle).display !== 'none',
           overflow: rightmost > inner.getBoundingClientRect().right + 1,
+          // Overflow alone hid the real bug once: flex children absorb a
+          // deficit by folding their own text ("My bookings" on two lines,
+          // Sign out under the bar) without any edge leaving the row.
+          wrappedLink: links.some((a) => a.getBoundingClientRect().height > 32),
+          userBoxWrapped: userBox.getBoundingClientRect().height > 40,
         }
       })
     }
 
     const assertFits = async (width: number, hamburger: boolean) => {
       const measured = await probe(width)
-      expect(measured, `${width}px`).toEqual({ hamburger, overflow: false })
+      expect(measured, `${width}px`).toEqual({
+        hamburger,
+        overflow: false,
+        wrappedLink: false,
+        userBoxWrapped: false,
+      })
     }
 
     await assertFits(900, true)
     await assertFits(TOPBAR_COLLAPSE_PX, true)
     await assertFits(TOPBAR_COLLAPSE_PX + 1, false)
+    await assertFits(1240, false)
     await assertFits(1440, false)
   })
 })

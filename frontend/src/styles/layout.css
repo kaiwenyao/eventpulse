@@ -61,7 +61,10 @@ body {
   margin: 0 auto;
   display: flex;
   align-items: center;
-  gap: var(--space-6);
+  /* 20px, not the 32px rhythm: the signed-in organiser row (eight tabs +
+     toggles + account) only fits inside the shell's 1240px cap with this gap —
+     at 32px the row is crushed at every viewport width. */
+  gap: 20px;
   height: 72px;
   padding: 0 var(--gutter);
 }
@@ -88,7 +91,7 @@ body {
 .topbar nav {
   display: flex;
   align-items: center;
-  gap: var(--space-6);
+  gap: 20px;
   flex: 1;
 }
 
@@ -99,6 +102,7 @@ body {
   font-size: 13px;
   font-weight: 600;
   padding: var(--space-1) 0;
+  white-space: nowrap;
 }
 
 .topbar nav a:hover {
@@ -129,6 +133,17 @@ body {
 
 .user-box {
   gap: var(--space-3);
+  /* .row wraps by default; in the bar that drops Sign out onto a second line. */
+  flex-wrap: nowrap;
+}
+
+/* The email is the row's one elastic item: when the viewport pinches the shell
+   (1200–1240px) it ellipsises instead of shoving wider elements around. */
+.user-box .muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A square ink chip carrying the initial — the design's avatar. */
