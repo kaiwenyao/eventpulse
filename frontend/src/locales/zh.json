@@ -505,7 +505,14 @@
       "stillWorking": "还在处理——复杂的问题需要多花一点时间。",
       "followUpLabel": "接着问",
       "noAnswer": "这次没能整理出结果，换个说法再试一次吧。",
-      "noEvents": "没有找到匹配的活动。"
+      "noEvents": "没有找到匹配的活动。",
+      "history": "历史对话",
+      "historyEmpty": "还没有保存的对话。",
+      "historyToggle": "历史",
+      "newChat": "新对话",
+      "deleteChat": "删除这段对话",
+      "restoredNote": "已恢复上次的对话文字。活动卡片与追问按钮不会重放，继续提问即可重新获得。",
+      "restoreFailed": "上次的对话已经不在了，这里从头开始。"
     },
     "copy": {
       "entry": "AI 完善文案",

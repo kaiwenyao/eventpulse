@@ -1370,6 +1370,73 @@ li > .card {
   margin: 0;
 }
 
+/* 头部右侧的一组动作：历史 / 新对话 / 收起。 */
+.ai-assistant-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* 历史对话列表：只展示一句预览，够认出是哪段对话即可。 */
+.ai-history {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.ai-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.ai-history-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.ai-history-item:last-child {
+  border-bottom: 0;
+}
+
+.ai-history-item.is-active {
+  background: var(--surface);
+}
+
+.ai-history-open {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: var(--space-2);
+  cursor: pointer;
+  font-family: var(--font-body);
+  color: inherit;
+}
+
+.ai-history-preview {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* 恢复历史后的说明：明确讲清楚只还原了文字。 */
+.ai-restored-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: var(--rule) solid var(--line-strong);
+  background: var(--paper);
+}
+
 .ai-assistant-log {
   max-height: 480px;
   overflow-y: auto;

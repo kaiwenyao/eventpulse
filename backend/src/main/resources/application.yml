@@ -125,3 +125,9 @@ eventpulse:
     history-limit: 8
     context-token-ttl-seconds: 300
     time-zone: ${AI_TIME_ZONE:Europe/Berlin}
+    # 会话与调用日志的保留期（天，0 = 不清理），由 worker 分批删除。
+    retention-days: ${AI_RETENTION_DAYS:90}
+    request-log-retention-days: ${AI_REQUEST_LOG_RETENTION_DAYS:180}
+    retention-batch-size: ${AI_RETENTION_BATCH_SIZE:200}
+    conversation-list-limit: ${AI_CONVERSATION_LIST_LIMIT:20}
+    conversation-message-limit: ${AI_CONVERSATION_MESSAGE_LIMIT:50}

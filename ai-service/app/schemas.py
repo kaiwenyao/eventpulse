@@ -67,6 +67,20 @@ class DiscoveryUser(CamelModel):
     role: str = Field(default="USER", max_length=30)
 
 
+class DiscoveryPreferences(CamelModel):
+    """用户主动保存的偏好，由 Spring 直接带过来（它本来就持有这张表）。
+
+    之前要靠模型自己想起来调 get_my_preferences 工具，那是一次「LLM 决策 +
+    HTTP 往返」；工具仍然保留，模型需要时可以显式重查。
+    """
+
+    categories: str | None = Field(default=None, max_length=200)
+    cities: str | None = Field(default=None, max_length=200)
+    latitude: float | None = None
+    longitude: float | None = None
+    radius_km: float | None = None
+
+
 class DiscoveryChatRequest(CamelModel):
     request_id: str = Field(max_length=64)
     message: str = Field(min_length=1, max_length=2000)
@@ -76,6 +90,7 @@ class DiscoveryChatRequest(CamelModel):
     user: DiscoveryUser | None = None
     # 游客请求时 Spring 发 null；登录时是签名的用户上下文 token。
     user_context_token: str | None = Field(default=None, max_length=4096)
+    preferences: DiscoveryPreferences | None = None
 
 
 class DiscoveryEventRef(CamelModel):

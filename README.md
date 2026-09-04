@@ -130,6 +130,7 @@ demo defaults run as-is. Key variables:
 | `LLM_BASE_URL` | empty | OpenAI-compatible gateway base URL; must include the API prefix (e.g. `https://host/v1`) |
 | `LLM_MAX_OUTPUT_TOKENS` | `4096` | reasoning models spend thinking tokens from this budget; too small a budget yields empty replies |
 | `AI_SERVICE_TOKEN` / `AI_INTERNAL_TOKEN` | dev values | Spring Boot ↔ ai-service service-to-service credentials; must be replaced in real deployments |
+| `AI_RETENTION_DAYS` / `AI_REQUEST_LOG_RETENTION_DAYS` | `90` / `180` | how long AI conversations and request logs are kept before the worker deletes them |
 | `S3_ENABLED` | `false` | when true, images go to S3; multi-replica deployments (`API>1` or k3s) must enable it |
 | `S3_ENDPOINT` / `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | empty | SeaweedFS S3 endpoint and credentials |
 
@@ -291,6 +292,7 @@ Two features:
 | --- | --- | --- |
 | Organiser copywriting polish | `POST /api/ai/organiser/improve-event` (JWT ORGANISER) | a plain LLM call with structured output; review in the frontend first, then use the normal save / publish endpoints — nothing is auto-saved |
 | Natural-language event discovery | `POST /api/ai/discovery/chat` (JWT optional) | a LangChain agent queries real events through read-only tools; signed-in users get sessions persisted to PostgreSQL and guests get single turns; Spring Boot re-verifies event visibility before returning |
+| Conversation management | `GET/DELETE /api/ai/conversations[/{id}]` (JWT) | list, restore, and delete your own discovery sessions; restoring replays text only, because only `role`/`content` is stored |
 
 Boundaries and degradation:
 
@@ -306,9 +308,12 @@ Boundaries and degradation:
   untrusted data — fabricated or delisted event IDs are discarded.
 - Every request is recorded in `ai_requests` (status, latency, token usage) —
   no keys, no full prompts.
+- **Retention.** A worker deletes conversations after `AI_RETENTION_DAYS` (90) and
+  request logs after `AI_REQUEST_LOG_RETENTION_DAYS` (180), in bounded batches;
+  users can also delete a conversation themselves.
 
 Configuration lives in the `AI` section of `.env.example` (provider / model / key /
-base_url / timeouts / service credentials). Any OpenAI-compatible gateway works
+base_url / timeouts / service credentials / retention). Any OpenAI-compatible gateway works
 (set `LLM_BASE_URL`). **A note on reasoning-style models (e.g. deepseek-v4)**:
 thinking tokens count against the `LLM_MAX_OUTPUT_TOKENS` output budget — a
 budget that is too small (e.g. 1024) yields empty replies; the default is 4096.
@@ -658,6 +663,7 @@ the distributed behaviour:
 | `BookingConcurrencyIT` | concurrent bookings never oversell |
 | `WalletLedgerMigrationIT` | two-phase V2 migration: old accounts get opening-balance records without changing balances, balances reconcile from opening + subsequent entries, pre-migration orders still refund correctly |
 | `AiGatewayServiceTest` / `AiServiceClientTest` / `InternalServiceInterceptorTest` | AI gateway rate limiting, event re-verification, fabricated-ID filtering, service-to-service auth |
+| `AiRetentionWorkerTest` | AI retention batching, delete order (messages before conversations), and the off switch |
 | `MediaServiceTest` / `S3MediaStorageTest` / `MediaPurgeWorkerTest` | image upload validation, key generation, compensation delete on DB failure, 404/503 mapping on reads, soft delete never touches objects, S3 exception translation, cleanup-task semantics |
 | `MediaS3ProfileWiringIT` / `MediaS3WorkerProfileWiringIT` / `MediaS3SeederProfileWiringIT` | S3-enabled wiring and startup compatibility for api / worker / seeder (S3Client construction makes no network calls); default falls back to local disk |
 | `S3LiveMediaStorageIT` | real S3 read/write/delete connectivity (runs only with `MEDIA_S3_LIVE_TEST=true`; uses only the `__eventpulse-selftest/` temp prefix and cleans up after itself) |

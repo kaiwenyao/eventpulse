@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -21,6 +22,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.common.Result;
 import dev.kaiwen.eventpulse.dto.AiDtos.CopySuggestion;
+import dev.kaiwen.eventpulse.dto.AiDtos.ConversationDetail;
+import dev.kaiwen.eventpulse.dto.AiDtos.ConversationMessage;
+import dev.kaiwen.eventpulse.dto.AiDtos.ConversationSummary;
 import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryChatRequest;
 import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryChatResponse;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventRequest;
@@ -31,6 +35,7 @@ import dev.kaiwen.eventpulse.service.AiGatewayService;
 import dev.kaiwen.eventpulse.service.AiUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -111,4 +116,36 @@ class AiControllerTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.msg").value("AI assistant is not enabled on this deployment"));
     }
+    // ---- 会话生命周期 ----
+
+    @Test
+    void listsRestoresAndDeletesConversationsThroughTheGateway() {
+        AiController controller = new AiController(gateway);
+        when(gateway.listConversations()).thenReturn(List.of(
+                new ConversationSummary("7", "找到 3 场爵士演出", Instant.parse("2026-09-04T10:00:00Z"))));
+        when(gateway.getConversation("7")).thenReturn(new ConversationDetail("7",
+                List.of(new ConversationMessage("user", "第一问", Instant.parse("2026-09-04T09:59:00Z")))));
+
+        assertThat(controller.conversations().getData()).hasSize(1);
+        assertThat(controller.conversations().getData().get(0).preview()).isEqualTo("找到 3 场爵士演出");
+        assertThat(controller.conversation("7").getData().messages()).hasSize(1);
+
+        var deleted = controller.deleteConversation("7");
+        assertThat(deleted.getCode()).isEqualTo(1);
+        verify(gateway).deleteConversation("7");
+    }
+
+    @Test
+    void conversationOwnershipFailureSurfacesAs403() throws Exception {
+        // 归属校验的结果必须是 403，不能被混成 500。
+        when(gateway.getConversation("7"))
+                .thenThrow(BusinessException.forbidden("You can only access your own conversations"));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new AiController(gateway))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        mvc.perform(get("/api/ai/conversations/7"))
+                .andExpect(status().isForbidden());
+    }
+
 }

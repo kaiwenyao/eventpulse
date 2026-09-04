@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api } from '../api'
+import { ApiError, api } from '../api'
+import { useAuth } from '../auth'
 import { AiThinkingTurn } from './AiThinking'
+import { AiConversationList } from './AiConversationList'
 import { EventTicket } from './EventTicket'
 import { EventVo } from '../types'
 import { Alert } from '../ui/Alert'
 import { resolveApiError } from '../lib/apiError'
+import { readStoredConversationId, writeStoredConversationId } from '../lib/aiConversation'
+
+interface ConversationDetail {
+  id: string
+  messages: { role: string; content: string; createdAt: string }[]
+}
 
 interface AiEventMention {
   event: EventVo
@@ -37,13 +45,76 @@ interface ChatTurn {
  */
 export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [input, setInput] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [lastMessage, setLastMessage] = useState('')
+  const [restored, setRestored] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
+  // 恢复请求的代次：每发起一次 +1，落地前比对，过期的响应直接丢弃。
+  const restoreGuard = useRef(0)
+
+  // 只有登录用户在服务端有会话；游客的对话不落库，也就没得恢复。
+  useEffect(() => {
+    if (!user) return
+    const stored = readStoredConversationId()
+    if (!stored) return
+    void openConversation(stored)
+    return () => {
+      // 登出或换账号：让在途的恢复请求作废。否则上一个账号的记录会在身份切换之后
+      // 才落地，把别人的对话摆进新会话，下一次发送还会因归属校验失败。
+      restoreGuard.current += 1
+    }
+    // 只在登录态建立时尝试恢复一次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
+
+  /** 打开一段历史会话：只回填文字，卡片与追问按钮无法重放（服务端只存 role/content）。 */
+  async function openConversation(id: string) {
+    const generation = ++restoreGuard.current
+    try {
+      const detail = await api<ConversationDetail>('GET', `/api/ai/conversations/${id}`)
+      // 期间登出、换账号、开了别的会话或点了「新对话」：这次响应已经过期，不能落地。
+      if (restoreGuard.current !== generation) return
+      setTurns(
+        detail.messages.map((message) => ({
+          role: message.role === 'assistant' ? 'assistant' : 'user',
+          text: message.content,
+        })),
+      )
+      setConversationId(detail.id)
+      writeStoredConversationId(detail.id)
+      setRestored(true)
+      setShowHistory(false)
+      setError('')
+    } catch (e) {
+      if (restoreGuard.current !== generation) return
+      // 只有明确的 403/404 才丢掉本地 id：会话确实没了或不属于当前账号，安静地从头
+      // 开始，不把状态码摆给用户。网络抖动、5xx 则保持当前会话不动——否则正在看
+      // 会话 A 的用户点开 B 失败一次，A 的 id 就被清掉，下一条消息会静默开一个新
+      // 会话，把记录劈成两半。
+      if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
+        writeStoredConversationId(null)
+        setConversationId(null)
+        setRestored(false)
+      }
+    }
+  }
+
+  function startNewChat() {
+    // 在途的恢复请求同样作废，不然它会把刚清空的对话又填回来。
+    restoreGuard.current += 1
+    setTurns([])
+    setConversationId(null)
+    writeStoredConversationId(null)
+    setRestored(false)
+    setError('')
+    setShowHistory(false)
+  }
 
   useEffect(() => {
     const list = listRef.current
@@ -65,7 +136,10 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
         conversationId,
         message: trimmed,
       })
-      if (response.conversationId) setConversationId(response.conversationId)
+      if (response.conversationId) {
+        setConversationId(response.conversationId)
+        writeStoredConversationId(response.conversationId)
+      }
       setTurns((prev) => [
         ...prev,
         {
@@ -102,12 +176,38 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
           <h2>{t('ai.discovery.title')}</h2>
           <p className="muted small">{t('ai.discovery.hint')}</p>
         </div>
-        <button type="button" className="btn-ghost" onClick={onClose} aria-label={t('ai.discovery.close')}>
-          ✕
-        </button>
+        <div className="ai-assistant-actions">
+          {user && (
+            <>
+              <button type="button" className="btn-ghost btn-sm" onClick={() => setShowHistory((open) => !open)}>
+                {t('ai.discovery.historyToggle')}
+              </button>
+              <button type="button" className="btn-ghost btn-sm" onClick={startNewChat}>
+                {t('ai.discovery.newChat')}
+              </button>
+            </>
+          )}
+          <button type="button" className="btn-ghost" onClick={onClose} aria-label={t('ai.discovery.close')}>
+            ✕
+          </button>
+        </div>
       </header>
 
+      {user && showHistory && (
+        <AiConversationList
+          activeId={conversationId}
+          onOpen={(id) => void openConversation(id)}
+          onDeleted={(id) => {
+            // 删掉的正是当前这段：本地 id 也要一起清，否则刷新后又去请求一个已经没了的会话。
+            if (id === conversationId) startNewChat()
+          }}
+        />
+      )}
+
       <div className="ai-assistant-log" ref={listRef}>
+        {restored && turns.length > 0 && (
+          <p className="muted small ai-restored-note">{t('ai.discovery.restoredNote')}</p>
+        )}
         {turns.length === 0 && !loading && (
           <div className="ai-empty">
             <p className="muted small">{t('ai.discovery.empty')}</p>

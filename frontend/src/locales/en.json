@@ -509,7 +509,14 @@
       "stillWorking": "Still working — complex questions can take a moment.",
       "followUpLabel": "Ask next",
       "noAnswer": "I could not put an answer together this time. Try rephrasing your question.",
-      "noEvents": "No matching events were found."
+      "noEvents": "No matching events were found.",
+      "history": "Past conversations",
+      "historyEmpty": "No saved conversations yet.",
+      "historyToggle": "History",
+      "newChat": "New chat",
+      "deleteChat": "Delete this conversation",
+      "restoredNote": "Restored the text of your last conversation. Event cards and follow-up buttons are not replayed — ask again to get them back.",
+      "restoreFailed": "That conversation is no longer available, starting fresh here."
     },
     "copy": {
       "entry": "AI polish copy",

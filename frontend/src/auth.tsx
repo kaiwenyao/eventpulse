@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { ApiError, TOKEN_KEY, api, getAccessToken, setAccessToken } from './api'
+import { AI_CONVERSATION_KEY } from './lib/aiConversation'
 
 export interface SessionUser {
   id: number
@@ -89,6 +90,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     setAccessToken(null)
     setUser(null)
+    // AI 会话 id 是按账号的：留着的话，换个账号登录就会带着别人的 id 去请求
+    // （服务端归属校验会 403，但不该让它发生）。
+    try {
+      localStorage.removeItem(AI_CONVERSATION_KEY)
+    } catch {
+      // localStorage 不可用时无事可做。
+    }
   }, [])
 
   const value = useMemo(() => ({ user, ready, login, register, logout }), [user, ready, login, register, logout])

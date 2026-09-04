@@ -6,16 +6,21 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.domain.EventStatus;
 import dev.kaiwen.eventpulse.dto.AiDtos.AiUser;
+import dev.kaiwen.eventpulse.dto.AiDtos.ConversationDetail;
+import dev.kaiwen.eventpulse.dto.AiDtos.ConversationMessage;
+import dev.kaiwen.eventpulse.dto.AiDtos.ConversationSummary;
 import dev.kaiwen.eventpulse.dto.AiDtos.CopySuggestion;
 import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryChatRequest;
 import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryChatResponse;
@@ -28,6 +33,7 @@ import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventPayload;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventRequest;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventResponse;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventResult;
+import dev.kaiwen.eventpulse.dto.AiDtos.ToolPreferenceVo;
 import dev.kaiwen.eventpulse.dto.EventDtos.EventVo;
 import dev.kaiwen.eventpulse.entity.AiConversation;
 import dev.kaiwen.eventpulse.entity.AiMessage;
@@ -38,6 +44,7 @@ import dev.kaiwen.eventpulse.repository.AiConversationRepository;
 import dev.kaiwen.eventpulse.repository.AiMessageRepository;
 import dev.kaiwen.eventpulse.repository.AiRequestLogRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
+import dev.kaiwen.eventpulse.repository.UserPreferenceRepository;
 import io.micrometer.core.instrument.MeterRegistry;
 
 /**
@@ -60,6 +67,17 @@ public class AiGatewayService {
     private static final int MAX_FOLLOW_UPS = 3;
     private static final int MAX_WARNINGS = 6;
     private static final int MAX_WARNING_CHARS = 300;
+    private static final int CONVERSATION_PREVIEW_CHARS = 80;
+    /**
+     * 发给 Python 的偏好字段上限。user_preferences 的列是 VARCHAR(300) 且写入侧不
+     * 截断，而 Python 的 DiscoveryPreferences 是 max_length=200：库里合法存在的
+     * 201–300 字符城市列表会让整个请求被 Pydantic 判 422，Spring 再转成「AI 暂不
+     * 可用」，该用户从此每次提问都失败且无法自愈。
+     *
+     * 截断放在网关而不是放宽 Python：这里是数据往外带的边界，顺带也挡住了以后
+     * 有人加宽 DB 列。提示词层反正也只取前 200 字符。
+     */
+    private static final int MAX_PREFERENCE_CHARS = 200;
 
     private final AppProperties properties;
     private final AiServiceClient client;
@@ -70,12 +88,14 @@ public class AiGatewayService {
     private final AiConversationRepository conversations;
     private final AiMessageRepository messages;
     private final AiRequestLogRepository requestLogs;
+    private final UserPreferenceRepository preferences;
     private final MeterRegistry meterRegistry;
 
     public AiGatewayService(AppProperties properties, AiServiceClient client, AiRateLimiter rateLimiter,
             JwtService jwtService, EventRepository events, EventService eventService,
             AiConversationRepository conversations, AiMessageRepository messages,
-            AiRequestLogRepository requestLogs, MeterRegistry meterRegistry) {
+            AiRequestLogRepository requestLogs, UserPreferenceRepository preferences,
+            MeterRegistry meterRegistry) {
         this.properties = properties;
         this.client = client;
         this.rateLimiter = rateLimiter;
@@ -85,6 +105,7 @@ public class AiGatewayService {
         this.conversations = conversations;
         this.messages = messages;
         this.requestLogs = requestLogs;
+        this.preferences = preferences;
         this.meterRegistry = meterRegistry;
     }
 
@@ -129,20 +150,24 @@ public class AiGatewayService {
                 throw new AiUnavailableException(AiServiceClient.UNAVAILABLE);
             }
             countMetric("ai.requests", FEATURE_IMPROVE, "success");
-            return new ImproveEventResponse(
-                    requestId,
-                    new CopySuggestion(
-                            truncate(result.suggestion().title(), 200),
-                            truncate(result.suggestion().summary(), 300),
-                            truncate(result.suggestion().description(), 5000),
-                            truncate(result.suggestion().attendanceNotes(), 1000),
-                            sanitizeWarnings(result.suggestion().warnings())),
-                    sanitizeWarnings(result.warnings()));
+            return toImproveResponse(requestId, result);
         }
         catch (AiUnavailableException e) {
             recordFailure(requestId, userId, FEATURE_IMPROVE, start, "upstream_unavailable");
             throw e;
         }
+    }
+
+    private ImproveEventResponse toImproveResponse(String requestId, ImproveEventResult result) {
+        return new ImproveEventResponse(
+                requestId,
+                new CopySuggestion(
+                        truncate(result.suggestion().title(), 200),
+                        truncate(result.suggestion().summary(), 300),
+                        truncate(result.suggestion().description(), 5000),
+                        truncate(result.suggestion().attendanceNotes(), 1000),
+                        sanitizeWarnings(result.suggestion().warnings())),
+                sanitizeWarnings(result.warnings()));
     }
 
     /**
@@ -179,6 +204,7 @@ public class AiGatewayService {
         String requestId = UUID.randomUUID().toString();
         String contextToken = user == null ? null : jwtService.createContextToken(
                 user.userId(), user.role(), requestId, properties.getAi().getContextTokenTtlSeconds());
+
         DiscoveryPayload payload = new DiscoveryPayload(
                 requestId,
                 message,
@@ -186,31 +212,129 @@ public class AiGatewayService {
                 Instant.now().toString(),
                 properties.getAi().getTimeZone(),
                 user,
-                contextToken);
+                contextToken,
+                preferencesOf(userId));
 
         long start = System.currentTimeMillis();
         try {
             DiscoveryResult result = client.discoveryChat(payload);
             recordSuccess(requestId, userId, FEATURE_DISCOVERY, result.provider(), result.model(),
                     start, result.usage());
-            List<DiscoveryEventMention> mentions = verifyEvents(result.events());
             if (userId != null) {
                 appendMessages(conversation, message, result.answer());
             }
             countMetric("ai.requests", FEATURE_DISCOVERY, "success");
-            return new DiscoveryChatResponse(
-                    requestId,
-                    conversation == null ? null : String.valueOf(conversation.getId()),
-                    truncate(result.answer() == null || result.answer().isBlank()
-                            ? "I could not produce an answer this time, please try again." : result.answer(),
-                            MAX_ANSWER_CHARS),
-                    mentions,
-                    sanitizeFollowUps(result.followUpQuestions()));
+            return toDiscoveryResponse(requestId, conversation, result);
         }
         catch (AiUnavailableException e) {
             recordFailure(requestId, userId, FEATURE_DISCOVERY, start, "upstream_unavailable");
             throw e;
         }
+    }
+
+    private DiscoveryChatResponse toDiscoveryResponse(String requestId, AiConversation conversation,
+            DiscoveryResult result) {
+        return new DiscoveryChatResponse(
+                requestId,
+                conversation == null ? null : String.valueOf(conversation.getId()),
+                truncate(result.answer() == null || result.answer().isBlank()
+                        ? "I could not produce an answer this time, please try again." : result.answer(),
+                        MAX_ANSWER_CHARS),
+                verifyEvents(result.events()),
+                sanitizeFollowUps(result.followUpQuestions()));
+    }
+
+    // ---- 会话生命周期：列表 / 恢复 / 删除 ----
+
+    /**
+     * 当前用户的发现助手会话列表。这三个接口都不在 JwtInterceptor 的公开白名单里，
+     * 所以走到这里一定有登录态；归属仍然逐条复核，不靠路径推断。
+     */
+    public List<ConversationSummary> listConversations() {
+        Long userId = requireSignedIn();
+        return conversations.findByUserIdAndKindOrderByUpdatedAtDesc(userId, FEATURE_DISCOVERY,
+                        PageRequest.of(0, properties.getAi().getConversationListLimit()))
+                .getContent().stream()
+                .map(conversation -> new ConversationSummary(
+                        String.valueOf(conversation.getId()),
+                        previewOf(conversation.getId()),
+                        conversation.getUpdatedAt()))
+                .toList();
+    }
+
+    /**
+     * 恢复一段会话。只还原文字：ai_messages 里本来就只有 role/content，活动卡片与
+     * 追问按钮无法重放 —— 前端要如实说明，不能假装还原了全部内容。
+     */
+    public ConversationDetail getConversation(String conversationId) {
+        Long userId = requireSignedIn();
+        AiConversation conversation = requireOwnedConversation(conversationId, userId);
+        List<ConversationMessage> content = messages.findByConversationIdOrderByIdAsc(conversation.getId(),
+                        PageRequest.of(0, properties.getAi().getConversationMessageLimit()))
+                .getContent().stream()
+                .map(m -> new ConversationMessage(m.getRole(), m.getContent(), m.getCreatedAt()))
+                .toList();
+        return new ConversationDetail(String.valueOf(conversation.getId()), content);
+    }
+
+    /** 用户主动删除。消息有外键指向会话，必须先删消息。 */
+    @Transactional
+    public void deleteConversation(String conversationId) {
+        Long userId = requireSignedIn();
+        AiConversation conversation = requireOwnedConversation(conversationId, userId);
+        messages.deleteByConversationIdIn(List.of(conversation.getId()));
+        conversations.deleteByIdIn(List.of(conversation.getId()));
+    }
+
+    private static Long requireSignedIn() {
+        Long userId = BaseContext.getUserId();
+        if (userId == null) {
+            throw BusinessException.forbidden("Please sign in to manage AI conversations");
+        }
+        return userId;
+    }
+
+    private AiConversation requireOwnedConversation(String conversationId, Long userId) {
+        AiConversation conversation = conversations.findById(parseConversationId(conversationId))
+                .orElseThrow(() -> BusinessException.notFound("Conversation not found"));
+        if (!userId.equals(conversation.getUserId())) {
+            throw BusinessException.forbidden("You can only access your own conversations");
+        }
+        return conversation;
+    }
+
+    private static Long parseConversationId(String conversationId) {
+        try {
+            return Long.valueOf(conversationId);
+        }
+        catch (NumberFormatException e) {
+            throw new BusinessException("Invalid conversation id");
+        }
+    }
+
+    /** 列表预览取最后一条消息；没有消息（刚建就没发成功）时给空串而不是 null。 */
+    private String previewOf(Long conversationId) {
+        return messages.findByConversationIdOrderByIdDesc(conversationId, PageRequest.of(0, 1))
+                .getContent().stream()
+                .findFirst()
+                .map(m -> truncate(m.getContent(), CONVERSATION_PREVIEW_CHARS))
+                .orElse("");
+    }
+
+    /**
+     * 登录用户保存的偏好。没有偏好行时返回 null，不返回一个全空的对象 ——
+     * 让 Python 侧「有没有偏好」的判断保持简单。
+     */
+    private ToolPreferenceVo preferencesOf(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        return preferences.findById(userId)
+                .map(pref -> new ToolPreferenceVo(
+                        truncate(pref.getCategories(), MAX_PREFERENCE_CHARS),
+                        truncate(pref.getCities(), MAX_PREFERENCE_CHARS),
+                        pref.getLatitude(), pref.getLongitude(), pref.getRadiusKm()))
+                .orElse(null);
     }
 
     private void requireEnabled() {
@@ -304,18 +428,38 @@ public class AiGatewayService {
         if (refs == null || refs.isEmpty()) {
             return List.of();
         }
-        Map<Long, DiscoveryEventMention> kept = new LinkedHashMap<>();
+        int maxEvents = properties.getAi().getMaxEvents();
+        // 先按 AI 给的顺序去重并截断，再一次查库。原来是逐个 findById（N+1），
+        // 那时是循环里的 break 顺带限制了查询次数；换成批量查之后必须显式截断，
+        // 否则上游返回 5000 个 id 就会变成一条巨大的 IN。
+        List<Long> ids = new ArrayList<>();
         for (DiscoveryEventRef ref : refs) {
-            if (kept.size() >= properties.getAi().getMaxEvents()) {
-                break;
-            }
-            if (ref == null || ref.eventId() == null) {
+            if (ref == null || ref.eventId() == null || ids.contains(ref.eventId())) {
                 continue;
             }
-            Event event = events.findById(ref.eventId()).orElse(null);
+            ids.add(ref.eventId());
+            if (ids.size() >= maxEvents) {
+                break;
+            }
+        }
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Event> found = new LinkedHashMap<>();
+        for (Event event : events.findAllById(ids)) {
+            found.put(event.getId(), event);
+        }
+
+        Map<Long, DiscoveryEventMention> kept = new LinkedHashMap<>();
+        for (DiscoveryEventRef ref : refs) {
+            if (kept.size() >= maxEvents || ref == null || ref.eventId() == null) {
+                continue;
+            }
+            Event event = found.get(ref.eventId());
             if (event == null || !EventStatus.PUBLIC_LIST.contains(event.getStatus())) {
                 continue;
             }
+            // FINISHED 也在 PUBLIC_LIST 里（已结束的活动仍可浏览），但不该再被推荐。
             if (EventStatus.FINISHED.equals(event.getStatus())) {
                 continue;
             }
@@ -359,13 +503,16 @@ public class AiGatewayService {
 
     private void recordSuccess(String requestId, Long userId, String feature, String provider, String model,
             long start, dev.kaiwen.eventpulse.dto.AiDtos.AiUsage usage) {
-        saveLog(requestId, userId, feature, provider, model, "success", null,
-                (int) (System.currentTimeMillis() - start), usage);
+        int latencyMs = (int) (System.currentTimeMillis() - start);
+        saveLog(requestId, userId, feature, provider, model, "success", null, latencyMs, usage);
+        recordLatency(feature, latencyMs);
+        countTokens(feature, usage);
     }
 
     private void recordFailure(String requestId, Long userId, String feature, long start, String errorCode) {
-        saveLog(requestId, userId, feature, "unknown", "unknown", "failure", errorCode,
-                (int) (System.currentTimeMillis() - start), null);
+        int latencyMs = (int) (System.currentTimeMillis() - start);
+        saveLog(requestId, userId, feature, "unknown", "unknown", "failure", errorCode, latencyMs, null);
+        recordLatency(feature, latencyMs);
         countMetric("ai.requests", feature, "failure");
         countMetric("ai.failures", feature, "failure");
     }
@@ -396,6 +543,24 @@ public class AiGatewayService {
 
     private void countMetric(String name, String feature, String status) {
         meterRegistry.counter(name, "feature", feature, "status", status).increment();
+    }
+
+    private void recordLatency(String feature, int latencyMs) {
+        meterRegistry.timer("ai.latency", "feature", feature).record(latencyMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void countTokens(String feature, dev.kaiwen.eventpulse.dto.AiDtos.AiUsage usage) {
+        if (usage == null) {
+            return;
+        }
+        if (usage.inputTokens() != null && usage.inputTokens() > 0) {
+            meterRegistry.counter("ai.tokens", "feature", feature, "kind", "input")
+                    .increment(usage.inputTokens());
+        }
+        if (usage.outputTokens() != null && usage.outputTokens() > 0) {
+            meterRegistry.counter("ai.tokens", "feature", feature, "kind", "output")
+                    .increment(usage.outputTokens());
+        }
     }
 
 }

@@ -21,8 +21,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * 基线迁移的验收：V1__init.sql 之后按版本号顺序追加 V2（购物车 / 钱包流水 /
- * 结算幂等键）、V3（购物车排序索引）、V4（活动分类白名单），空库跑完之后每张
- * 实体表都在，旧版规则推荐的残留表不在，分类的 CHECK 约束也已生效。
+ * 结算幂等键）、V3（购物车排序索引）、V4（活动分类白名单）、V5（AI 会话保留期
+ * 清理索引），空库跑完之后每张实体表都在，旧版规则推荐的残留表不在，分类的
+ * CHECK 约束也已生效。
  */
 @Testcontainers(disabledWithoutDocker = true)
 class SchemaBaselineIT {
@@ -63,7 +64,7 @@ class SchemaBaselineIT {
                 .migrate();
 
         // Assert
-        assertThat(result.migrationsExecuted).isEqualTo(4);
+        assertThat(result.migrationsExecuted).isEqualTo(5);
         for (String table : EXPECTED_TABLES) {
             assertThat(tableExists(table)).as(table).isTrue();
         }

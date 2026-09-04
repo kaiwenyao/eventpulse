@@ -62,6 +62,25 @@ public final class AiDtos {
     public record DiscoveryEventMention(dev.kaiwen.eventpulse.dto.EventDtos.EventVo event, String reason) {
     }
 
+    /** 会话列表的一行：预览取最后一条消息的开头，够用户认出是哪段对话即可。 */
+    public record ConversationSummary(
+            String id,
+            String preview,
+            Instant updatedAt) {
+    }
+
+    /** 恢复会话时回填的内容。服务端只存 role/content，所以活动卡片无法重放。 */
+    public record ConversationDetail(
+            String id,
+            List<ConversationMessage> messages) {
+    }
+
+    public record ConversationMessage(
+            String role,
+            String content,
+            Instant createdAt) {
+    }
+
     // ---- Spring Boot ↔ Python AI 服务之间的结构 ----
 
     public record HistoryMessage(String role, String content) {
@@ -104,7 +123,15 @@ public final class AiDtos {
             String nowIso,
             String timeZone,
             AiUser user,
-            String userContextToken) {
+            String userContextToken,
+            /**
+             * 登录用户主动保存的偏好，由 Spring 直接带过去。
+             *
+             * 之前要靠模型自己想起来调 get_my_preferences 工具，那是一次
+             * 「LLM 决策 + HTTP 往返」；而 Spring 本来就持有 UserPreferenceRepository，
+             * 一次进程内查询即可。工具仍然保留，模型需要时可以显式重查。
+             */
+            ToolPreferenceVo preferences) {
     }
 
     public record DiscoveryEventRef(Long eventId, String reason) {

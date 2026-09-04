@@ -29,6 +29,9 @@ x-backend-common: &backend-common
     AI_ENABLED: ${AI_ENABLED:-true}
     # Agent 一轮可能包含多次 LLM 调用，读超时要覆盖全程（默认 90s）。
     AI_READ_TIMEOUT: ${AI_READ_TIMEOUT:-90000}
+    # AI 会话 / 调用日志的保留期（天）。
+    AI_RETENTION_DAYS: ${AI_RETENTION_DAYS:-90}
+    AI_REQUEST_LOG_RETENTION_DAYS: ${AI_REQUEST_LOG_RETENTION_DAYS:-180}
     # 图片对象存储：多副本必须启用（本地磁盘模式每个副本只能看到自己上传的文件）。
     # 默认关，单机试跑走容器内 MEDIA_DIR；真实凭证放本机 .env，不入 git。
     S3_ENABLED: ${S3_ENABLED:-false}

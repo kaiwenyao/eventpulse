@@ -125,6 +125,7 @@ curl -s http://localhost:3000/actuator/health
 | `LLM_BASE_URL` | 空 | OpenAI 兼容网关基址，须含 API 前缀（如 `https://host/v1`） |
 | `LLM_MAX_OUTPUT_TOKENS` | `4096` | reasoning 类模型的思考 token 也计入，预算太小会空回复 |
 | `AI_SERVICE_TOKEN` / `AI_INTERNAL_TOKEN` | dev 值 | Spring Boot ↔ ai-service 服务间凭证，真实部署必须更换 |
+| `AI_RETENTION_DAYS` / `AI_REQUEST_LOG_RETENTION_DAYS` | `90` / `180` | AI 会话与调用日志的保留天数，由 worker 分批删除 |
 | `S3_ENABLED` | `false` | true 时图片走 S3；多副本部署（`API>1` 或 k3s）必须开 |
 | `S3_ENDPOINT` / `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | 空 | SeaweedFS S3 地址与凭证 |
 
@@ -242,6 +243,7 @@ AI 是运行时调用的外部 LLM 能力（不训练模型、不做向量化）
 | --- | --- | --- |
 | 主办方文案完善 | `POST /api/ai/organiser/improve-event`（JWT ORGANISER） | 普通 LLM 调用 + 结构化输出；建议先在前端确认，再走普通保存/发布接口；不自动保存 |
 | 自然语言找活动 | `POST /api/ai/discovery/chat`（可选 JWT） | LangChain Agent 通过只读工具查真实活动；登录用户的会话存 PostgreSQL，游客单轮；Spring Boot 返回前再次复核活动可见性 |
+| 会话管理 | `GET/DELETE /api/ai/conversations[/{id}]`（JWT） | 列出、恢复、删除自己的发现助手会话；恢复只回放文字，因为服务端只存 `role`/`content` |
 
 边界与降级：
 
@@ -252,9 +254,12 @@ AI 是运行时调用的外部 LLM 能力（不训练模型、不做向量化）
 - 限流（用户/IP 每分钟）、工具调用次数、输入输出长度、超时与重试都有上限；
   LLM 输出按不可信数据处理，编造或已下架的活动 ID 会被丢弃。
 - 全链路记录 `ai_requests`（状态、耗时、token 用量），不含密钥与完整提示词。
+- **保留期**：worker 按 `AI_RETENTION_DAYS`（90）清理会话、按
+  `AI_REQUEST_LOG_RETENTION_DAYS`（180）清理调用日志，分批删除；用户也可以
+  自己删除某段对话。
 
 配置在 `.env.example` 的 `AI` 段（provider / model / key / base_url / 超时 /
-服务间凭证）。模型是 OpenAI 兼容的任意网关均可（配 `LLM_BASE_URL`）；
+服务间凭证 / 保留期）。模型是 OpenAI 兼容的任意网关均可（配 `LLM_BASE_URL`）；
 **reasoning 类模型（如 deepseek-v4）注意**：思考 token 计入
 `LLM_MAX_OUTPUT_TOKENS` 输出预算，预算太小（如 1024）会导致空回复，
 默认已设 4096。本地调试：`make up` 后打开 http://localhost:3000，
@@ -550,6 +555,7 @@ Authorization 头、指数退避自动重连），收到提醒后重新拉取 RE
 | `BookingConcurrencyIT` | 并发下单不超卖 |
 | `WalletLedgerMigrationIT` | V2 迁移两阶段验证：老账户期初记录不改余额、余额可由期初加流水核对、迁移前的老订单仍能正常退款记账 |
 | `AiGatewayServiceTest` / `AiServiceClientTest` / `InternalServiceInterceptorTest` | AI 网关限流、活动复核、编造 ID 过滤、服务间认证 |
+| `AiRetentionWorkerTest` | AI 会话保留期清理的批量、顺序（先消息后会话）与开关 |
 | `MediaServiceTest` / `S3MediaStorageTest` / `MediaPurgeWorkerTest` | 图片上传校验、key 生成、DB 失败补偿删除、读取 404/503 映射、软删除不碰对象、S3 异常翻译、清理任务语义 |
 | `MediaS3ProfileWiringIT` / `MediaS3WorkerProfileWiringIT` / `MediaS3SeederProfileWiringIT` | S3 启用后 api / worker / seeder 装配与启动兼容性（S3Client 构造不联网），默认回落本地磁盘 |
 | `S3LiveMediaStorageIT` | 真实 S3 读写删连通性（`MEDIA_S3_LIVE_TEST=true` 才运行，只用 `__eventpulse-selftest/` 临时前缀并自清理） |

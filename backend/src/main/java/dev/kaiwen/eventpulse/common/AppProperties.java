@@ -50,6 +50,18 @@ public class AppProperties {
         private int contextTokenTtlSeconds = 300;
         /** Agent 解析「这个周末」这类相对日期时使用的明确时区。 */
         private String timeZone = "Europe/Berlin";
+        /**
+         * 会话保留期（天）。ai_conversations / ai_messages 原本永不清理：既是无限
+         * 增长，也是 GDPR 意义上说不清的留存。worker 按这个窗口批量清理。
+         */
+        private int retentionDays = 90;
+        /** 调用日志保留期（天）。0 = 不清理。 */
+        private int requestLogRetentionDays = 180;
+        /** 每轮清理的批量上限，避免一次删爆事务。 */
+        private int retentionBatchSize = 200;
+        /** 会话列表 / 单会话消息的返回条数上限。 */
+        private int conversationListLimit = 20;
+        private int conversationMessageLimit = 50;
 
         public boolean isEnabled() {
             return enabled;
@@ -153,6 +165,46 @@ public class AppProperties {
 
         public void setTimeZone(String timeZone) {
             this.timeZone = timeZone;
+        }
+
+        public int getRetentionDays() {
+            return retentionDays;
+        }
+
+        public void setRetentionDays(int retentionDays) {
+            this.retentionDays = retentionDays;
+        }
+
+        public int getRequestLogRetentionDays() {
+            return requestLogRetentionDays;
+        }
+
+        public void setRequestLogRetentionDays(int requestLogRetentionDays) {
+            this.requestLogRetentionDays = requestLogRetentionDays;
+        }
+
+        public int getRetentionBatchSize() {
+            return retentionBatchSize;
+        }
+
+        public void setRetentionBatchSize(int retentionBatchSize) {
+            this.retentionBatchSize = retentionBatchSize;
+        }
+
+        public int getConversationListLimit() {
+            return conversationListLimit;
+        }
+
+        public void setConversationListLimit(int conversationListLimit) {
+            this.conversationListLimit = conversationListLimit;
+        }
+
+        public int getConversationMessageLimit() {
+            return conversationMessageLimit;
+        }
+
+        public void setConversationMessageLimit(int conversationMessageLimit) {
+            this.conversationMessageLimit = conversationMessageLimit;
         }
     }
 

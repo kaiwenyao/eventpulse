@@ -18,6 +18,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -40,11 +41,13 @@ import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventResult;
 import dev.kaiwen.eventpulse.entity.AiConversation;
 import dev.kaiwen.eventpulse.entity.AiMessage;
 import dev.kaiwen.eventpulse.entity.Event;
+import dev.kaiwen.eventpulse.entity.UserPreference;
 import dev.kaiwen.eventpulse.exception.BusinessException;
 import dev.kaiwen.eventpulse.repository.AiConversationRepository;
 import dev.kaiwen.eventpulse.repository.AiMessageRepository;
 import dev.kaiwen.eventpulse.repository.AiRequestLogRepository;
 import dev.kaiwen.eventpulse.repository.EventRepository;
+import dev.kaiwen.eventpulse.repository.UserPreferenceRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,6 +59,7 @@ class AiGatewayServiceTest {
     @Mock AiConversationRepository conversations;
     @Mock AiMessageRepository messages;
     @Mock AiRequestLogRepository requestLogs;
+    @Mock UserPreferenceRepository preferences;
 
     private AppProperties properties;
     private AiGatewayService gateway;
@@ -66,7 +70,7 @@ class AiGatewayServiceTest {
         properties = new AppProperties();
         registry = new SimpleMeterRegistry();
         gateway = new AiGatewayService(properties, client, rateLimiter, new JwtService(properties), events,
-                new EventService(events), conversations, messages, requestLogs, registry);
+                new EventService(events), conversations, messages, requestLogs, preferences, registry);
         BaseContext.clear();
     }
 
@@ -171,6 +175,226 @@ class AiGatewayServiceTest {
                 .hasMessageContaining("not enabled");
     }
 
+    // ---- 活动复核：批量查询与上限 ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void referencedEventsAreVerifiedInOneQueryWithADedupedCappedIdList() {
+        properties.getAi().setMaxEvents(3);
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        // 上游可能返回重复 id，也可能返回远超上限的一大串。
+        List<DiscoveryEventRef> refs = new java.util.ArrayList<>();
+        refs.add(new DiscoveryEventRef(1L, "a"));
+        refs.add(new DiscoveryEventRef(1L, "重复"));
+        for (long id = 2; id <= 50; id++) {
+            refs.add(new DiscoveryEventRef(id, "x"));
+        }
+        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
+                "r1", "ok", refs, List.of(), "openai", "gpt-test", null));
+        when(events.findAllById(any())).thenAnswer(inv -> {
+            Iterable<Long> ids = inv.getArgument(0);
+            List<Event> found = new java.util.ArrayList<>();
+            ids.forEach(id -> found.add(event(id, EventStatus.PUBLISHED)));
+            return found;
+        });
+
+        var response = gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), null, "1.2.3.4");
+
+        // 一次批量查，不是每个 id 一次（原来是 N+1）。
+        ArgumentCaptor<Iterable<Long>> ids = ArgumentCaptor.forClass(Iterable.class);
+        verify(events, org.mockito.Mockito.times(1)).findAllById(ids.capture());
+        List<Long> queried = new java.util.ArrayList<>();
+        ids.getValue().forEach(queried::add);
+        // 去重 + 截断到上限：批量查没了循环里的 break，不显式截断就会变成巨大的 IN。
+        assertThat(queried).containsExactly(1L, 2L, 3L);
+        assertThat(response.events()).hasSize(3);
+    }
+
+    @Test
+    void finishedEventsStayOutEvenThoughTheyArePubliclyListed() {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
+                "r1", "ok", List.of(new DiscoveryEventRef(3L, "已结束")), List.of(),
+                "openai", "gpt-test", null));
+        when(events.findAllById(any())).thenReturn(List.of(event(3L, EventStatus.FINISHED)));
+
+        var response = gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), null, "1.2.3.4");
+
+        // FINISHED 在 PUBLIC_LIST 里（结束的活动仍可浏览），但不该再被推荐。
+        assertThat(EventStatus.PUBLIC_LIST).contains(EventStatus.FINISHED);
+        assertThat(response.events()).isEmpty();
+    }
+
+    // ---- 偏好：出站边界的截断 ----
+
+    @Test
+    void oversizedStoredPreferencesAreTruncatedBeforeLeavingTheGateway() {
+        // user_preferences 的列是 VARCHAR(300) 且写入侧不截断，而 Python 的
+        // DiscoveryPreferences 是 max_length=200：库里合法存在的 201-300 字符城市
+        // 列表会让整个请求被 Pydantic 判 422，Spring 转成「AI 暂不可用」，该用户
+        // 从此每次提问都失败且无法自愈。
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        UserPreference stored = new UserPreference();
+        stored.setUserId(2L);
+        stored.setCities("城".repeat(300));
+        stored.setCategories("类".repeat(300));
+        when(preferences.findById(2L)).thenReturn(Optional.of(stored));
+
+        AiConversation conversation = new AiConversation();
+        ReflectionTestUtils.setField(conversation, "id", 7L);
+        conversation.setUserId(2L);
+        when(conversations.save(any())).thenReturn(conversation);
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
+                "r1", "ok", List.of(), List.of(), "openai", "gpt-test", null));
+
+        gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), bearer(2L, "USER"), "1.2.3.4");
+
+        ArgumentCaptor<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload> payload =
+                ArgumentCaptor.forClass(dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload.class);
+        verify(client).discoveryChat(payload.capture());
+        assertThat(payload.getValue().preferences().cities()).hasSize(200);
+        assertThat(payload.getValue().preferences().categories()).hasSize(200);
+    }
+
+    @Test
+    void usersWithoutASavedPreferenceRowSendNullRatherThanAnEmptyObject() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        when(preferences.findById(2L)).thenReturn(Optional.empty());
+
+        AiConversation conversation = new AiConversation();
+        ReflectionTestUtils.setField(conversation, "id", 7L);
+        conversation.setUserId(2L);
+        when(conversations.save(any())).thenReturn(conversation);
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
+                "r1", "ok", List.of(), List.of(), "openai", "gpt-test", null));
+
+        gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), bearer(2L, "USER"), "1.2.3.4");
+
+        ArgumentCaptor<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload> payload =
+                ArgumentCaptor.forClass(dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload.class);
+        verify(client).discoveryChat(payload.capture());
+        // 让 Python 侧「有没有偏好」的判断保持简单。
+        assertThat(payload.getValue().preferences()).isNull();
+    }
+
+    // ---- 会话生命周期 ----
+
+    private static AiConversation conversationOf(long id, long userId) {
+        AiConversation conversation = new AiConversation();
+        ReflectionTestUtils.setField(conversation, "id", id);
+        conversation.setUserId(userId);
+        conversation.setKind("discovery");
+        return conversation;
+    }
+
+    private static AiMessage messageOf(long id, String role, String content) {
+        AiMessage message = new AiMessage();
+        ReflectionTestUtils.setField(message, "id", id);
+        message.setRole(role);
+        message.setContent(content);
+        return message;
+    }
+
+    @Test
+    void conversationListPreviewsTheLatestMessage() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findByUserIdAndKindOrderByUpdatedAtDesc(eq(2L), eq("discovery"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(conversationOf(7L, 2L))));
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(messageOf(2L, AiMessage.ROLE_ASSISTANT, "找到 3 场爵士演出"))));
+
+        var list = gateway.listConversations();
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).id()).isEqualTo("7");
+        assertThat(list.get(0).preview()).isEqualTo("找到 3 场爵士演出");
+    }
+
+    @Test
+    void conversationWithoutMessagesPreviewsAsEmptyRatherThanNull() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findByUserIdAndKindOrderByUpdatedAtDesc(eq(2L), eq("discovery"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(conversationOf(7L, 2L))));
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        assertThat(gateway.listConversations().get(0).preview()).isEmpty();
+    }
+
+    @Test
+    void conversationDetailReturnsTextOnlyHistoryInChronologicalOrder() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findById(7L)).thenReturn(Optional.of(conversationOf(7L, 2L)));
+        when(messages.findByConversationIdOrderByIdAsc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(
+                        messageOf(1L, AiMessage.ROLE_USER, "第一问"),
+                        messageOf(2L, AiMessage.ROLE_ASSISTANT, "第一答"))));
+
+        var detail = gateway.getConversation("7");
+
+        assertThat(detail.id()).isEqualTo("7");
+        assertThat(detail.messages()).extracting("content").containsExactly("第一问", "第一答");
+    }
+
+    @Test
+    void conversationsOfOtherUsersAreForbiddenNotMerelyEmpty() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findById(7L)).thenReturn(Optional.of(conversationOf(7L, 999L)));
+
+        assertThatThrownBy(() -> gateway.getConversation("7"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("your own conversations");
+        assertThatThrownBy(() -> gateway.deleteConversation("7"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("your own conversations");
+    }
+
+    @Test
+    void missingOrMalformedConversationIdIsRejected() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findById(7L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> gateway.getConversation("7"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("not found");
+        assertThatThrownBy(() -> gateway.getConversation("abc"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Invalid conversation id");
+    }
+
+    @Test
+    void deletingAConversationRemovesItsMessagesFirst() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findById(7L)).thenReturn(Optional.of(conversationOf(7L, 2L)));
+
+        gateway.deleteConversation("7");
+
+        var order = org.mockito.Mockito.inOrder(messages, conversations);
+        order.verify(messages).deleteByConversationIdIn(List.of(7L));
+        order.verify(conversations).deleteByIdIn(List.of(7L));
+    }
+
+    @Test
+    void conversationEndpointsRequireASignedInUser() {
+        assertThatThrownBy(() -> gateway.listConversations())
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("sign in");
+    }
+
     // ---- 活动发现 ----
 
     @Test
@@ -179,7 +403,7 @@ class AiGatewayServiceTest {
         when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
                 "r1", "找到 1 场", List.of(new DiscoveryEventRef(1L, "周六音乐")),
                 List.of(), "openai", "gpt-test", new AiUsage(50, 20)));
-        when(events.findById(1L)).thenReturn(Optional.of(event(1L, EventStatus.PUBLISHED)));
+        when(events.findAllById(any())).thenReturn(List.of(event(1L, EventStatus.PUBLISHED)));
 
         DiscoveryChatResponse response = gateway.discoveryChat(
                 new DiscoveryChatRequest(null, "这个周末有什么音乐活动？"), null, "1.2.3.4");
@@ -308,10 +532,11 @@ class AiGatewayServiceTest {
                         new DiscoveryEventRef(3L, "finished"),
                         null),
                 List.of(), "openai", "m", null));
-        when(events.findById(1L)).thenReturn(Optional.of(event(1L, EventStatus.PUBLISHED)));
-        when(events.findById(2L)).thenReturn(Optional.of(event(2L, EventStatus.CANCELLED)));
-        when(events.findById(3L)).thenReturn(Optional.of(event(3L, EventStatus.FINISHED)));
-        when(events.findById(99L)).thenReturn(Optional.empty());
+        // 99 号不在返回结果里：编造的 id 查不到，等同于被丢弃。
+        when(events.findAllById(any())).thenReturn(List.of(
+                event(1L, EventStatus.PUBLISHED),
+                event(2L, EventStatus.CANCELLED),
+                event(3L, EventStatus.FINISHED)));
 
         var response = gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), null, "ip");
 
@@ -329,7 +554,12 @@ class AiGatewayServiceTest {
                         new DiscoveryEventRef(2L, "b"),
                         new DiscoveryEventRef(3L, "c")),
                 List.of(), "openai", "m", null));
-        when(events.findById(any())).thenAnswer(inv -> Optional.of(event(inv.getArgument(0), EventStatus.PUBLISHED)));
+        when(events.findAllById(any())).thenAnswer(inv -> {
+            Iterable<Long> ids = inv.getArgument(0);
+            List<Event> found = new java.util.ArrayList<>();
+            ids.forEach(id -> found.add(event(id, EventStatus.PUBLISHED)));
+            return found;
+        });
 
         var response = gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), null, "ip");
         assertThat(response.events()).hasSize(2);
