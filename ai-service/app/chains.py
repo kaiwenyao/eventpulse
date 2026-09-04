@@ -38,7 +38,8 @@ class CopySuggestionOut(BaseModel):
 
     def to_suggestion(self) -> Suggestion:
         return Suggestion(
-            title=self.title.strip()[:200] or "（请让 AI 重新生成标题）",
+            # 占位标题会直接展示给主办方：中英双语，避免英文草稿收到纯中文兜底文案。
+            title=self.title.strip()[:200] or "（请重新生成标题 / Please regenerate the title）",
             summary=self.summary.strip()[:300],
             description=self.description.strip()[:5000],
             attendance_notes=self.attendance_notes.strip()[:1000],
