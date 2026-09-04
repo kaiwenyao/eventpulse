@@ -7,6 +7,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import dev.kaiwen.eventpulse.validation.ValidEventCategory;
+
 public final class EventDtos {
 
     private EventDtos() {
@@ -15,7 +17,7 @@ public final class EventDtos {
     public record EventRequest(
             @NotBlank @Size(max = 200) String title,
             String description,
-            @NotBlank @Size(max = 50) String category,
+            @NotBlank @ValidEventCategory String category,
             @NotBlank @Size(max = 50) String city,
             @NotNull Instant startsAt,
             @Min(0) int priceCents,
@@ -62,7 +64,7 @@ public final class EventDtos {
             @NotBlank @Size(max = 200) String title,
             @Size(max = 300) String summary,
             String description,
-            @NotBlank @Size(max = 50) String category,
+            @NotBlank @ValidEventCategory String category,
             String coverUrl,
             Long coverAssetId,
             @NotNull Instant startsAt,

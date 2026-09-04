@@ -207,19 +207,17 @@ export function OrganiserFormPage() {
                   </Field>
 
                   <Field id="f-cat" label={t('organiser.form.category')} required error={errors.category} hint={t('organiser.form.categoryHint')}>
-                    <input
+                    <select
                       {...fieldAria('f-cat', errors.category, 'hint')}
-                      list="category-options"
                       value={form.category}
                       onChange={(e) => update('category', e.target.value)}
-                    />
-                    <datalist id="category-options">
+                    >
                       {CATEGORIES.map((c) => (
                         <option key={c.key} value={c.key}>
                           {t(`category.${c.key}`)}
                         </option>
                       ))}
-                    </datalist>
+                    </select>
                   </Field>
                 </div>
               </fieldset>

@@ -5,6 +5,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 
+import dev.kaiwen.eventpulse.domain.EventCategory;
 import dev.kaiwen.eventpulse.domain.EventStatus;
 
 import org.springframework.stereotype.Service;
@@ -128,7 +129,7 @@ public class EventService {
     private static void apply(Event event, EventRequest request) {
         event.setTitle(request.title());
         event.setDescription(request.description());
-        event.setCategory(request.category());
+        event.setCategory(EventCategory.normalise(request.category()));
         event.setCity(request.city());
         event.setStartsAt(request.startsAt());
         event.setEndsAt(request.startsAt().plus(3, ChronoUnit.HOURS));

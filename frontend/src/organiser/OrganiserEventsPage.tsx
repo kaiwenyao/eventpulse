@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 import { api, formatMoney } from '../api'
 import { formatDayTime } from '../lib/datetime'
-import { EVENT_STATUSES, EventVo, PageVo } from '../types'
+import { CATEGORIES, EVENT_STATUSES, EventVo, PageVo } from '../types'
 import { CategoryPill, EmptyState, ErrorNote, EventStatusBadge, SoldBar } from '../ui/Badges'
 import { PlusIcon } from '../ui/Icons'
 import { SkeletonCard } from '../ui/Skeleton'
@@ -16,16 +16,20 @@ export function OrganiserEventsPage() {
   const [error, setError] = useState('')
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('')
+  const [category, setCategory] = useState('')
 
   useEffect(() => {
-    api<PageVo<EventVo>>('GET', `/api/organiser/events?q=${encodeURIComponent(q)}&status=${status}`)
+    api<PageVo<EventVo>>(
+      'GET',
+      `/api/organiser/events?q=${encodeURIComponent(q)}&status=${status}&category=${category}`,
+    )
       .then((page) => {
         setMine(page?.records ?? [])
         setError('')
       })
       .catch((e) => setError(resolveApiError(e, 'organiser.loadFailed').message))
       .finally(() => setLoading(false))
-  }, [q, status, t])
+  }, [q, status, category, t])
 
   const summary = useMemo(() => {
     const sold = mine.reduce((sum, e) => sum + e.sold, 0)
@@ -60,6 +64,18 @@ export function OrganiserEventsPage() {
           {EVENT_STATUSES.map((s) => (
             <option key={s.key} value={s.key}>
               {t(`status.event.${s.key}`)}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label={t('events.filterCategory')}
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+        >
+          <option value="">{t('events.allCategories')}</option>
+          {CATEGORIES.map((c) => (
+            <option key={c.key} value={c.key}>
+              {t(`category.${c.key}`)}
             </option>
           ))}
         </select>

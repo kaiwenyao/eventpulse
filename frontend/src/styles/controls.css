@@ -165,8 +165,9 @@ button:disabled {
   background: var(--paper);
 }
 
-/* The discovery mode toggles (附近 / 推荐) sit apart from the category bar and
-   read as independent outlined switches. */
+/* The discovery mode toggles (附近 / 推荐) sit apart from the other filters and
+   read as independent outlined switches. They are the only chips left on the
+   discovery page — category moved to a <select> once the list became fixed. */
 .chips-loose {
   border: 0;
   gap: var(--space-2);

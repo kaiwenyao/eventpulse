@@ -59,7 +59,15 @@ class ToolLedger:
 class SearchArgs(BaseModel):
     q: str | None = Field(default=None, description="关键词，匹配标题或摘要")
     city: str | None = Field(default=None, description="城市名，例如 Berlin 或 柏林")
-    category: str | None = Field(default=None, description="活动类别，例如 music / tech / sports / food / art")
+    category: str | None = Field(
+        default=None,
+        # 必须是后端 EventCategory 白名单里的值：筛选走精确匹配，编出来的
+        # 分类只会返回空列表。清单与 domain/EventCategory.java 保持一致。
+        description=(
+            "活动类别，只能取以下之一："
+            "music / tech / sports / art / food / business / community / other"
+        ),
+    )
     date_from: str | None = Field(default=None, description="开始时间下限，ISO 8601，例如 2026-09-05T00:00:00Z")
     date_to: str | None = Field(default=None, description="开始时间上限，ISO 8601")
     max_price_cents: int | None = Field(default=None, description="单票最高价（分），免费活动传 0")

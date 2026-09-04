@@ -184,12 +184,34 @@ export interface PageVo<T> {
   total?: number
 }
 
+/**
+ * 固定活动分类。镜像后端 `domain/EventCategory.java`，同时也是迁移
+ * `V4__event_category_whitelist.sql` 里 CHECK 约束的那一份清单——三处要一起改。
+ *
+ * 分类曾经是自由文本，主办方能随手填「工作坊」或「音乐」，活动照样保存，
+ * 但发现页按精确值筛选，这类活动永远搜不出来。现在只能从这份清单里选。
+ * 顺序即下拉框的展示顺序；`other` 是「以上都不是」的合法兜底。
+ */
 export const CATEGORIES = [
   { key: 'music' },
   { key: 'tech' },
   { key: 'sports' },
   { key: 'art' },
+  { key: 'food' },
+  { key: 'business' },
+  { key: 'community' },
+  { key: 'other' },
 ] as const
+
+const CATEGORY_KEYS = new Set<string>(CATEGORIES.map((c) => c.key))
+
+/**
+ * 分类是否属于固定清单。用于表单校验，以及给分类固定之前留下的存量脏值
+ * 提供渲染兜底。
+ */
+export function isKnownCategory(value?: string): boolean {
+  return value !== undefined && CATEGORY_KEYS.has(value)
+}
 
 /** Event lifecycle: DRAFT → PUBLISHED → ONGOING → FINISHED → ARCHIVED (CANCELLED is terminal). */
 export const EVENT_STATUSES = [

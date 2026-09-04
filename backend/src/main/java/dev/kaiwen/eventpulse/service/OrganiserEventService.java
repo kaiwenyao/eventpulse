@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.common.PageResult;
+import dev.kaiwen.eventpulse.domain.EventCategory;
 import dev.kaiwen.eventpulse.domain.EventStatus;
 import dev.kaiwen.eventpulse.dto.EventDtos.ArchiveEventRequest;
 import dev.kaiwen.eventpulse.dto.EventDtos.CancelEventRequest;
@@ -310,7 +311,7 @@ public class OrganiserEventService {
         event.setTitle(request.title());
         event.setSummary(request.summary());
         event.setDescription(request.description());
-        event.setCategory(request.category());
+        event.setCategory(EventCategory.normalise(request.category()));
         event.setCoverUrl(request.coverUrl());
         event.setCoverAssetId(request.coverAssetId());
         event.setStartsAt(request.startsAt());

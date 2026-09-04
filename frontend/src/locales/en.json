@@ -55,7 +55,11 @@
     "music": "Music",
     "tech": "Tech",
     "sports": "Sports",
-    "art": "Art"
+    "art": "Art",
+    "food": "Food",
+    "business": "Business",
+    "community": "Community",
+    "other": "Other"
   },
   "status": {
     "event": {
@@ -98,6 +102,7 @@
     "search": "Search events…",
     "searchAria": "Search events",
     "filterCategory": "Filter by category",
+    "allCategories": "All categories",
     "city": "City",
     "sort": "Sort",
     "sortStarts": "Start time",
@@ -389,8 +394,7 @@
       "needTitle": "Enter an event title",
       "titleTooLong": "Title cannot exceed {{max}} characters",
       "summaryTooLong": "Summary cannot exceed {{max}} characters",
-      "needCategory": "Choose or enter a category",
-      "categoryTooLong": "Category cannot exceed {{max}} characters",
+      "needCategory": "Choose a category",
       "needCity": "Enter a city",
       "cityTooLong": "City cannot exceed {{max}} characters",
       "venueTooLong": "Venue name cannot exceed {{max}} characters",
@@ -428,7 +432,7 @@
       "description": "About",
       "descriptionHint": "Highlights, run of show, guests.",
       "category": "Category",
-      "categoryHint": "Pick a built-in category or type your own.",
+      "categoryHint": "Choose the category that best fits. Attendees filter by it.",
       "schedule": "Schedule",
       "startsAt": "Starts",
       "startsHint": "Venue local time.",
