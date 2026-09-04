@@ -166,7 +166,8 @@ public class AiGatewayService {
             return toImproveResponse(requestId, result);
         }
         catch (AiUnavailableException e) {
-            recordFailure(requestId, userId, FEATURE_IMPROVE, start, "upstream_unavailable");
+            recordFailure(requestId, userId, FEATURE_IMPROVE, start,
+                    client.isCircuitOpen() ? "upstream_circuit_open" : "upstream_unavailable");
             throw e;
         }
     }
@@ -279,7 +280,8 @@ public class AiGatewayService {
             return toDiscoveryResponse(requestId, conversation, result);
         }
         catch (AiUnavailableException e) {
-            recordFailure(requestId, userId, FEATURE_DISCOVERY, start, "upstream_unavailable");
+            recordFailure(requestId, userId, FEATURE_DISCOVERY, start,
+                    client.isCircuitOpen() ? "upstream_circuit_open" : "upstream_unavailable");
             throw e;
         }
     }
@@ -482,18 +484,38 @@ public class AiGatewayService {
         if (refs == null || refs.isEmpty()) {
             return List.of();
         }
-        Map<Long, DiscoveryEventMention> kept = new LinkedHashMap<>();
+        int maxEvents = properties.getAi().getMaxEvents();
+        // 先按 AI 给的顺序去重并截断，再一次查库。原来是逐个 findById（N+1），
+        // 那时是循环里的 break 顺带限制了查询次数；换成批量查之后必须显式截断，
+        // 否则上游返回 5000 个 id 就会变成一条巨大的 IN。
+        List<Long> ids = new ArrayList<>();
         for (DiscoveryEventRef ref : refs) {
-            if (kept.size() >= properties.getAi().getMaxEvents()) {
-                break;
-            }
-            if (ref == null || ref.eventId() == null) {
+            if (ref == null || ref.eventId() == null || ids.contains(ref.eventId())) {
                 continue;
             }
-            Event event = events.findById(ref.eventId()).orElse(null);
+            ids.add(ref.eventId());
+            if (ids.size() >= maxEvents) {
+                break;
+            }
+        }
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Event> found = new LinkedHashMap<>();
+        for (Event event : events.findAllById(ids)) {
+            found.put(event.getId(), event);
+        }
+
+        Map<Long, DiscoveryEventMention> kept = new LinkedHashMap<>();
+        for (DiscoveryEventRef ref : refs) {
+            if (kept.size() >= maxEvents || ref == null || ref.eventId() == null) {
+                continue;
+            }
+            Event event = found.get(ref.eventId());
             if (event == null || !EventStatus.PUBLIC_LIST.contains(event.getStatus())) {
                 continue;
             }
+            // FINISHED 也在 PUBLIC_LIST 里（已结束的活动仍可浏览），但不该再被推荐。
             if (EventStatus.FINISHED.equals(event.getStatus())) {
                 continue;
             }
@@ -555,6 +577,9 @@ public class AiGatewayService {
         budget.record(userId, properties.getAi().getFailureTokenPenalty(), 0);
         countMetric("ai.requests", feature, "failure");
         countMetric("ai.failures", feature, "failure");
+        if ("upstream_circuit_open".equals(errorCode)) {
+            meterRegistry.counter("ai.breaker", "feature", feature, "state", "open").increment();
+        }
     }
 
     private void saveLog(String requestId, Long userId, String feature, String provider, String model,

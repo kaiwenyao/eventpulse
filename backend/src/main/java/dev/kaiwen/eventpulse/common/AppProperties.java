@@ -40,6 +40,14 @@ public class AppProperties {
         private String internalToken = DEV_DEFAULT_INTERNAL_TOKEN;
         private int connectTimeoutMs = 2000;
         private int readTimeoutMs = 90000;
+        /**
+         * 文案助手的读超时。它只有一次受 llm_timeout_seconds=30 + max_retries=0
+         * 约束的 LLM 调用，用发现助手那条 90s 纯属让 Tomcat 线程白占。
+         */
+        private int readTimeoutImproveMs = 35000;
+        /** 连续多少次传输层故障后熔断（0 = 关闭），以及熔断打开的时长。 */
+        private int breakerFailureThreshold = 5;
+        private int breakerOpenSeconds = 30;
         /** 用户 / IP 级限流（次/分钟），避免成本失控。 */
         private int rateLimitUserPerMinute = 10;
         private int rateLimitIpPerMinute = 30;
@@ -126,6 +134,30 @@ public class AppProperties {
 
         public void setReadTimeoutMs(int readTimeoutMs) {
             this.readTimeoutMs = readTimeoutMs;
+        }
+
+        public int getReadTimeoutImproveMs() {
+            return readTimeoutImproveMs;
+        }
+
+        public void setReadTimeoutImproveMs(int readTimeoutImproveMs) {
+            this.readTimeoutImproveMs = readTimeoutImproveMs;
+        }
+
+        public int getBreakerFailureThreshold() {
+            return breakerFailureThreshold;
+        }
+
+        public void setBreakerFailureThreshold(int breakerFailureThreshold) {
+            this.breakerFailureThreshold = breakerFailureThreshold;
+        }
+
+        public int getBreakerOpenSeconds() {
+            return breakerOpenSeconds;
+        }
+
+        public void setBreakerOpenSeconds(int breakerOpenSeconds) {
+            this.breakerOpenSeconds = breakerOpenSeconds;
         }
 
         public int getRateLimitUserPerMinute() {

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -180,6 +181,56 @@ class AiGatewayServiceTest {
                 null, null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(AiUnavailableException.class)
                 .hasMessageContaining("not enabled");
+    }
+
+    // ---- 活动复核：批量查询与上限 ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void referencedEventsAreVerifiedInOneQueryWithADedupedCappedIdList() {
+        properties.getAi().setMaxEvents(3);
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        // 上游可能返回重复 id，也可能返回远超上限的一大串。
+        List<DiscoveryEventRef> refs = new java.util.ArrayList<>();
+        refs.add(new DiscoveryEventRef(1L, "a"));
+        refs.add(new DiscoveryEventRef(1L, "重复"));
+        for (long id = 2; id <= 50; id++) {
+            refs.add(new DiscoveryEventRef(id, "x"));
+        }
+        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
+                "r1", "ok", refs, List.of(), "openai", "gpt-test", null));
+        when(events.findAllById(any())).thenAnswer(inv -> {
+            Iterable<Long> ids = inv.getArgument(0);
+            List<Event> found = new java.util.ArrayList<>();
+            ids.forEach(id -> found.add(event(id, EventStatus.PUBLISHED)));
+            return found;
+        });
+
+        var response = gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), null, "1.2.3.4");
+
+        // 一次批量查，不是每个 id 一次（原来是 N+1）。
+        ArgumentCaptor<Iterable<Long>> ids = ArgumentCaptor.forClass(Iterable.class);
+        verify(events, org.mockito.Mockito.times(1)).findAllById(ids.capture());
+        List<Long> queried = new java.util.ArrayList<>();
+        ids.getValue().forEach(queried::add);
+        // 去重 + 截断到上限：批量查没了循环里的 break，不显式截断就会变成巨大的 IN。
+        assertThat(queried).containsExactly(1L, 2L, 3L);
+        assertThat(response.events()).hasSize(3);
+    }
+
+    @Test
+    void finishedEventsStayOutEvenThoughTheyArePubliclyListed() {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
+                "r1", "ok", List.of(new DiscoveryEventRef(3L, "已结束")), List.of(),
+                "openai", "gpt-test", null));
+        when(events.findAllById(any())).thenReturn(List.of(event(3L, EventStatus.FINISHED)));
+
+        var response = gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), null, "1.2.3.4");
+
+        // FINISHED 在 PUBLIC_LIST 里（结束的活动仍可浏览），但不该再被推荐。
+        assertThat(EventStatus.PUBLIC_LIST).contains(EventStatus.FINISHED);
+        assertThat(response.events()).isEmpty();
     }
 
     // ---- 会话生命周期 ----
@@ -424,7 +475,7 @@ class AiGatewayServiceTest {
         when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
                 "r1", "找到 1 场", List.of(new DiscoveryEventRef(1L, "周六音乐")),
                 List.of(), "openai", "gpt-test", new AiUsage(50, 20)));
-        when(events.findById(1L)).thenReturn(Optional.of(event(1L, EventStatus.PUBLISHED)));
+        when(events.findAllById(any())).thenReturn(List.of(event(1L, EventStatus.PUBLISHED)));
 
         gateway.discoveryChat(new DiscoveryChatRequest(null, "有什么热门活动？"), null, "1.2.3.4");
         DiscoveryChatResponse cached = gateway.discoveryChat(
@@ -455,11 +506,11 @@ class AiGatewayServiceTest {
         when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
                 "r1", "找到 1 场", List.of(new DiscoveryEventRef(1L, "周六音乐")),
                 List.of(), "openai", "gpt-test", null));
-        when(events.findById(1L)).thenReturn(Optional.of(event(1L, EventStatus.PUBLISHED)));
+        when(events.findAllById(any())).thenReturn(List.of(event(1L, EventStatus.PUBLISHED)));
         gateway.discoveryChat(new DiscoveryChatRequest(null, "有什么活动"), null, "1.2.3.4");
 
         // 活动在 TTL 内被取消：缓存里的 id 仍在，但复核会把卡片丢掉。
-        when(events.findById(1L)).thenReturn(Optional.of(event(1L, EventStatus.CANCELLED)));
+        when(events.findAllById(any())).thenReturn(List.of(event(1L, EventStatus.CANCELLED)));
         DiscoveryChatResponse response = gateway.discoveryChat(
                 new DiscoveryChatRequest(null, "有什么活动"), null, "1.2.3.4");
 
@@ -474,7 +525,7 @@ class AiGatewayServiceTest {
         when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
                 "r1", "找到 1 场", List.of(new DiscoveryEventRef(1L, "周六音乐")),
                 List.of(), "openai", "gpt-test", new AiUsage(50, 20)));
-        when(events.findById(1L)).thenReturn(Optional.of(event(1L, EventStatus.PUBLISHED)));
+        when(events.findAllById(any())).thenReturn(List.of(event(1L, EventStatus.PUBLISHED)));
 
         DiscoveryChatResponse response = gateway.discoveryChat(
                 new DiscoveryChatRequest(null, "这个周末有什么音乐活动？"), null, "1.2.3.4");
@@ -603,10 +654,11 @@ class AiGatewayServiceTest {
                         new DiscoveryEventRef(3L, "finished"),
                         null),
                 List.of(), "openai", "m", null));
-        when(events.findById(1L)).thenReturn(Optional.of(event(1L, EventStatus.PUBLISHED)));
-        when(events.findById(2L)).thenReturn(Optional.of(event(2L, EventStatus.CANCELLED)));
-        when(events.findById(3L)).thenReturn(Optional.of(event(3L, EventStatus.FINISHED)));
-        when(events.findById(99L)).thenReturn(Optional.empty());
+        // 99 号不在返回结果里：编造的 id 查不到，等同于被丢弃。
+        when(events.findAllById(any())).thenReturn(List.of(
+                event(1L, EventStatus.PUBLISHED),
+                event(2L, EventStatus.CANCELLED),
+                event(3L, EventStatus.FINISHED)));
 
         var response = gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), null, "ip");
 
@@ -624,7 +676,12 @@ class AiGatewayServiceTest {
                         new DiscoveryEventRef(2L, "b"),
                         new DiscoveryEventRef(3L, "c")),
                 List.of(), "openai", "m", null));
-        when(events.findById(any())).thenAnswer(inv -> Optional.of(event(inv.getArgument(0), EventStatus.PUBLISHED)));
+        when(events.findAllById(any())).thenAnswer(inv -> {
+            Iterable<Long> ids = inv.getArgument(0);
+            List<Event> found = new java.util.ArrayList<>();
+            ids.forEach(id -> found.add(event(id, EventStatus.PUBLISHED)));
+            return found;
+        });
 
         var response = gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), null, "ip");
         assertThat(response.events()).hasSize(2);
