@@ -8,7 +8,7 @@ export class ApiError extends Error {
   }
 }
 
-const TOKEN_KEY = 'ep_token'
+export const TOKEN_KEY = 'ep_token'
 
 // 旧版本把 token 存在 sessionStorage（按标签页隔离），部署后把还留在
 // 当前标签页的旧 token 迁进 localStorage，避免已登录用户被登出。

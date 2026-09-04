@@ -104,6 +104,66 @@ describe('AuthProvider login / register / logout', () => {
   })
 })
 
+describe('AuthProvider cross-tab storage sync', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it('clears the user when another tab logs out', async () => {
+    apiMock.fn.mockImplementation((_m: string, path: string) => {
+      if (path === '/api/auth/login') return Promise.resolve({ token: 'at', user })
+      return Promise.resolve({})
+    })
+    const { result } = renderHook(() => useAuth(), { wrapper })
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    await act(async () => { await result.current.login('u@t.dev', 'pw-123456789') })
+    expect(result.current.user?.email).toBe('u@t.dev')
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ep_token', newValue: null }))
+    })
+    await waitFor(() => expect(result.current.user).toBeNull())
+  })
+
+  it('adopts the session when another tab logs in', async () => {
+    apiMock.fn.mockImplementation((_m: string, path: string) => {
+      if (path === '/api/auth/me') return Promise.resolve(user)
+      return Promise.resolve({})
+    })
+    const { result } = renderHook(() => useAuth(), { wrapper })
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    expect(result.current.user).toBeNull()
+
+    apiMock.token = 'from-other-tab'
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ep_token', newValue: 'from-other-tab' }))
+    })
+    await waitFor(() => expect(result.current.user?.email).toBe('u@t.dev'))
+    expect(apiMock.fn).toHaveBeenCalledWith('GET', '/api/auth/me')
+  })
+
+  it('drops a stale /me response when the token changed again mid-flight', async () => {
+    let resolveMe: (u: unknown) => void = () => {}
+    apiMock.fn.mockImplementation((_m: string, path: string) => {
+      if (path === '/api/auth/me') return new Promise((r) => { resolveMe = r })
+      return Promise.resolve({})
+    })
+    const { result } = renderHook(() => useAuth(), { wrapper })
+    await waitFor(() => expect(result.current.ready).toBe(true))
+
+    apiMock.token = 'tab-a'
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ep_token', newValue: 'tab-a' }))
+    })
+    // A third tab logs in before the /me response lands: the older response
+    // describes a token this tab no longer holds, so it must be discarded.
+    apiMock.token = 'tab-c'
+    await act(async () => { resolveMe(user) })
+    expect(result.current.user).toBeNull()
+  })
+})
+
 describe('App pages', () => {
   it('renders the events search box', async () => {
     apiMock.fn.mockResolvedValue([])

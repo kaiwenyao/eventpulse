@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { api, getAccessToken, setAccessToken } from './api'
+import { TOKEN_KEY, api, getAccessToken, setAccessToken } from './api'
 
 export interface SessionUser {
   id: number
@@ -30,9 +30,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
     api<SessionUser>('GET', '/api/auth/me')
-      .then(setUser)
+      .then((me) => {
+        // Another tab may have logged out while the request was in flight;
+        // a response for a token we no longer hold must not resurrect the user.
+        if (getAccessToken()) setUser(me)
+      })
       .catch(() => setAccessToken(null))
       .finally(() => setReady(true))
+  }, [])
+
+  // The session can change in another tab (login, logout, account switch);
+  // the storage event is the only signal this tab gets. Keep the React-level
+  // user in sync so the top bar and route guards never serve a stale identity.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== TOKEN_KEY) return
+      if (!e.newValue) {
+        setUser(null)
+        return
+      }
+      api<SessionUser>('GET', '/api/auth/me')
+        .then((me) => {
+          // Out-of-order guard: if the token changed again mid-flight, this
+          // response is stale and the newer event's fetch will win.
+          if (getAccessToken() === e.newValue) setUser(me)
+        })
+        .catch(() => {
+          setAccessToken(null)
+          setUser(null)
+        })
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {

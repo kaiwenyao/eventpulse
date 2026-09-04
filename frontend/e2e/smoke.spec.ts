@@ -86,7 +86,7 @@ test.describe('SPA smoke', () => {
     await expect(page.getByRole('button', { name: '注册' })).toBeVisible()
   })
 
-  test('two tabs share one localStorage login', async ({ context, page }) => {
+  test('two tabs stay in sync through login and logout', async ({ context, page }) => {
     // Regression: the token used to live in per-tab sessionStorage, so a second
     // tab was always bounced to /login even though the first was logged in.
     const other = await context.newPage()
@@ -100,6 +100,17 @@ test.describe('SPA smoke', () => {
     // The second tab seeds nothing; it inherits the first tab's login.
     await other.goto('/organiser')
     await expect(other.getByRole('heading', { name: '主办方工作台' })).toBeVisible()
+
+    // A logout in the second tab ends the session in the first tab too: the
+    // top bar flips to guest and the protected console bounces to /login.
+    await other.evaluate(() => localStorage.removeItem('ep_token'))
+    await expect(page.getByRole('link', { name: '登录 / 注册' })).toBeVisible()
+    await expect(page).toHaveURL(/\/login$/)
+
+    // A login in the second tab reaches the first tab without a reload.
+    await other.evaluate(() => localStorage.setItem('ep_token', 'demo'))
+    await expect(page.getByRole('link', { name: '登录 / 注册' })).toBeHidden()
+    await expect(page.getByRole('button', { name: '退出' })).toBeVisible()
   })
 
   test('mocked audience discovery and booking CTA', async ({ page }) => {
