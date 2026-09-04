@@ -4,7 +4,9 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { changeLocale, currentLocale } from '../i18n'
 import { currentTheme, toggleTheme, type Theme } from '../theme'
-import { MoonIcon, SunIcon } from '../ui/Icons'
+import { GithubIcon, MoonIcon, SunIcon } from '../ui/Icons'
+
+const GITHUB_REPO_URL = 'https://github.com/kaiwenyao/eventpulse'
 
 const NAV_LINKS = [
   { to: '/', key: 'nav.events', end: true, auth: false },
@@ -53,6 +55,17 @@ export function TopBar() {
             </NavLink>
           ))}
           {user?.role === 'ORGANISER' && <NavLink to="/organiser">{t('nav.console')}</NavLink>}
+          <a
+            href={GITHUB_REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="github-link"
+            aria-label={t('nav.github')}
+            title={t('nav.github')}
+          >
+            <GithubIcon />
+            <span>{t('nav.github')}</span>
+          </a>
         </nav>
 
         <button

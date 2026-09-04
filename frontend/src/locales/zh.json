@@ -37,7 +37,8 @@
     "themeToDark": "切换到深色主题",
     "switchToEn": "切换到英文",
     "switchToZh": "切换到中文",
-    "cart": "购物车"
+    "cart": "购物车",
+    "github": "GitHub"
   },
   "footer": {
     "tagline": "城市活动预订演示系统 · Spring Boot + Kafka + React"

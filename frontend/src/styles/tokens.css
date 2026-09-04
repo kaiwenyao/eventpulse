@@ -242,6 +242,11 @@ p {
   stroke-linejoin: miter;
 }
 
+.icon-fill {
+  fill: currentColor;
+  stroke: none;
+}
+
 /* ===========================================================================
    Dark theme — the same Modernist grammar with ground and ink swapped. Rules
    stay 2px, corners stay square, and the accent brightens just enough to hold

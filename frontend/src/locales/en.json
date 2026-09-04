@@ -39,7 +39,8 @@
     "themeToDark": "Switch to dark theme",
     "switchToEn": "Switch to English",
     "switchToZh": "切换到中文",
-    "cart": "Cart"
+    "cart": "Cart",
+    "github": "GitHub"
   },
   "footer": {
     "tagline": "A city-event booking demo · Spring Boot + Kafka + React"
