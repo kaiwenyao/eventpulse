@@ -30,14 +30,14 @@ button,
 }
 
 .btn-primary,
-button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle, .lang-toggle, .ai-followup, .ai-starter) {
+button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle, .lang-toggle, .ai-followup, .ai-starter, .select-trigger) {
   background: var(--accent);
   border: 1px solid var(--accent);
   color: #fff;
 }
 
 .btn-primary:hover,
-button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle, .lang-toggle, .ai-followup, .ai-starter):hover {
+button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .theme-toggle, .lang-toggle, .ai-followup, .ai-starter, .select-trigger):hover {
   background: var(--accent-600);
   border-color: var(--accent-600);
   color: #fff;
@@ -45,7 +45,7 @@ button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-to
 }
 
 .btn-primary:active,
-button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .ai-followup, .ai-starter):active {
+button:not(.chip, .btn-secondary, .btn-ghost, .btn-danger, .toast-close, .nav-toggle, .ai-followup, .ai-starter, .select-trigger):active {
   background: var(--accent-700);
   border-color: var(--accent-700);
 }
@@ -182,6 +182,126 @@ button:disabled {
   border-color: var(--accent);
   background: var(--accent-100);
   color: var(--accent-700);
+}
+
+/* --------------------------------------------------------------- dropdown */
+
+/* The styled `<Select>` (ui/Select.tsx): a trigger that borrows the input
+   grammar, and a popup that borrows the modal grammar — a block with a 2px ink
+   rule, square corners, flat shadow. The OS popup is gone entirely: it ignores
+   the theme and the type system, which is exactly what made it feel foreign. */
+
+.select {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--n-400);
+  color: var(--paper);
+  border-radius: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.select-trigger:hover {
+  border-color: var(--paper);
+}
+
+.select-trigger:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+/* Validation reads the same as on inputs: the red border carries it. */
+.select-trigger[aria-invalid='true'] {
+  border-color: var(--red);
+}
+
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.select-chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
+  transition: transform 0.12s ease;
+}
+
+/* The only open-state tell: the chevron flips, no colour change needed. */
+.select.is-open .select-chevron {
+  transform: rotate(180deg);
+}
+
+.select-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 50;
+  min-width: 100%;
+  max-width: 420px;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border: var(--rule) solid var(--line-strong);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-1) 0;
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 6px 14px;
+  font-size: 14px;
+  color: var(--paper);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+/* Keyboard/pointer highlight: the same hover wash every other row uses. */
+.select-option.is-active {
+  background: var(--hover-wash);
+}
+
+/* The chosen option inverts, exactly like the active segment of a chip row. */
+.select-option.is-selected {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+/* Inversion always wins over the highlight — selection must never wash out. */
+.select-option.is-selected.is-active {
+  background: var(--paper);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .select-chevron {
+    transition: none;
+  }
 }
 
 /* ------------------------------------------------------------------- forms */
@@ -341,7 +461,7 @@ label {
   border-bottom: var(--rule) solid var(--line-strong);
 }
 
-.search-row select {
+.search-row .select {
   width: auto;
   min-width: 150px;
 }

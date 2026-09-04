@@ -105,7 +105,8 @@ describe('organiser event list', () => {
     await userEvent.type(screen.getByPlaceholderText('搜索我的活动…'), 'Night')
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('GET', expect.stringContaining('q=Night')))
 
-    await userEvent.selectOptions(screen.getByLabelText('状态筛选'), 'DRAFT')
+    await userEvent.click(screen.getByLabelText('状态筛选'))
+    await userEvent.click(screen.getByRole('option', { name: '草稿' }))
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('GET', expect.stringContaining('status=DRAFT')))
   })
 })
@@ -379,7 +380,8 @@ describe('organiser attendees and analytics', () => {
     expect(screen.getByText('10.0%')).toBeInTheDocument()
     expect(screen.getByLabelText('最近 1 天的每日浏览量')).toBeInTheDocument()
 
-    await userEvent.selectOptions(screen.getByLabelText('选择活动'), '1')
+    await userEvent.click(screen.getByLabelText('选择活动'))
+    await userEvent.click(screen.getByRole('option', { name: 'Indie Rock Night' }))
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('GET', '/api/organiser/analytics?eventId=1'))
   })
 })
@@ -400,7 +402,8 @@ describe('audience flows', () => {
     renderApp('/')
     await waitFor(() => expect(screen.getByText('Indie Rock Night')).toBeInTheDocument())
     await userEvent.type(screen.getByLabelText('城市'), 'Berlin')
-    await userEvent.selectOptions(screen.getByLabelText('排序'), 'price')
+    await userEvent.click(screen.getByLabelText('排序'))
+    await userEvent.click(screen.getByRole('option', { name: '票价' }))
     await userEvent.click(screen.getByRole('button', { name: '附近' }))
     cleanup()
 

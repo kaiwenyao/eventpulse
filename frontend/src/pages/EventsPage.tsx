@@ -4,6 +4,7 @@ import { api } from '../api'
 import { EventTicket } from '../components/EventTicket'
 import { CATEGORIES, EventVo } from '../types'
 import { EmptyState } from '../ui/Badges'
+import { Select } from '../ui/Select'
 import { SkeletonGrid } from '../ui/Skeleton'
 import { AiDiscoveryAssistant } from '../components/AiDiscoveryAssistant'
 
@@ -90,14 +91,15 @@ export function EventsPage() {
           onChange={(e) => setQ(e.target.value)}
           aria-label={t('events.searchAria')}
         />
-        <select aria-label={t('events.filterCategory')} value={cat} onChange={(e) => setCat(e.target.value)}>
-          <option value="">{t('events.allCategories')}</option>
-          {CATEGORIES.map((c) => (
-            <option key={c.key} value={c.key}>
-              {t(`category.${c.key}`)}
-            </option>
-          ))}
-        </select>
+        <Select
+          aria-label={t('events.filterCategory')}
+          value={cat}
+          onChange={setCat}
+          options={[
+            { value: '', label: t('events.allCategories') },
+            ...CATEGORIES.map((c) => ({ value: c.key, label: t(`category.${c.key}`) })),
+          ]}
+        />
         <input
           className="search search-city"
           placeholder={t('events.city')}
@@ -105,11 +107,16 @@ export function EventsPage() {
           onChange={(e) => setCity(e.target.value)}
           aria-label={t('events.city')}
         />
-        <select aria-label={t('events.sort')} value={sort} onChange={(e) => setSort(e.target.value)}>
-          <option value="startsAt">{t('events.sortStarts')}</option>
-          <option value="price">{t('events.sortPrice')}</option>
-          <option value="sold">{t('events.sortSold')}</option>
-        </select>
+        <Select
+          aria-label={t('events.sort')}
+          value={sort}
+          onChange={setSort}
+          options={[
+            { value: 'startsAt', label: t('events.sortStarts') },
+            { value: 'price', label: t('events.sortPrice') },
+            { value: 'sold', label: t('events.sortSold') },
+          ]}
+        />
         <div className="chips chips-loose" role="group" aria-label={t('events.modeAria')}>
           <button
             className={`chip ${mode === 'nearby' ? 'active' : ''}`}

@@ -5,6 +5,7 @@ import { api } from '../api'
 import { CATEGORIES, EventVo } from '../types'
 import { EmptyState, ErrorNote, EventStatusBadge } from '../ui/Badges'
 import { Field, fieldAria } from '../ui/Field'
+import { Select } from '../ui/Select'
 import { SkeletonCard } from '../ui/Skeleton'
 import { useToast } from '../ui/Toast'
 import { AiCopyAssistant } from './AiCopyAssistant'
@@ -207,17 +208,12 @@ export function OrganiserFormPage() {
                   </Field>
 
                   <Field id="f-cat" label={t('organiser.form.category')} required error={errors.category} hint={t('organiser.form.categoryHint')}>
-                    <select
+                    <Select
                       {...fieldAria('f-cat', errors.category, 'hint')}
                       value={form.category}
-                      onChange={(e) => update('category', e.target.value)}
-                    >
-                      {CATEGORIES.map((c) => (
-                        <option key={c.key} value={c.key}>
-                          {t(`category.${c.key}`)}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(category) => update('category', category)}
+                      options={CATEGORIES.map((c) => ({ value: c.key, label: t(`category.${c.key}`) }))}
+                    />
                   </Field>
                 </div>
               </fieldset>
