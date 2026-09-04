@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_model_call
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
@@ -134,6 +135,19 @@ def _invoke_agent(agent, history, request, *, recursion_limit, deadline):
     return result
 
 
+@wrap_model_call
+def _auto_tool_choice(request, handler):  # noqa: ANN001, ANN202
+    """每次模型调用显式带上 tool_choice="auto"。
+
+    create_agent 默认传 tool_choice=None，请求 payload 里就没有这个字段，
+    行为取决于网关自己的默认值；而 LLM_BASE_URL 允许指向任意 OpenAI 兼容
+    网关（结构化输出那条链就因兼容性选了 function_calling）。显式写 auto
+    是唯一跨网关稳定的取值：模型自己决定「直接回答还是先调工具」，寒暄类
+    问题不必被强制空跑一次工具调用。
+    """
+    return handler(request.override(tool_choice="auto"))
+
+
 def run_discovery_agent(
     model: BaseChatModel,
     settings: Any,
@@ -159,7 +173,7 @@ def run_discovery_agent(
     preferences_block = user_preferences_context(request.preferences)
     if preferences_block:
         system = system + "\n\n" + preferences_block
-    agent = create_agent(model, tools=tools, system_prompt=system)
+    agent = create_agent(model, tools=tools, system_prompt=system, middleware=[_auto_tool_choice])
     deadline = time.monotonic() + settings.agent_total_budget_seconds
 
     # Spring 可能传 null 内容：归一化成空串，避免 HumanMessage(content=None)。
