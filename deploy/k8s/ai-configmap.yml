@@ -8,8 +8,5 @@ data:
   LLM_MODEL: "gpt-4o-mini"
   LLM_TIMEOUT_SECONDS: "30"
   LLM_MAX_OUTPUT_TOKENS: "4096"
-  # 两条链的温度分开：文案助手要稳定可解析的结构化输出，发现助手要自然的措辞。
-  LLM_TEMPERATURE_COPY: "0.2"
-  LLM_TEMPERATURE_DISCOVERY: "0.7"
   # 可选：兼容 OpenAI 协议的自建网关地址，留空表示官方端点。
   LLM_BASE_URL: ""

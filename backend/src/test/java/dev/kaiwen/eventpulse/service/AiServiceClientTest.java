@@ -8,14 +8,12 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -108,72 +106,4 @@ class AiServiceClientTest {
                 .isInstanceOf(AiUnavailableException.class)
                 .hasMessageContaining("temporarily unavailable");
     }
-    /** 用一个显式熔断器重建客户端：不能从 properties 读，那个字段在测试构造器里是 null。 */
-    private AiServiceClient clientWithBreaker(AiCircuitBreaker breaker) {
-        RestClient.Builder builder = RestClient.builder();
-        server = MockRestServiceServer.bindTo(builder).build();
-        return new AiServiceClient(builder
-                .baseUrl("http://ai-service:8090")
-                .defaultHeader("Authorization", "Bearer svc-token")
-                .build(), breaker);
-    }
-
-    private static ImproveEventPayload payload() {
-        return new ImproveEventPayload("r1", null, null, null, null, null, null, null, null, null, null);
-    }
-
-    @Test
-    void transportFailuresOpenTheBreakerAndLaterCallsNeverReachTheNetwork() {
-        AiServiceClient breakered = clientWithBreaker(new AiCircuitBreaker(2, 30_000));
-        server.expect(requestTo("http://ai-service:8090/internal/v1/improve-event"))
-                .andRespond(withException(new java.net.SocketTimeoutException("read timeout")));
-        server.expect(requestTo("http://ai-service:8090/internal/v1/improve-event"))
-                .andRespond(withException(new java.net.SocketTimeoutException("read timeout")));
-
-        assertThatThrownBy(() -> breakered.improveEvent(payload())).isInstanceOf(AiUnavailableException.class);
-        assertThatThrownBy(() -> breakered.improveEvent(payload())).isInstanceOf(AiUnavailableException.class);
-        assertThat(breakered.isCircuitOpen()).isTrue();
-
-        // 熔断打开后第三次调用必须立刻失败，一个字节都不发出去 ——
-        // server 只期望了两次请求，多发一次这里就会红。
-        assertThatThrownBy(() -> breakered.improveEvent(payload())).isInstanceOf(AiUnavailableException.class);
-        server.verify();
-    }
-
-    @Test
-    void applicationLevel502DoesNotOpenTheBreaker() {
-        AiServiceClient breakered = clientWithBreaker(new AiCircuitBreaker(2, 30_000));
-        // Python 在 LlmOutputError / AgentExecutionError 时返回 502：模型没吐好，
-        // 但进程完全健康。连续几次模型抽风不该熔断掉一个活着的服务。
-        for (int i = 0; i < 4; i++) {
-            server.expect(requestTo("http://ai-service:8090/internal/v1/improve-event"))
-                    .andRespond(withStatus(HttpStatus.BAD_GATEWAY));
-        }
-
-        for (int i = 0; i < 4; i++) {
-            assertThatThrownBy(() -> breakered.improveEvent(payload()))
-                    .isInstanceOf(AiUnavailableException.class);
-        }
-
-        assertThat(breakered.isCircuitOpen()).isFalse();
-        server.verify();
-    }
-
-    @Test
-    void gatewayUnavailable503IsTreatedAsTheUpstreamBeingDown() {
-        AiServiceClient breakered = clientWithBreaker(new AiCircuitBreaker(1, 30_000));
-        server.expect(requestTo("http://ai-service:8090/internal/v1/improve-event"))
-                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
-
-        assertThatThrownBy(() -> breakered.improveEvent(payload())).isInstanceOf(AiUnavailableException.class);
-
-        assertThat(breakered.isCircuitOpen()).isTrue();
-        server.verify();
-    }
-
-    @Test
-    void theDefaultTestClientHasNoBreakerSoExistingBehaviourIsUnchanged() {
-        assertThat(client.isCircuitOpen()).isFalse();
-    }
-
 }

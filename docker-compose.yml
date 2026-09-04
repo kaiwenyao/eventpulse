@@ -29,18 +29,9 @@ x-backend-common: &backend-common
     AI_ENABLED: ${AI_ENABLED:-true}
     # Agent 一轮可能包含多次 LLM 调用，读超时要覆盖全程（默认 90s）。
     AI_READ_TIMEOUT: ${AI_READ_TIMEOUT:-90000}
-    # 文案助手只有一次 LLM 调用，读超时单独给短的，别让 Tomcat 线程白占 90s。
-    AI_READ_TIMEOUT_IMPROVE: ${AI_READ_TIMEOUT_IMPROVE:-35000}
-    # 成本护栏：每日 token 预算 + 结果缓存（缓存需要 Redis）。
-    AI_DAILY_TOKEN_BUDGET_USER: ${AI_DAILY_TOKEN_BUDGET_USER:-200000}
-    AI_DAILY_TOKEN_BUDGET_GLOBAL: ${AI_DAILY_TOKEN_BUDGET_GLOBAL:-0}
-    AI_CACHE_ENABLED: ${AI_CACHE_ENABLED:-true}
     # AI 会话 / 调用日志的保留期（天）。
     AI_RETENTION_DAYS: ${AI_RETENTION_DAYS:-90}
     AI_REQUEST_LOG_RETENTION_DAYS: ${AI_REQUEST_LOG_RETENTION_DAYS:-180}
-    # 上游熔断：只统计传输层故障，应用层 502（模型没吐好）不计入。
-    AI_BREAKER_FAILURE_THRESHOLD: ${AI_BREAKER_FAILURE_THRESHOLD:-5}
-    AI_BREAKER_OPEN_SECONDS: ${AI_BREAKER_OPEN_SECONDS:-30}
     # 图片对象存储：多副本必须启用（本地磁盘模式每个副本只能看到自己上传的文件）。
     # 默认关，单机试跑走容器内 MEDIA_DIR；真实凭证放本机 .env，不入 git。
     S3_ENABLED: ${S3_ENABLED:-false}
@@ -202,8 +193,6 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
       LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-4096}
-      LLM_TEMPERATURE_COPY: ${LLM_TEMPERATURE_COPY:-0.2}
-      LLM_TEMPERATURE_DISCOVERY: ${LLM_TEMPERATURE_DISCOVERY:-0.7}
       BACKEND_INTERNAL_URL: http://api:8080
       BACKEND_SERVICE_TOKEN: ${AI_INTERNAL_TOKEN:-dev-ai-internal-token}
       SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-dev-ai-service-token}

@@ -57,7 +57,7 @@ class AiControllerTest {
         BaseContext.setRole("USER");
         AiController controller = new AiController(gateway);
         assertThatThrownBy(() -> controller.improveEvent(new ImproveEventRequest(
-                null, null, null, null, null, null, null, null, null, null, null, null)))
+                null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("organisers");
     }
@@ -70,7 +70,7 @@ class AiControllerTest {
                 "r1", new CopySuggestion("t", "s", "d", "n", List.of()), List.of()));
         AiController controller = new AiController(gateway);
         Result<ImproveEventResponse> result = controller.improveEvent(new ImproveEventRequest(
-                null, "t", null, null, null, null, null, null, null, null, null, null));
+                null, "t", null, null, null, null, null, null, null, null, null));
         assertThat(result.getData().requestId()).isEqualTo("r1");
         assertThat(result.getCode()).isEqualTo(1);
     }

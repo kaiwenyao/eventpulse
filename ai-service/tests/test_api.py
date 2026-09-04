@@ -68,8 +68,7 @@ def test_discovery_without_llm_key_returns_503(client, monkeypatch):
 
 
 def override_model(monkeypatch, model):
-    app.dependency_overrides[main_module.get_copy_model] = lambda: model
-    app.dependency_overrides[main_module.get_discovery_model] = lambda: model
+    app.dependency_overrides[main_module.get_chat_model] = lambda: model
 
 
 def test_improve_event_happy_path(client, monkeypatch):

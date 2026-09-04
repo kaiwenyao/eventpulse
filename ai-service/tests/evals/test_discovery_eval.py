@@ -30,7 +30,7 @@ def model():
     settings = make_settings()
     if not settings.llm_api_key.strip() or settings.llm_api_key == "test-key":
         pytest.skip("LLM_API_KEY not configured; real-model evals are opt-in")
-    return build_chat_model(settings, settings.llm_temperature_discovery)
+    return build_chat_model(settings)
 
 
 def run(model, message: str, catalogue=None):

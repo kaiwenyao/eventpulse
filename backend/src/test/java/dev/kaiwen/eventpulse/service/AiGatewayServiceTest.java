@@ -12,7 +12,6 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.AfterEach;
@@ -25,11 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
 import dev.kaiwen.eventpulse.common.BaseContext;
@@ -68,20 +63,13 @@ class AiGatewayServiceTest {
     private AppProperties properties;
     private AiGatewayService gateway;
     private SimpleMeterRegistry registry;
-    private AiTokenBudget budget;
-    private AiResponseCache cache;
 
     @BeforeEach
     void setUp() {
         properties = new AppProperties();
         registry = new SimpleMeterRegistry();
-        // 预算与缓存都用真对象：没有注入 Redis 时预算走本地计数、缓存 isAvailable()
-        // 为 false（等于关闭），既有用例的行为因此完全不变。
-        budget = new AiTokenBudget(properties);
-        cache = new AiResponseCache(new ObjectMapper(), registry);
         gateway = new AiGatewayService(properties, client, rateLimiter, new JwtService(properties), events,
-                new EventService(events), conversations, messages, requestLogs, preferences,
-                budget, cache, registry);
+                new EventService(events), conversations, messages, requestLogs, preferences, registry);
         BaseContext.clear();
     }
 
@@ -126,7 +114,7 @@ class AiGatewayServiceTest {
                 List.of("w"), "openai", "gpt-test", new AiUsage(10, 5)));
 
         var response = gateway.improveEvent(new ImproveEventRequest(
-                null, "标题", null, "描述", "music", "Shanghai", null, null, null, null, null, null));
+                null, "标题", null, "描述", "music", "Shanghai", null, null, null, null, null));
 
         assertThat(response.requestId()).isNotBlank();
         assertThat(response.suggestion().title()).isEqualTo("t");
@@ -144,7 +132,7 @@ class AiGatewayServiceTest {
         BaseContext.setUserId(2L);
         BaseContext.setRole("USER");
         assertThatThrownBy(() -> gateway.improveEvent(new ImproveEventRequest(
-                null, null, null, null, null, null, null, null, null, null, null, null)))
+                null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("organisers");
         verify(client, never()).improveEvent(any());
@@ -156,7 +144,7 @@ class AiGatewayServiceTest {
         BaseContext.setRole("ORGANISER");
         when(events.findByIdAndOrganiserId(12L, 2L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> gateway.improveEvent(new ImproveEventRequest(
-                12L, null, null, null, null, null, null, null, null, null, null, null)))
+                12L, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("your own events");
     }
@@ -168,7 +156,7 @@ class AiGatewayServiceTest {
         when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
         when(client.improveEvent(any())).thenThrow(new AiUnavailableException(AiServiceClient.UNAVAILABLE));
         assertThatThrownBy(() -> gateway.improveEvent(new ImproveEventRequest(
-                null, null, null, null, null, null, null, null, null, null, null, null)))
+                null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(AiUnavailableException.class);
         verify(requestLogs).save(any());
         assertThat(registry.counter("ai.failures", "feature", "improve-event", "status", "failure").count())
@@ -181,7 +169,7 @@ class AiGatewayServiceTest {
         BaseContext.setUserId(9L);
         BaseContext.setRole("ORGANISER");
         assertThatThrownBy(() -> gateway.improveEvent(new ImproveEventRequest(
-                null, null, null, null, null, null, null, null, null, null, null, null)))
+                null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(AiUnavailableException.class)
                 .hasMessageContaining("not enabled");
     }
@@ -346,180 +334,6 @@ class AiGatewayServiceTest {
                 .hasMessageContaining("sign in");
     }
 
-    // ---- 成本：预算与缓存 ----
-
-    /** 给缓存接上一个 Map 冒充的 Redis，让 isAvailable() 为真。 */
-    private Map<String, String> enableCache() {
-        Map<String, String> store = new java.util.HashMap<>();
-        StringRedisTemplate redis = org.mockito.Mockito.mock(StringRedisTemplate.class);
-        @SuppressWarnings("unchecked")
-        ValueOperations<String, String> values = org.mockito.Mockito.mock(ValueOperations.class);
-        org.mockito.Mockito.when(redis.opsForValue()).thenReturn(values);
-        org.mockito.Mockito.when(values.get(anyString()))
-                .thenAnswer(inv -> store.get(inv.<String>getArgument(0)));
-        org.mockito.Mockito.doAnswer(inv -> {
-            store.put(inv.getArgument(0), inv.getArgument(1));
-            return null;
-        }).when(values).set(anyString(), anyString(), any(java.time.Duration.class));
-        cache.setRedis(redis);
-        return store;
-    }
-
-    private static ImproveEventRequest improveRequest(Boolean refresh) {
-        return new ImproveEventRequest(null, "标题", null, "描述", "music", "Shanghai",
-                null, null, null, null, null, refresh);
-    }
-
-    private static ImproveEventResult improveResult(String title) {
-        return new ImproveEventResult("upstream-id", new CopySuggestion(title, "s", "d", "n", List.of()),
-                List.of(), "openai", "gpt-test", new AiUsage(10, 5));
-    }
-
-    @Test
-    void exhaustedDailyBudgetIsRejectedWithoutCallingTheModel() {
-        BaseContext.setUserId(9L);
-        BaseContext.setRole("ORGANISER");
-        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
-        properties.getAi().setDailyTokenBudgetUser(10);
-        budget.record(9L, 10, 0);
-
-        assertThatThrownBy(() -> gateway.improveEvent(improveRequest(null)))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("daily AI budget");
-        verify(client, never()).improveEvent(any());
-        assertThat(registry.counter("ai.budget.rejected", "feature", "improve-event", "status", "rejected").count())
-                .isEqualTo(1.0);
-    }
-
-    @Test
-    void successfulCallChargesTheBudgetAndRecordsTokenMetrics() {
-        BaseContext.setUserId(9L);
-        BaseContext.setRole("ORGANISER");
-        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
-        when(client.improveEvent(any())).thenReturn(improveResult("t"));
-        properties.getAi().setDailyTokenBudgetUser(12);
-
-        gateway.improveEvent(improveRequest(null));
-
-        assertThat(registry.counter("ai.tokens", "feature", "improve-event", "kind", "input").count())
-                .isEqualTo(10.0);
-        assertThat(registry.counter("ai.tokens", "feature", "improve-event", "kind", "output").count())
-                .isEqualTo(5.0);
-        assertThat(registry.timer("ai.latency", "feature", "improve-event").count()).isEqualTo(1L);
-        // 15 tokens 已经超过 12 的上限：下一次被挡住。
-        assertThat(budget.hasBudget(9L)).isFalse();
-    }
-
-    @Test
-    void upstreamFailureStillChargesAPenaltySoFailuresAreNotFree() {
-        BaseContext.setUserId(9L);
-        BaseContext.setRole("ORGANISER");
-        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
-        when(client.improveEvent(any())).thenThrow(new AiUnavailableException(AiServiceClient.UNAVAILABLE));
-        properties.getAi().setDailyTokenBudgetUser(1000);
-        properties.getAi().setFailureTokenPenalty(1000);
-
-        assertThatThrownBy(() -> gateway.improveEvent(improveRequest(null)))
-                .isInstanceOf(AiUnavailableException.class);
-        // 失败的那一轮真的烧了 token：不记账的话，能稳定触发失败的用户就等于没有预算。
-        assertThat(budget.hasBudget(9L)).isFalse();
-    }
-
-    @Test
-    void improveEventServesTheCacheWithAFreshRequestIdAndSkipsTheModel() {
-        BaseContext.setUserId(9L);
-        BaseContext.setRole("ORGANISER");
-        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
-        when(client.improveEvent(any())).thenReturn(improveResult("第一次生成"));
-        enableCache();
-
-        var first = gateway.improveEvent(improveRequest(null));
-        var second = gateway.improveEvent(improveRequest(null));
-
-        assertThat(second.suggestion().title()).isEqualTo("第一次生成");
-        // 第二次没有再调模型。
-        verify(client, org.mockito.Mockito.times(1)).improveEvent(any());
-        // requestId 必须是这一次新生成的，否则它对不上任何 ai_requests 行。
-        assertThat(second.requestId()).isNotEqualTo(first.requestId());
-        assertThat(second.requestId()).isNotEqualTo("upstream-id");
-        // 命中缓存不写调用日志、不计 ai.requests。
-        verify(requestLogs, org.mockito.Mockito.times(1)).save(any());
-        assertThat(registry.counter("ai.cache", "feature", "improve-event", "result", "hit").count())
-                .isEqualTo(1.0);
-        assertThat(registry.counter("ai.requests", "feature", "improve-event", "status", "success").count())
-                .isEqualTo(1.0);
-    }
-
-    @Test
-    void regenerateBypassesTheCacheSoTheButtonActuallyDoesSomething() {
-        BaseContext.setUserId(9L);
-        BaseContext.setRole("ORGANISER");
-        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
-        when(client.improveEvent(any()))
-                .thenReturn(improveResult("第一稿"))
-                .thenReturn(improveResult("第二稿"));
-        enableCache();
-
-        gateway.improveEvent(improveRequest(null));
-        var regenerated = gateway.improveEvent(improveRequest(true));
-
-        assertThat(regenerated.suggestion().title()).isEqualTo("第二稿");
-        verify(client, org.mockito.Mockito.times(2)).improveEvent(any());
-        // 重新生成仍然写回缓存：下一次不带 refresh 的请求拿到的是最新那份。
-        var afterwards = gateway.improveEvent(improveRequest(null));
-        assertThat(afterwards.suggestion().title()).isEqualTo("第二稿");
-        verify(client, org.mockito.Mockito.times(2)).improveEvent(any());
-    }
-
-    @Test
-    void guestDiscoveryIsCachedButSignedInUsersAreNot() {
-        enableCache();
-        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
-        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
-                "r1", "找到 1 场", List.of(new DiscoveryEventRef(1L, "周六音乐")),
-                List.of(), "openai", "gpt-test", new AiUsage(50, 20)));
-        when(events.findAllById(any())).thenReturn(List.of(event(1L, EventStatus.PUBLISHED)));
-
-        gateway.discoveryChat(new DiscoveryChatRequest(null, "有什么热门活动？"), null, "1.2.3.4");
-        DiscoveryChatResponse cached = gateway.discoveryChat(
-                new DiscoveryChatRequest(null, "有什么热门活动？"), null, "1.2.3.4");
-
-        verify(client, org.mockito.Mockito.times(1)).discoveryChat(any());
-        // 命中缓存时活动卡片仍然重新复核可见性，所以照样查了库。
-        assertThat(cached.events()).hasSize(1);
-        assertThat(registry.counter("ai.cache", "feature", "discovery", "result", "hit").count())
-                .isEqualTo(1.0);
-
-        // 登录用户带着签名上下文，Python 侧会注册个人化工具，答案与身份相关：不共享。
-        AiConversation conversation = new AiConversation();
-        ReflectionTestUtils.setField(conversation, "id", 7L);
-        conversation.setUserId(2L);
-        when(conversations.save(any())).thenReturn(conversation);
-        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of()));
-
-        gateway.discoveryChat(new DiscoveryChatRequest(null, "有什么热门活动？"), bearer(2L, "USER"), "1.2.3.4");
-        verify(client, org.mockito.Mockito.times(2)).discoveryChat(any());
-    }
-
-    @Test
-    void cachedGuestAnswerDropsEventsThatAreNoLongerPublic() {
-        enableCache();
-        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
-        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
-                "r1", "找到 1 场", List.of(new DiscoveryEventRef(1L, "周六音乐")),
-                List.of(), "openai", "gpt-test", null));
-        when(events.findAllById(any())).thenReturn(List.of(event(1L, EventStatus.PUBLISHED)));
-        gateway.discoveryChat(new DiscoveryChatRequest(null, "有什么活动"), null, "1.2.3.4");
-
-        // 活动在 TTL 内被取消：缓存里的 id 仍在，但复核会把卡片丢掉。
-        when(events.findAllById(any())).thenReturn(List.of(event(1L, EventStatus.CANCELLED)));
-        DiscoveryChatResponse response = gateway.discoveryChat(
-                new DiscoveryChatRequest(null, "有什么活动"), null, "1.2.3.4");
-
-        assertThat(response.events()).isEmpty();
-    }
-
     // ---- 活动发现 ----
 
     @Test
@@ -629,7 +443,7 @@ class AiGatewayServiceTest {
         // 主办方文案助手同样是付费 LLM 调用，不能没有用户级限流。
         when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(false);
         assertThatThrownBy(() -> gateway.improveEvent(new ImproveEventRequest(
-                null, null, null, null, null, null, null, null, null, null, null, null)))
+                null, null, null, null, null, null, null, null, null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus().value())
                 .isEqualTo(429);
