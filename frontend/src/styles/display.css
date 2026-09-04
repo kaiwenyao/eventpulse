@@ -62,6 +62,31 @@
   border-color: var(--paper);
 }
 
+.pill-food {
+  color: var(--accent);
+  background: var(--accent-100);
+}
+
+.pill-business {
+  color: var(--paper);
+  background: var(--surface-2);
+}
+
+.pill-community {
+  color: var(--paper-dim);
+  background: transparent;
+  border-color: var(--line-strong);
+}
+
+/* 「其他」是主办方主动选的合法分类，用最轻的描边，不要抢眼。 */
+.pill-other {
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--line);
+}
+
+/* 白名单之外的存量脏分类（分类固定之前留下的自由文本）。刻意做成填充式，
+   和上面描边式的 .pill-other 区分开：这是需要被看见的历史数据，不是选项。 */
 .pill-unknown {
   color: var(--muted);
   background: var(--surface-2);

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import App from './App'
@@ -54,14 +54,32 @@ describe('discovery page design elements', () => {
     expect(document.querySelector('.sold-fill')).not.toBeNull()
   })
 
-  it('filters by category through the chip bar', async () => {
+  it('filters by category through the category dropdown', async () => {
     apiMock.fn.mockResolvedValue([])
     renderApp()
-    await waitFor(() => expect(screen.getByRole('button', { name: '音乐' })).toBeInTheDocument())
-    await userEvent.click(screen.getByRole('button', { name: '音乐' }))
+    const select = await screen.findByRole('combobox', { name: '按分类筛选' })
+    await userEvent.selectOptions(select, 'music')
     await waitFor(() =>
       expect(apiMock.fn).toHaveBeenCalledWith('GET', expect.stringContaining('category=music')),
     )
+  })
+
+  it('offers every fixed category in the dropdown, and nothing else', async () => {
+    apiMock.fn.mockResolvedValue([])
+    renderApp()
+    const select = await screen.findByRole('combobox', { name: '按分类筛选' })
+    // 「全部分类」+ 8 个固定分类，不多不少：多出来的一定是漏改的硬编码。
+    expect(within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)).toEqual([
+      '',
+      'music',
+      'tech',
+      'sports',
+      'art',
+      'food',
+      'business',
+      'community',
+      'other',
+    ])
   })
 
   it('shows an empty state when there are no events', async () => {

@@ -90,16 +90,14 @@ export function EventsPage() {
           onChange={(e) => setQ(e.target.value)}
           aria-label={t('events.searchAria')}
         />
-        <div className="chips" role="group" aria-label={t('events.filterCategory')}>
-          <button className={`chip ${cat === '' ? 'active' : ''}`} onClick={() => setCat('')}>
-            {t('common.all')}
-          </button>
+        <select aria-label={t('events.filterCategory')} value={cat} onChange={(e) => setCat(e.target.value)}>
+          <option value="">{t('events.allCategories')}</option>
           {CATEGORIES.map((c) => (
-            <button key={c.key} className={`chip ${cat === c.key ? 'active' : ''}`} onClick={() => setCat(c.key)}>
+            <option key={c.key} value={c.key}>
               {t(`category.${c.key}`)}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
         <input
           className="search search-city"
           placeholder={t('events.city')}

@@ -53,7 +53,11 @@
     "music": "音乐",
     "tech": "科技",
     "sports": "运动",
-    "art": "艺术"
+    "art": "艺术",
+    "food": "美食",
+    "business": "商务",
+    "community": "社群",
+    "other": "其他"
   },
   "status": {
     "event": {
@@ -96,6 +100,7 @@
     "search": "搜索活动…",
     "searchAria": "搜索活动",
     "filterCategory": "按分类筛选",
+    "allCategories": "全部分类",
     "city": "城市",
     "sort": "排序",
     "sortStarts": "开始时间",
@@ -385,8 +390,7 @@
       "needTitle": "请填写活动标题",
       "titleTooLong": "标题不能超过 {{max}} 个字",
       "summaryTooLong": "摘要不能超过 {{max}} 个字",
-      "needCategory": "请选择或填写分类",
-      "categoryTooLong": "分类不能超过 {{max}} 个字",
+      "needCategory": "请选择分类",
       "needCity": "请填写城市",
       "cityTooLong": "城市不能超过 {{max}} 个字",
       "venueTooLong": "场地名称不能超过 {{max}} 个字",
@@ -424,7 +428,7 @@
       "description": "介绍",
       "descriptionHint": "活动亮点、流程、嘉宾阵容等详细说明。",
       "category": "分类",
-      "categoryHint": "可选内置分类，也能自定义。",
+      "categoryHint": "选择最贴合的固定分类，用户会按它筛选。",
       "schedule": "时间安排",
       "startsAt": "开始时间",
       "startsHint": "按场地当地时间填写。",

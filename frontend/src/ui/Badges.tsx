@@ -1,12 +1,10 @@
 import { useTranslation } from 'react-i18next'
-import { CATEGORIES } from '../types'
+import { isKnownCategory } from '../types'
 import { Alert } from './Alert'
-
-const CATEGORY_KEYS = new Set<string>(CATEGORIES.map((c) => c.key))
 
 export function CategoryPill({ category }: { category?: string }) {
   const { t } = useTranslation()
-  const known = Boolean(category) && CATEGORY_KEYS.has(category!)
+  const known = isKnownCategory(category)
   const label = known ? t(`category.${category}`) : category || t('common.uncategorized')
   return <span className={`pill pill-${known ? category : 'unknown'}`}>{label}</span>
 }

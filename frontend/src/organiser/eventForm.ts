@@ -10,7 +10,7 @@
  * so an organiser sees the problem inline instead of a 400 after submitting.
  */
 
-import { EventVo } from '../types'
+import { EventVo, isKnownCategory } from '../types'
 import { addHoursToLocalInput, isoToLocalInput, localInputInDays, localInputToIso } from '../lib/datetime'
 import i18n from '../i18n'
 
@@ -39,7 +39,6 @@ export type EventFormErrors = Partial<Record<keyof EventFormState, string>>
 export const FIELD_LIMITS = {
   title: 200,
   summary: 300,
-  category: 50,
   city: 50,
   venueName: 200,
   address: 400,
@@ -79,7 +78,9 @@ export function formFromEvent(event: EventVo): EventFormState {
     title: event.title ?? '',
     summary: event.summary ?? '',
     description: event.description ?? '',
-    category: event.category ?? '',
+    // 存量活动可能带着白名单外的旧分类（分类固定之前是自由文本）。回落到
+    // 'other' 而不是空串，否则下拉框会是空白，主办方一保存就把它写死成非法值。
+    category: isKnownCategory(event.category) ? event.category : 'other',
     city: event.city ?? '',
     venueName: event.venueName ?? '',
     address: event.address ?? '',
@@ -136,8 +137,8 @@ export function validateEventForm(form: EventFormState): EventFormErrors {
 
   if (tooLong(form.summary, FIELD_LIMITS.summary)) errors.summary = i18n.t('organiser.form.summaryTooLong', { max: FIELD_LIMITS.summary })
 
-  if (!form.category.trim()) errors.category = i18n.t('organiser.form.needCategory')
-  else if (tooLong(form.category, FIELD_LIMITS.category)) errors.category = i18n.t('organiser.form.categoryTooLong', { max: FIELD_LIMITS.category })
+  // 分类是固定白名单，不再是自由文本：只判断成员资格，长度校验没有意义了。
+  if (!isKnownCategory(form.category)) errors.category = i18n.t('organiser.form.needCategory')
 
   if (!form.city.trim()) errors.city = i18n.t('organiser.form.needCity')
   else if (tooLong(form.city, FIELD_LIMITS.city)) errors.city = i18n.t('organiser.form.cityTooLong', { max: FIELD_LIMITS.city })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isoToLocalInput, localInputToIso } from '../lib/datetime'
-import { EventVo } from '../types'
+import { CATEGORIES, EventVo } from '../types'
 import {
   centsToEuroInput,
   createInitialForm,
@@ -50,7 +50,7 @@ describe('validateEventForm', () => {
   it('requires the fields the server marks @NotBlank/@NotNull', () => {
     const errors = validateEventForm(formWith({ title: '  ', category: '', city: '', startsAt: '' }))
     expect(errors.title).toBe('请填写活动标题')
-    expect(errors.category).toBe('请选择或填写分类')
+    expect(errors.category).toBe('请选择分类')
     expect(errors.city).toBe('请填写城市')
     expect(errors.startsAt).toBe('请选择活动开始时间')
   })
@@ -111,6 +111,20 @@ describe('validateEventForm', () => {
   })
 })
 
+describe('validateEventForm category whitelist', () => {
+  it('rejects a category outside the fixed list', () => {
+    // 分类固定之前主办方能自由填写，这类值必须在提交前就被挡下。
+    expect(validateEventForm(formWith({ category: '工作坊' })).category).toBe('请选择分类')
+    expect(validateEventForm(formWith({ category: 'Music' })).category).toBe('请选择分类')
+  })
+
+  it('accepts every key in the fixed list', () => {
+    for (const { key } of CATEGORIES) {
+      expect(validateEventForm(formWith({ category: key })).category).toBeUndefined()
+    }
+  })
+})
+
 describe('formFromEvent', () => {
   const event: EventVo = {
     id: 8,
@@ -147,6 +161,12 @@ describe('formFromEvent', () => {
     expect(form.summary).toBe('')
     expect(form.venueName).toBe('')
     expect(form.maxQuantityPerBooking).toBe('')
+  })
+
+  it('falls back to "other" for a category left over from the free-text era', () => {
+    // 下拉框里没有 '工作坊' 这个选项，直接映射会让分类框渲染成空白。
+    expect(formFromEvent({ ...event, category: '工作坊' }).category).toBe('other')
+    expect(formFromEvent({ ...event, category: 'music' }).category).toBe('music')
   })
 })
 
