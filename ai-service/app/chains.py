@@ -16,7 +16,14 @@ from .schemas import Suggestion
 
 
 class LlmOutputError(Exception):
-    """模型连续两次没有给出合法的结构化输出。"""
+    """模型在允许的调用次数内没有给出合法的结构化输出。"""
+
+
+# 一次 improve 最多打几次模型。单次调用受 llm_timeout_seconds(30s) + max_retries=0
+# 硬约束，而 Spring 侧的读超时是 90s：跑满 3 次就正好顶到 90s，Spring 会先超时把
+# 「AI 不可用」返回给用户，而 Python 还在继续烧 token。结构化输出这条主路径本身
+# 就要占掉一次，所以它算进同一个预算里，而不是白送一次。
+MAX_MODEL_CALLS = 2
 
 
 class CopySuggestionOut(BaseModel):
@@ -144,7 +151,9 @@ def _accumulate(usage: dict[str, int], more: dict[str, int]) -> None:
         usage[key] = usage.get(key, 0) + value
 
 
-def _try_structured_output(model: BaseChatModel, messages: list[Any], usage: dict[str, int]) -> Suggestion | None:
+def _try_structured_output(
+    model: BaseChatModel, messages: list[Any], usage: dict[str, int]
+) -> tuple[Suggestion | None, int]:
     """结构化输出主路径；不可用或没解析出来时返回 None，交给手写解析兜底。
 
     两个参数都是刻意选的：
@@ -155,34 +164,47 @@ def _try_structured_output(model: BaseChatModel, messages: list[Any], usage: dic
 
     注意 include_raw=True 时解析失败【不抛异常】，而是把错误放进 parsing_error，
     所以两种失败都要判：软失败（parsed 为空）与硬失败（网关不支持，invoke 抛错）。
+
+    返回 (建议, 已消耗的模型调用次数)。次数要区分「请求根本没发出去」和「发出去了
+    但没成功」：前者没花时间，兜底可以用满预算；后者已经吃掉最多 30 秒，必须计入。
     """
     try:
         runnable = model.with_structured_output(
             CopySuggestionOut, method="function_calling", include_raw=True
         )
+    except Exception:
+        # 网关连 tool calling 都不支持：一个请求都没发出去。
+        return None, 0
+    try:
         result = runnable.invoke(messages)
     except Exception:
-        # 网关不支持 tool calling 等硬失败。
-        return None
+        # 请求已经发出去了（很可能就是超时），这一次必须算进预算。
+        return None, 1
     if not isinstance(result, dict):
-        return None
+        return None, 1
     # 失败也要把这次的用量算进去：它一样是花掉的钱。
     _accumulate(usage, _usage_of(result.get("raw")))
     parsed = result.get("parsed")
     if parsed is None or result.get("parsing_error") is not None:
-        return None
+        return None, 1
     try:
-        return parsed.to_suggestion()
+        return parsed.to_suggestion(), 1
     except Exception:
-        return None
+        return None, 1
 
 
 def _improve_with_text_parsing(
-    model: BaseChatModel, messages: list[Any], usage: dict[str, int]
+    model: BaseChatModel, messages: list[Any], usage: dict[str, int], attempts: int
 ) -> tuple[Suggestion, list[str], dict[str, int]]:
-    """兜底：让模型直接吐 JSON 文本，解析失败时带着错误提示重试一次。"""
+    """兜底：让模型直接吐 JSON 文本，解析失败时带着错误提示再试。
+
+    attempts 是**剩余**的调用次数，不是固定的 2：结构化那次如果真的打出去了，
+    它已经占掉了整轮预算的一半。
+    """
+    if attempts <= 0:
+        raise LlmOutputError("model call budget exhausted before a valid structure was produced")
     last_error: str | None = None
-    for _attempt in range(2):
+    for _attempt in range(attempts):
         response = model.invoke(messages)
         _accumulate(usage, _usage_of(response))
         parsed = extract_json(_content_to_text(response.content))
@@ -210,14 +232,16 @@ def improve_event_copy(model: BaseChatModel, payload: Any) -> tuple[Suggestion, 
     """根据主办方表单数据生成文案建议。
 
     返回 (建议, 警告, token用量)。优先走结构化输出；网关不支持或没解析出来时
-    回落到手写 JSON 解析 + 一次重试，两条路径的 token 用量累加在同一个 usage 里。
+    回落到手写 JSON 解析。两条路径的 token 用量累加在同一个 usage 里，模型调用
+    次数也共用 MAX_MODEL_CALLS 这一个预算——否则最坏路径会超过 Spring 的读超时，
+    用户已经收到「AI 不可用」了 Python 还在烧 token。
     两条路径都失败时抛 LlmOutputError，绝不把未校验的文本交给调用方。
     """
     messages = _build_messages(payload)
     usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
 
-    structured = _try_structured_output(model, messages, usage)
+    structured, calls_used = _try_structured_output(model, messages, usage)
     if structured is not None:
         return structured, structured.warnings, usage
 
-    return _improve_with_text_parsing(model, messages, usage)
+    return _improve_with_text_parsing(model, messages, usage, MAX_MODEL_CALLS - calls_used)

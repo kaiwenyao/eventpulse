@@ -229,6 +229,50 @@ class TestStructuredOutput:
         # 结构化那次也是花掉的钱，必须累加进去而不是被丢弃。
         assert usage == {"input_tokens": 35, "output_tokens": 15}
 
+    def test_total_model_calls_are_capped_so_spring_does_not_time_out_first(self):
+        """结构化 + 兜底共用一个调用预算，不是各自计数。
+
+        单次调用受 llm_timeout_seconds(30s) + max_retries=0 约束，Spring 侧读超时
+        90s。放任成「结构化 1 次 + 兜底 2 次」的话最坏正好 90s：用户已经收到
+        「AI 不可用」了，Python 还在继续烧 token。
+        """
+        calls: list[str] = []
+
+        class CountingSoftFail(StructuredChatModel):
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                from langchain_core.outputs import ChatGeneration, ChatResult
+
+                calls.append("text")
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content="不是 JSON"))])
+
+            def with_structured_output(self, schema, **kwargs):  # noqa: ANN001, ANN003
+                from langchain_core.runnables import RunnableLambda
+
+                def _run(_messages):
+                    calls.append("structured")
+                    return {"raw": AIMessage(content=""), "parsed": None,
+                            "parsing_error": ValueError("nope")}
+
+                return RunnableLambda(_run)
+
+        with pytest.raises(LlmOutputError):
+            improve_event_copy(CountingSoftFail(calls=[]), request())
+
+        assert calls == ["structured", "text"]
+
+    def test_gateway_without_tool_calling_still_gets_both_text_attempts(self):
+        # 结构化那次连请求都没发出去，就不该扣兜底的次数：这条路径的韧性不能被这次
+        # 收紧顺手削掉。
+        model = ExplodingStructuredChatModel(script=[
+            AIMessage(content="抱歉，我无法输出 JSON。"),
+            json_message({"title": "第二次才对", "summary": "", "description": "",
+                          "attendance_notes": "", "warnings": []}),
+        ])
+
+        suggestion, _warnings, _usage = improve_event_copy(model, request())
+
+        assert suggestion.title == "第二次才对"
+
     def test_gateway_without_tool_calling_falls_back_to_text_parsing(self):
         model = ExplodingStructuredChatModel(script=[
             json_message({"title": "兜底标题", "summary": "", "description": "",
