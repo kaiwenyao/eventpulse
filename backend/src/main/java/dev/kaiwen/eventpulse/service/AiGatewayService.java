@@ -68,6 +68,16 @@ public class AiGatewayService {
     private static final int MAX_WARNINGS = 6;
     private static final int MAX_WARNING_CHARS = 300;
     private static final int CONVERSATION_PREVIEW_CHARS = 80;
+    /**
+     * 发给 Python 的偏好字段上限。user_preferences 的列是 VARCHAR(300) 且写入侧不
+     * 截断，而 Python 的 DiscoveryPreferences 是 max_length=200：库里合法存在的
+     * 201–300 字符城市列表会让整个请求被 Pydantic 判 422，Spring 再转成「AI 暂不
+     * 可用」，该用户从此每次提问都失败且无法自愈。
+     *
+     * 截断放在网关而不是放宽 Python：这里是数据往外带的边界，顺带也挡住了以后
+     * 有人加宽 DB 列。提示词层反正也只取前 200 字符。
+     */
+    private static final int MAX_PREFERENCE_CHARS = 200;
 
     private final AppProperties properties;
     private final AiServiceClient client;
@@ -320,7 +330,9 @@ public class AiGatewayService {
             return null;
         }
         return preferences.findById(userId)
-                .map(pref -> new ToolPreferenceVo(pref.getCategories(), pref.getCities(),
+                .map(pref -> new ToolPreferenceVo(
+                        truncate(pref.getCategories(), MAX_PREFERENCE_CHARS),
+                        truncate(pref.getCities(), MAX_PREFERENCE_CHARS),
                         pref.getLatitude(), pref.getLongitude(), pref.getRadiusKm()))
                 .orElse(null);
     }

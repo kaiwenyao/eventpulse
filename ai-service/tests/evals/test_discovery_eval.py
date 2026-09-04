@@ -9,6 +9,7 @@ import os
 import pytest
 
 from app.agent import run_discovery_agent
+from app.config import Settings
 from app.llm import build_chat_model
 
 from conftest import make_settings
@@ -27,10 +28,20 @@ CATALOGUE = [
 
 @pytest.fixture(scope="module")
 def model():
-    settings = make_settings()
-    if not settings.llm_api_key.strip() or settings.llm_api_key == "test-key":
+    """真模型必须从环境变量构造，不能用 make_settings()。
+
+    make_settings() 的 base 里把 llm_api_key 写死成 "test-key"、llm_model 写死成
+    "fake-model"（conftest.py:21-34），拿它判断等于永远 skip —— 这组用例会一直
+    绿着但从未执行过一次，比没有它更糟。
+
+    conftest 里是 os.environ.setdefault，所以真的 export 了 LLM_API_KEY 时不会被
+    覆盖；没 export 时环境里就是占位的 "test-key"，据此 skip。
+    """
+    env_settings = Settings()
+    key = env_settings.llm_api_key.strip()
+    if not key or key == "test-key":
         pytest.skip("LLM_API_KEY not configured; real-model evals are opt-in")
-    return build_chat_model(settings)
+    return build_chat_model(env_settings)
 
 
 def run(model, message: str, catalogue=None):

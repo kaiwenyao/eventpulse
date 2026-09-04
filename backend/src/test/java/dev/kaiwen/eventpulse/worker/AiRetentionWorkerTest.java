@@ -64,8 +64,10 @@ class AiRetentionWorkerTest {
 
     @Test
     void deletesMessagesBeforeConversationsAndCountsBothBatches() {
+        // batchSize=2，第一批满员 → 会继续查下一批；第二批空则收工。
         when(conversations.findByUpdatedAtBefore(any(), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(conversation(1L), conversation(2L))));
+                .thenReturn(new PageImpl<>(List.of(conversation(1L), conversation(2L))))
+                .thenReturn(new PageImpl<>(List.of()));
         when(messages.deleteByConversationIdIn(anyList())).thenReturn(5);
         when(conversations.deleteByIdIn(anyList())).thenReturn(2);
         when(requestLogs.findByCreatedAtBefore(any(), any(Pageable.class)))
@@ -142,7 +144,8 @@ class AiRetentionWorkerTest {
         properties.getAi().setRetentionDays(0);
         properties.getAi().setRequestLogRetentionDays(180);
         when(requestLogs.findByCreatedAtBefore(any(), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(requestLog("a"), requestLog("b"))));
+                .thenReturn(new PageImpl<>(List.of(requestLog("a"), requestLog("b"))))
+                .thenReturn(new PageImpl<>(List.of()));
         when(requestLogs.deleteByRequestIdIn(anyList())).thenReturn(2);
 
         worker.purge();
@@ -150,4 +153,40 @@ class AiRetentionWorkerTest {
         verify(requestLogs).deleteByRequestIdIn(List.of("a", "b"));
         assertThat(meters.counter("ai.retention", "result", "requests").count()).isEqualTo(2.0);
     }
+    @Test
+    void oneRunKeepsDrainingUntilTheBacklogIsGone() {
+        // 默认 24 小时才跑一轮：如果一轮只清一批（200 行），排空速率就是 200 行/天，
+        // 任何产出更快的部署都会永久积压，数据实际上永远留在保留期之外。
+        when(conversations.findByUpdatedAtBefore(any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(conversation(1L), conversation(2L))))
+                .thenReturn(new PageImpl<>(List.of(conversation(3L), conversation(4L))))
+                .thenReturn(new PageImpl<>(List.of(conversation(5L))));
+        when(conversations.deleteByIdIn(anyList())).thenReturn(2, 2, 1);
+        when(requestLogs.findByCreatedAtBefore(any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        worker.purge();
+
+        // 三批一次跑完；最后一批不满 batchSize，不再多查一次。
+        verify(conversations, org.mockito.Mockito.times(3))
+                .findByUpdatedAtBefore(any(), any(Pageable.class));
+        assertThat(meters.counter("ai.retention", "result", "conversations").count()).isEqualTo(5.0);
+    }
+
+    @Test
+    void oneRunIsStillBoundedSoItCannotHogTheTransactionForever() {
+        // 删除没生效（例如并发下别的实例先删了）时，第 0 页会一直返回同一批：
+        // 必须有上限，否则单轮永远跑不完。
+        when(conversations.findByUpdatedAtBefore(any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(conversation(1L), conversation(2L))));
+        when(conversations.deleteByIdIn(anyList())).thenReturn(0);
+        when(requestLogs.findByCreatedAtBefore(any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        worker.purge();
+
+        verify(conversations, org.mockito.Mockito.times(50))
+                .findByUpdatedAtBefore(any(), any(Pageable.class));
+    }
+
 }

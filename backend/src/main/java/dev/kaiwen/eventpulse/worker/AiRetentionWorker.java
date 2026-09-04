@@ -41,6 +41,14 @@ public class AiRetentionWorker {
 
     private static final Logger log = LoggerFactory.getLogger(AiRetentionWorker.class);
 
+    /**
+     * 单轮最多处理多少批。默认 24 小时才跑一次，如果一轮只清一批（200 行），排空
+     * 速率就是 200 行/天 —— 任何一天过期行数超过这个量的部署，积压会永久增长，
+     * 数据实际上永远留在保留期之外。所以一轮要连续清到没有为止，只保留一个上限，
+     * 避免单次运行无限期占着事务。
+     */
+    private static final int MAX_BATCHES_PER_RUN = 50;
+
     private final AiConversationRepository conversations;
     private final AiMessageRepository messages;
     private final AiRequestLogRepository requestLogs;
@@ -75,18 +83,27 @@ public class AiRetentionWorker {
             return 0;
         }
         Instant cutoff = Instant.now().minus(Duration.ofDays(retentionDays));
-        List<AiConversation> batch = conversations.findByUpdatedAtBefore(cutoff,
-                PageRequest.of(0, properties.getAi().getRetentionBatchSize(), Sort.by("id").ascending()))
-                .getContent();
-        if (batch.isEmpty()) {
-            return 0;
+        int batchSize = properties.getAi().getRetentionBatchSize();
+        int removedTotal = 0;
+        for (int round = 0; round < MAX_BATCHES_PER_RUN; round++) {
+            // 每轮都取第 0 页：上一批已经删掉了，第 0 页就是下一批待清理的行。
+            List<AiConversation> batch = conversations.findByUpdatedAtBefore(cutoff,
+                    PageRequest.of(0, batchSize, Sort.by("id").ascending())).getContent();
+            if (batch.isEmpty()) {
+                break;
+            }
+            List<Long> ids = batch.stream().map(AiConversation::getId).toList();
+            int removedMessages = messages.deleteByConversationIdIn(ids);
+            int removedConversations = conversations.deleteByIdIn(ids);
+            meters.counter("ai.retention", "result", "messages").increment(removedMessages);
+            meters.counter("ai.retention", "result", "conversations").increment(removedConversations);
+            removedTotal += removedConversations;
+            if (batch.size() < batchSize) {
+                // 不满一批说明已经清空，不必再多查一次。
+                break;
+            }
         }
-        List<Long> ids = batch.stream().map(AiConversation::getId).toList();
-        int removedMessages = messages.deleteByConversationIdIn(ids);
-        int removedConversations = conversations.deleteByIdIn(ids);
-        meters.counter("ai.retention", "result", "messages").increment(removedMessages);
-        meters.counter("ai.retention", "result", "conversations").increment(removedConversations);
-        return removedConversations;
+        return removedTotal;
     }
 
     private int purgeRequestLogs() {
@@ -95,14 +112,22 @@ public class AiRetentionWorker {
             return 0;
         }
         Instant cutoff = Instant.now().minus(Duration.ofDays(retentionDays));
-        List<AiRequestLog> batch = requestLogs.findByCreatedAtBefore(cutoff,
-                PageRequest.of(0, properties.getAi().getRetentionBatchSize(), Sort.by("createdAt").ascending()))
-                .getContent();
-        if (batch.isEmpty()) {
-            return 0;
+        int batchSize = properties.getAi().getRetentionBatchSize();
+        int removedTotal = 0;
+        for (int round = 0; round < MAX_BATCHES_PER_RUN; round++) {
+            List<AiRequestLog> batch = requestLogs.findByCreatedAtBefore(cutoff,
+                    PageRequest.of(0, batchSize, Sort.by("createdAt").ascending())).getContent();
+            if (batch.isEmpty()) {
+                break;
+            }
+            int removed = requestLogs.deleteByRequestIdIn(
+                    batch.stream().map(AiRequestLog::getRequestId).toList());
+            meters.counter("ai.retention", "result", "requests").increment(removed);
+            removedTotal += removed;
+            if (batch.size() < batchSize) {
+                break;
+            }
         }
-        int removed = requestLogs.deleteByRequestIdIn(batch.stream().map(AiRequestLog::getRequestId).toList());
-        meters.counter("ai.retention", "result", "requests").increment(removed);
-        return removed;
+        return removedTotal;
     }
 }

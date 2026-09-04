@@ -286,4 +286,62 @@ describe('AiDiscoveryAssistant', () => {
     expect(localStorage.getItem('ep_ai_conversation')).toBeNull()
   })
 
+  it('keeps the active conversation when opening another one fails transiently', async () => {
+    signIn()
+    localStorage.setItem('ep_ai_conversation', '31')
+    routeApi({
+      'GET /api/auth/me': { id: 2, email: 'a@b.c', name: 'A', role: 'USER' },
+      'GET /api/ai/conversations/31': {
+        id: '31',
+        messages: [{ role: 'user', content: '会话A的内容', createdAt: '2026-09-04T09:00:00Z' }],
+      },
+      'GET /api/ai/conversations': [
+        { id: '32', preview: '会话B', updatedAt: '2026-09-04T10:00:00Z' },
+      ],
+      'GET /api/ai/conversations/32': new ApiError(500, 'upstream hiccup'),
+    })
+    renderAssistant()
+    expect(await screen.findByText('会话A的内容')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '历史' }))
+    await userEvent.click(await screen.findByText('会话B'))
+
+    // 打开 B 失败是瞬时故障：A 的 id 必须保住，否则下一条消息会静默开一个新会话，
+    // 把记录劈成两半。只有明确的 403/404 才该丢弃本地 id。
+    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('GET', '/api/ai/conversations/32'))
+    expect(localStorage.getItem('ep_ai_conversation')).toBe('31')
+    expect(screen.getByText('会话A的内容')).toBeInTheDocument()
+  })
+
+  it('discards an in-flight restore that lands after the chat was reset', async () => {
+    signIn()
+    localStorage.setItem('ep_ai_conversation', '31')
+    let releaseRestore: (value: unknown) => void = () => {}
+    const pending = new Promise((resolve) => {
+      releaseRestore = resolve
+    })
+    apiMock.fn.mockImplementation((method: string, path: string) => {
+      if (path === '/api/auth/me') {
+        return Promise.resolve({ id: 2, email: 'a@b.c', name: 'A', role: 'USER' })
+      }
+      if (path === '/api/ai/conversations/31') {
+        return pending.then(() => ({
+          id: '31',
+          messages: [{ role: 'user', content: '旧会话内容', createdAt: '2026-09-04T09:00:00Z' }],
+        }))
+      }
+      return Promise.reject(new ApiError(404, `unrouted ${method} ${path}`))
+    })
+    renderAssistant()
+
+    // 恢复还在路上时点「新对话」。
+    await userEvent.click(await screen.findByRole('button', { name: '新对话' }))
+    releaseRestore(null)
+
+    // 迟到的响应不能把刚清空的对话又填回来（登出/换账号是同一类竞态）。
+    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('GET', '/api/ai/conversations/31'))
+    expect(screen.queryByText('旧会话内容')).not.toBeInTheDocument()
+    expect(localStorage.getItem('ep_ai_conversation')).toBeNull()
+  })
+
 })

@@ -41,6 +41,7 @@ import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventResult;
 import dev.kaiwen.eventpulse.entity.AiConversation;
 import dev.kaiwen.eventpulse.entity.AiMessage;
 import dev.kaiwen.eventpulse.entity.Event;
+import dev.kaiwen.eventpulse.entity.UserPreference;
 import dev.kaiwen.eventpulse.exception.BusinessException;
 import dev.kaiwen.eventpulse.repository.AiConversationRepository;
 import dev.kaiwen.eventpulse.repository.AiMessageRepository;
@@ -222,6 +223,66 @@ class AiGatewayServiceTest {
         // FINISHED 在 PUBLIC_LIST 里（结束的活动仍可浏览），但不该再被推荐。
         assertThat(EventStatus.PUBLIC_LIST).contains(EventStatus.FINISHED);
         assertThat(response.events()).isEmpty();
+    }
+
+    // ---- 偏好：出站边界的截断 ----
+
+    @Test
+    void oversizedStoredPreferencesAreTruncatedBeforeLeavingTheGateway() {
+        // user_preferences 的列是 VARCHAR(300) 且写入侧不截断，而 Python 的
+        // DiscoveryPreferences 是 max_length=200：库里合法存在的 201-300 字符城市
+        // 列表会让整个请求被 Pydantic 判 422，Spring 转成「AI 暂不可用」，该用户
+        // 从此每次提问都失败且无法自愈。
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        UserPreference stored = new UserPreference();
+        stored.setUserId(2L);
+        stored.setCities("城".repeat(300));
+        stored.setCategories("类".repeat(300));
+        when(preferences.findById(2L)).thenReturn(Optional.of(stored));
+
+        AiConversation conversation = new AiConversation();
+        ReflectionTestUtils.setField(conversation, "id", 7L);
+        conversation.setUserId(2L);
+        when(conversations.save(any())).thenReturn(conversation);
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
+                "r1", "ok", List.of(), List.of(), "openai", "gpt-test", null));
+
+        gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), bearer(2L, "USER"), "1.2.3.4");
+
+        ArgumentCaptor<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload> payload =
+                ArgumentCaptor.forClass(dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload.class);
+        verify(client).discoveryChat(payload.capture());
+        assertThat(payload.getValue().preferences().cities()).hasSize(200);
+        assertThat(payload.getValue().preferences().categories()).hasSize(200);
+    }
+
+    @Test
+    void usersWithoutASavedPreferenceRowSendNullRatherThanAnEmptyObject() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        when(preferences.findById(2L)).thenReturn(Optional.empty());
+
+        AiConversation conversation = new AiConversation();
+        ReflectionTestUtils.setField(conversation, "id", 7L);
+        conversation.setUserId(2L);
+        when(conversations.save(any())).thenReturn(conversation);
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(client.discoveryChat(any())).thenReturn(new DiscoveryResult(
+                "r1", "ok", List.of(), List.of(), "openai", "gpt-test", null));
+
+        gateway.discoveryChat(new DiscoveryChatRequest(null, "找活动"), bearer(2L, "USER"), "1.2.3.4");
+
+        ArgumentCaptor<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload> payload =
+                ArgumentCaptor.forClass(dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload.class);
+        verify(client).discoveryChat(payload.capture());
+        // 让 Python 侧「有没有偏好」的判断保持简单。
+        assertThat(payload.getValue().preferences()).isNull();
     }
 
     // ---- 会话生命周期 ----
