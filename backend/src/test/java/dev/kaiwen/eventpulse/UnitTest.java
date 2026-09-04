@@ -238,6 +238,11 @@ class UnitTest {
         when(events.findByStatusInOrderByStartsAtAsc(any())).thenReturn(List.of(published, other));
         assertThat(service.list("Shanghai", "music", "Indie")).hasSize(1);
         assertThat(service.list(null, null, "   ")).hasSize(2);
+        // 城市支持大小写不敏感的模糊匹配：打 ber 也要能命中 Berlin。
+        assertThat(service.list("shang", null, null)).hasSize(1);
+        assertThat(service.list("HAI", null, null)).hasSize(1);
+        assertThat(service.list(" shanghai ", null, null)).hasSize(1);
+        assertThat(service.list("nope", null, null)).isEmpty();
         assertThat(service.search("Shanghai", "music", "Indie", Instant.EPOCH, Instant.now().plusSeconds(40L * 86400),
                 0, 99999, true, "price", true).getTotal()).isEqualTo(1);
         assertThat(service.search(null, null, null, null, null, null, null, false, "sold", true).getTotal()).isEqualTo(2);
