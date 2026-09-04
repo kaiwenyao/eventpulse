@@ -98,6 +98,13 @@ export const ImageIcon = ({ className }: IconProps) => (
   </Icon>
 )
 
+/** Points down from the closed `<Select>` trigger; flips 180° while open. */
+export const ChevronDownIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M3.2 5.8 8 10.6l4.8-4.8" />
+  </Icon>
+)
+
 /** Shown when the active theme is dark — clicking switches to light. */
 export const SunIcon = ({ className }: IconProps) => (
   <Icon className={className}>

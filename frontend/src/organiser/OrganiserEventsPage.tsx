@@ -6,6 +6,7 @@ import { formatDayTime } from '../lib/datetime'
 import { CATEGORIES, EVENT_STATUSES, EventVo, PageVo } from '../types'
 import { CategoryPill, EmptyState, ErrorNote, EventStatusBadge, SoldBar } from '../ui/Badges'
 import { PlusIcon } from '../ui/Icons'
+import { Select } from '../ui/Select'
 import { SkeletonCard } from '../ui/Skeleton'
 import { resolveApiError } from '../lib/apiError'
 
@@ -59,26 +60,24 @@ export function OrganiserEventsPage() {
           onChange={(e) => setQ(e.target.value)}
           aria-label={t('organiser.searchMineAria')}
         />
-        <select aria-label={t('organiser.statusFilter')} value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">{t('organiser.allStatuses')}</option>
-          {EVENT_STATUSES.map((s) => (
-            <option key={s.key} value={s.key}>
-              {t(`status.event.${s.key}`)}
-            </option>
-          ))}
-        </select>
-        <select
+        <Select
+          aria-label={t('organiser.statusFilter')}
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: '', label: t('organiser.allStatuses') },
+            ...EVENT_STATUSES.map((s) => ({ value: s.key, label: t(`status.event.${s.key}`) })),
+          ]}
+        />
+        <Select
           aria-label={t('events.filterCategory')}
           value={category}
-          onChange={(e) => setCategory(e.target.value)}
-        >
-          <option value="">{t('events.allCategories')}</option>
-          {CATEGORIES.map((c) => (
-            <option key={c.key} value={c.key}>
-              {t(`category.${c.key}`)}
-            </option>
-          ))}
-        </select>
+          onChange={setCategory}
+          options={[
+            { value: '', label: t('events.allCategories') },
+            ...CATEGORIES.map((c) => ({ value: c.key, label: t(`category.${c.key}`) })),
+          ]}
+        />
       </div>
 
       {loading ? (

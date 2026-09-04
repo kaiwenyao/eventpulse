@@ -197,7 +197,7 @@
     min-width: 0;
   }
 
-  .search-row select,
+  .search-row .select,
   .analytics-picker {
     width: 100%;
   }

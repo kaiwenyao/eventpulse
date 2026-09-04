@@ -58,7 +58,8 @@ describe('discovery page design elements', () => {
     apiMock.fn.mockResolvedValue([])
     renderApp()
     const select = await screen.findByRole('combobox', { name: '按分类筛选' })
-    await userEvent.selectOptions(select, 'music')
+    await userEvent.click(select)
+    await userEvent.click(screen.getByRole('option', { name: '音乐' }))
     await waitFor(() =>
       expect(apiMock.fn).toHaveBeenCalledWith('GET', expect.stringContaining('category=music')),
     )
@@ -68,8 +69,10 @@ describe('discovery page design elements', () => {
     apiMock.fn.mockResolvedValue([])
     renderApp()
     const select = await screen.findByRole('combobox', { name: '按分类筛选' })
+    await userEvent.click(select)
     // 「全部分类」+ 8 个固定分类，不多不少：多出来的一定是漏改的硬编码。
-    expect(within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)).toEqual([
+    const listbox = screen.getByRole('listbox')
+    expect(within(listbox).getAllByRole('option').map((o) => (o as HTMLElement).dataset.value)).toEqual([
       '',
       'music',
       'tech',

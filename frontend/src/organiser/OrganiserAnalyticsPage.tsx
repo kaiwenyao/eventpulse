@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { api } from '../api'
 import { EventVo, PageVo } from '../types'
 import { EmptyState, ErrorNote } from '../ui/Badges'
+import { Select } from '../ui/Select'
 import { SkeletonCard } from '../ui/Skeleton'
 import { resolveApiError } from '../lib/apiError'
 
@@ -87,19 +88,16 @@ export function OrganiserAnalyticsPage() {
           <h1>{t('organiser.analyticsTitle')}</h1>
           <p className="muted">{t('organiser.analyticsSub')}</p>
         </div>
-        <select
+        <Select
+          className="analytics-picker"
           aria-label={t('organiser.pickEvent')}
           value={eventId}
-          onChange={(e) => setEventId(e.target.value)}
-          className="analytics-picker"
-        >
-          <option value="">{t('organiser.allEvents')}</option>
-          {events.map((event) => (
-            <option key={event.id} value={event.id}>
-              {event.title}
-            </option>
-          ))}
-        </select>
+          onChange={setEventId}
+          options={[
+            { value: '', label: t('organiser.allEvents') },
+            ...events.map((event) => ({ value: String(event.id), label: event.title })),
+          ]}
+        />
       </header>
 
       <ErrorNote message={error} />
