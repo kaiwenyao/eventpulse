@@ -136,3 +136,9 @@ eventpulse:
     cache-enabled: ${AI_CACHE_ENABLED:true}
     cache-improve-ttl-seconds: ${AI_CACHE_IMPROVE_TTL_SECONDS:3600}
     cache-discovery-ttl-seconds: ${AI_CACHE_DISCOVERY_TTL_SECONDS:120}
+    # 会话与调用日志的保留期（天，0 = 不清理），由 worker 分批删除。
+    retention-days: ${AI_RETENTION_DAYS:90}
+    request-log-retention-days: ${AI_REQUEST_LOG_RETENTION_DAYS:180}
+    retention-batch-size: ${AI_RETENTION_BATCH_SIZE:200}
+    conversation-list-limit: ${AI_CONVERSATION_LIST_LIMIT:20}
+    conversation-message-limit: ${AI_CONVERSATION_MESSAGE_LIMIT:50}

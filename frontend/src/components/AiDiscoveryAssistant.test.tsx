@@ -1,9 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { AuthProvider } from '../auth'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AiDiscoveryAssistant } from './AiDiscoveryAssistant'
-import { ApiError } from '../api'
+import { ApiError, setAccessToken } from '../api'
 import { EventVo } from '../types'
 
 const apiMock = vi.hoisted(() => ({ fn: vi.fn() }))
@@ -47,7 +48,22 @@ const event: EventVo = {
 
 beforeEach(() => {
   apiMock.fn.mockReset()
+  // setup.ts 没有全局重置 localStorage，会话 id 会在用例之间串。
+  // token 还额外缓存在 api.ts 的模块变量里，必须走 setAccessToken 一起清。
+  setAccessToken(null)
+  localStorage.clear()
 })
+
+// 助手要读登录态来决定是否恢复服务端会话，所以必须带上 AuthProvider。
+function renderAssistant() {
+  return render(
+    <AuthProvider>
+      <MemoryRouter>
+        <AiDiscoveryAssistant onClose={() => {}} />
+      </MemoryRouter>
+    </AuthProvider>,
+  )
+}
 
 describe('AiDiscoveryAssistant', () => {
   it('sends a question and renders the answer with real event cards', async () => {
@@ -58,7 +74,7 @@ describe('AiDiscoveryAssistant', () => {
       events: [{ event, reason: '周六下午，免费' }],
       followUpQuestions: ['想要更便宜的吗？'],
     })
-    render(<MemoryRouter><AiDiscoveryAssistant onClose={() => {}} /></MemoryRouter>)
+    renderAssistant()
 
     await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '这个周末有什么技术活动')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
@@ -84,7 +100,7 @@ describe('AiDiscoveryAssistant', () => {
   it('shows a thinking indicator while the answer is in flight', async () => {
     let resolve: (value: unknown) => void = () => {}
     apiMock.fn.mockReturnValueOnce(new Promise((r) => { resolve = r }))
-    render(<MemoryRouter><AiDiscoveryAssistant onClose={() => {}} /></MemoryRouter>)
+    renderAssistant()
 
     await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '周末有什么活动')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
@@ -101,7 +117,7 @@ describe('AiDiscoveryAssistant', () => {
     apiMock.fn.mockResolvedValueOnce({
       requestId: 'r4', conversationId: null, answer: '好的。', events: [], followUpQuestions: [],
     })
-    render(<MemoryRouter><AiDiscoveryAssistant onClose={() => {}} /></MemoryRouter>)
+    renderAssistant()
 
     const starter = screen.getByRole('button', { name: '现在有什么热门活动？' })
     await userEvent.click(starter)
@@ -118,7 +134,7 @@ describe('AiDiscoveryAssistant', () => {
     apiMock.fn.mockResolvedValueOnce({
       requestId: 'r5', conversationId: null, answer: '   ', events: [], followUpQuestions: [],
     })
-    render(<MemoryRouter><AiDiscoveryAssistant onClose={() => {}} /></MemoryRouter>)
+    renderAssistant()
 
     await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '随便问问')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
@@ -136,7 +152,7 @@ describe('AiDiscoveryAssistant', () => {
         events: [],
         followUpQuestions: [],
       })
-    render(<MemoryRouter><AiDiscoveryAssistant onClose={() => {}} /></MemoryRouter>)
+    renderAssistant()
 
     await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '附近的音乐活动')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
@@ -147,4 +163,127 @@ describe('AiDiscoveryAssistant', () => {
     await waitFor(() => expect(screen.getByText('这次找到了。')).toBeInTheDocument())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
+  // ---- 会话恢复 / 历史 ----
+
+  /** 让 AuthProvider 认为已登录：给个 token，并让 /api/auth/me 返回用户。 */
+  function signIn() {
+    setAccessToken('token-abc')
+  }
+
+  function routeApi(routes: Record<string, unknown>) {
+    apiMock.fn.mockImplementation((method: string, path: string) => {
+      const key = `${method} ${path}`
+      if (key in routes) {
+        const value = routes[key]
+        return value instanceof Error ? Promise.reject(value) : Promise.resolve(value)
+      }
+      return Promise.reject(new ApiError(404, `unrouted ${key}`))
+    })
+  }
+
+  it('restores the stored conversation as text and says cards are not replayed', async () => {
+    signIn()
+    localStorage.setItem('ep_ai_conversation', '31')
+    routeApi({
+      'GET /api/auth/me': { id: 2, email: 'a@b.c', name: 'A', role: 'USER' },
+      'GET /api/ai/conversations/31': {
+        id: '31',
+        messages: [
+          { role: 'user', content: '第一问', createdAt: '2026-09-04T09:00:00Z' },
+          { role: 'assistant', content: '第一答', createdAt: '2026-09-04T09:00:05Z' },
+        ],
+      },
+    })
+
+    renderAssistant()
+
+    expect(await screen.findByText('第一问')).toBeInTheDocument()
+    expect(screen.getByText('第一答')).toBeInTheDocument()
+    // 服务端只存文字，所以必须如实说明卡片不会重放，而不是假装全都恢复了。
+    expect(screen.getByText(/活动卡片与追问按钮不会重放/)).toBeInTheDocument()
+  })
+
+  it('drops a stored conversation that no longer belongs to the user', async () => {
+    signIn()
+    localStorage.setItem('ep_ai_conversation', '31')
+    routeApi({
+      'GET /api/auth/me': { id: 2, email: 'a@b.c', name: 'A', role: 'USER' },
+      'GET /api/ai/conversations/31': new ApiError(403, 'not yours'),
+    })
+
+    renderAssistant()
+
+    // 403/404 不摆给用户，安静地从头开始，并清掉本地 id。
+    await waitFor(() => expect(localStorage.getItem('ep_ai_conversation')).toBeNull())
+    expect(screen.queryByText(/活动卡片与追问按钮不会重放/)).not.toBeInTheDocument()
+  })
+
+  it('persists the conversation id returned by the server so a refresh can resume', async () => {
+    apiMock.fn.mockResolvedValueOnce({
+      requestId: 'r1',
+      conversationId: '31',
+      answer: '找到 1 场。',
+      events: [],
+      followUpQuestions: [],
+    })
+    renderAssistant()
+
+    await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '有什么活动')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() => expect(localStorage.getItem('ep_ai_conversation')).toBe('31'))
+  })
+
+  it('guests get no history controls because guest chats are not persisted', async () => {
+    renderAssistant()
+    await waitFor(() => expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: '历史' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '新对话' })).not.toBeInTheDocument()
+  })
+
+  it('lists past conversations, opens one, and clears local state when the open one is deleted', async () => {
+    signIn()
+    routeApi({
+      'GET /api/auth/me': { id: 2, email: 'a@b.c', name: 'A', role: 'USER' },
+      'GET /api/ai/conversations': [
+        { id: '31', preview: '找到 3 场爵士演出', updatedAt: '2026-09-04T10:00:00Z' },
+      ],
+      'GET /api/ai/conversations/31': {
+        id: '31',
+        messages: [{ role: 'assistant', content: '找到 3 场爵士演出', createdAt: '2026-09-04T10:00:00Z' }],
+      },
+      'DELETE /api/ai/conversations/31': undefined,
+    })
+    renderAssistant()
+
+    await userEvent.click(await screen.findByRole('button', { name: '历史' }))
+    await userEvent.click(await screen.findByText('找到 3 场爵士演出'))
+    await waitFor(() => expect(localStorage.getItem('ep_ai_conversation')).toBe('31'))
+
+    await userEvent.click(screen.getByRole('button', { name: '历史' }))
+    await userEvent.click(await screen.findByRole('button', { name: '删除这段对话' }))
+
+    // 删掉的正是当前打开的那段：本地 id 必须一起清，否则刷新后会去请求一个已经没了的会话。
+    await waitFor(() => expect(localStorage.getItem('ep_ai_conversation')).toBeNull())
+  })
+
+  it('new chat clears the transcript and the stored id', async () => {
+    signIn()
+    localStorage.setItem('ep_ai_conversation', '31')
+    routeApi({
+      'GET /api/auth/me': { id: 2, email: 'a@b.c', name: 'A', role: 'USER' },
+      'GET /api/ai/conversations/31': {
+        id: '31',
+        messages: [{ role: 'user', content: '第一问', createdAt: '2026-09-04T09:00:00Z' }],
+      },
+    })
+    renderAssistant()
+    expect(await screen.findByText('第一问')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '新对话' }))
+
+    expect(screen.queryByText('第一问')).not.toBeInTheDocument()
+    expect(localStorage.getItem('ep_ai_conversation')).toBeNull()
+  })
+
 })

@@ -182,6 +182,116 @@ class AiGatewayServiceTest {
                 .hasMessageContaining("not enabled");
     }
 
+    // ---- 会话生命周期 ----
+
+    private static AiConversation conversationOf(long id, long userId) {
+        AiConversation conversation = new AiConversation();
+        ReflectionTestUtils.setField(conversation, "id", id);
+        conversation.setUserId(userId);
+        conversation.setKind("discovery");
+        return conversation;
+    }
+
+    private static AiMessage messageOf(long id, String role, String content) {
+        AiMessage message = new AiMessage();
+        ReflectionTestUtils.setField(message, "id", id);
+        message.setRole(role);
+        message.setContent(content);
+        return message;
+    }
+
+    @Test
+    void conversationListPreviewsTheLatestMessage() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findByUserIdAndKindOrderByUpdatedAtDesc(eq(2L), eq("discovery"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(conversationOf(7L, 2L))));
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(messageOf(2L, AiMessage.ROLE_ASSISTANT, "找到 3 场爵士演出"))));
+
+        var list = gateway.listConversations();
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).id()).isEqualTo("7");
+        assertThat(list.get(0).preview()).isEqualTo("找到 3 场爵士演出");
+    }
+
+    @Test
+    void conversationWithoutMessagesPreviewsAsEmptyRatherThanNull() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findByUserIdAndKindOrderByUpdatedAtDesc(eq(2L), eq("discovery"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(conversationOf(7L, 2L))));
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        assertThat(gateway.listConversations().get(0).preview()).isEmpty();
+    }
+
+    @Test
+    void conversationDetailReturnsTextOnlyHistoryInChronologicalOrder() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findById(7L)).thenReturn(Optional.of(conversationOf(7L, 2L)));
+        when(messages.findByConversationIdOrderByIdAsc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(
+                        messageOf(1L, AiMessage.ROLE_USER, "第一问"),
+                        messageOf(2L, AiMessage.ROLE_ASSISTANT, "第一答"))));
+
+        var detail = gateway.getConversation("7");
+
+        assertThat(detail.id()).isEqualTo("7");
+        assertThat(detail.messages()).extracting("content").containsExactly("第一问", "第一答");
+    }
+
+    @Test
+    void conversationsOfOtherUsersAreForbiddenNotMerelyEmpty() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findById(7L)).thenReturn(Optional.of(conversationOf(7L, 999L)));
+
+        assertThatThrownBy(() -> gateway.getConversation("7"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("your own conversations");
+        assertThatThrownBy(() -> gateway.deleteConversation("7"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("your own conversations");
+    }
+
+    @Test
+    void missingOrMalformedConversationIdIsRejected() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findById(7L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> gateway.getConversation("7"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("not found");
+        assertThatThrownBy(() -> gateway.getConversation("abc"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Invalid conversation id");
+    }
+
+    @Test
+    void deletingAConversationRemovesItsMessagesFirst() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(conversations.findById(7L)).thenReturn(Optional.of(conversationOf(7L, 2L)));
+
+        gateway.deleteConversation("7");
+
+        var order = org.mockito.Mockito.inOrder(messages, conversations);
+        order.verify(messages).deleteByConversationIdIn(List.of(7L));
+        order.verify(conversations).deleteByIdIn(List.of(7L));
+    }
+
+    @Test
+    void conversationEndpointsRequireASignedInUser() {
+        assertThatThrownBy(() -> gateway.listConversations())
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("sign in");
+    }
+
     // ---- 成本：预算与缓存 ----
 
     /** 给缓存接上一个 Map 冒充的 Redis，让 isAvailable() 为真。 */

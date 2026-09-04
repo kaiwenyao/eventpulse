@@ -18,6 +18,11 @@ eventpulse:
     claim-seconds: ${OUTBOX_CLAIM_SECONDS:60}
   lifecycle:
     fixed-delay-ms: ${LIFECYCLE_FIXED_DELAY_MS:60000}
+  ai:
+    # AI 数据保留期清理：每天扫一轮，启动后 2 分钟开始（错开启动峰值）。
+    retention-enabled: ${AI_RETENTION_ENABLED:true}
+    retention-fixed-delay-ms: ${AI_RETENTION_FIXED_DELAY_MS:86400000}
+    retention-initial-delay-ms: ${AI_RETENTION_INITIAL_DELAY_MS:120000}
   kafka:
     # 业务 Topic 的 partition 数：多 Worker 时 Kafka 按 partition 分配消费。
     topic-partitions: ${KAFKA_PARTITIONS:3}

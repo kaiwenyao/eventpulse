@@ -13,11 +13,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.domain.EventStatus;
 import dev.kaiwen.eventpulse.dto.AiDtos.AiUser;
+import dev.kaiwen.eventpulse.dto.AiDtos.ConversationDetail;
+import dev.kaiwen.eventpulse.dto.AiDtos.ConversationMessage;
+import dev.kaiwen.eventpulse.dto.AiDtos.ConversationSummary;
 import dev.kaiwen.eventpulse.dto.AiDtos.CopySuggestion;
 import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryChatRequest;
 import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryChatResponse;
@@ -62,6 +66,7 @@ public class AiGatewayService {
     private static final int MAX_FOLLOW_UPS = 3;
     private static final int MAX_WARNINGS = 6;
     private static final int MAX_WARNING_CHARS = 300;
+    private static final int CONVERSATION_PREVIEW_CHARS = 80;
 
     private final AppProperties properties;
     private final AiServiceClient client;
@@ -300,6 +305,83 @@ public class AiGatewayService {
             return null;
         }
         return cache.key("discovery", message.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    // ---- 会话生命周期：列表 / 恢复 / 删除 ----
+
+    /**
+     * 当前用户的发现助手会话列表。这三个接口都不在 JwtInterceptor 的公开白名单里，
+     * 所以走到这里一定有登录态；归属仍然逐条复核，不靠路径推断。
+     */
+    public List<ConversationSummary> listConversations() {
+        Long userId = requireSignedIn();
+        return conversations.findByUserIdAndKindOrderByUpdatedAtDesc(userId, FEATURE_DISCOVERY,
+                        PageRequest.of(0, properties.getAi().getConversationListLimit()))
+                .getContent().stream()
+                .map(conversation -> new ConversationSummary(
+                        String.valueOf(conversation.getId()),
+                        previewOf(conversation.getId()),
+                        conversation.getUpdatedAt()))
+                .toList();
+    }
+
+    /**
+     * 恢复一段会话。只还原文字：ai_messages 里本来就只有 role/content，活动卡片与
+     * 追问按钮无法重放 —— 前端要如实说明，不能假装还原了全部内容。
+     */
+    public ConversationDetail getConversation(String conversationId) {
+        Long userId = requireSignedIn();
+        AiConversation conversation = requireOwnedConversation(conversationId, userId);
+        List<ConversationMessage> content = messages.findByConversationIdOrderByIdAsc(conversation.getId(),
+                        PageRequest.of(0, properties.getAi().getConversationMessageLimit()))
+                .getContent().stream()
+                .map(m -> new ConversationMessage(m.getRole(), m.getContent(), m.getCreatedAt()))
+                .toList();
+        return new ConversationDetail(String.valueOf(conversation.getId()), content);
+    }
+
+    /** 用户主动删除。消息有外键指向会话，必须先删消息。 */
+    @Transactional
+    public void deleteConversation(String conversationId) {
+        Long userId = requireSignedIn();
+        AiConversation conversation = requireOwnedConversation(conversationId, userId);
+        messages.deleteByConversationIdIn(List.of(conversation.getId()));
+        conversations.deleteByIdIn(List.of(conversation.getId()));
+    }
+
+    private static Long requireSignedIn() {
+        Long userId = BaseContext.getUserId();
+        if (userId == null) {
+            throw BusinessException.forbidden("Please sign in to manage AI conversations");
+        }
+        return userId;
+    }
+
+    private AiConversation requireOwnedConversation(String conversationId, Long userId) {
+        AiConversation conversation = conversations.findById(parseConversationId(conversationId))
+                .orElseThrow(() -> BusinessException.notFound("Conversation not found"));
+        if (!userId.equals(conversation.getUserId())) {
+            throw BusinessException.forbidden("You can only access your own conversations");
+        }
+        return conversation;
+    }
+
+    private static Long parseConversationId(String conversationId) {
+        try {
+            return Long.valueOf(conversationId);
+        }
+        catch (NumberFormatException e) {
+            throw new BusinessException("Invalid conversation id");
+        }
+    }
+
+    /** 列表预览取最后一条消息；没有消息（刚建就没发成功）时给空串而不是 null。 */
+    private String previewOf(Long conversationId) {
+        return messages.findByConversationIdOrderByIdDesc(conversationId, PageRequest.of(0, 1))
+                .getContent().stream()
+                .findFirst()
+                .map(m -> truncate(m.getContent(), CONVERSATION_PREVIEW_CHARS))
+                .orElse("");
     }
 
     private void requireEnabled() {
