@@ -50,6 +50,23 @@ public class AppProperties {
         private int contextTokenTtlSeconds = 300;
         /** Agent 解析「这个周末」这类相对日期时使用的明确时区。 */
         private String timeZone = "Europe/Berlin";
+        /**
+         * 每日 token 预算（0 = 关闭）。与「次/分钟」限流互补：限流挡短时间刷调用，
+         * 预算挡长尾的成本失控。语义是「先检查、后记账」，所以跨过阈值的那一次请求
+         * 仍会放行并小幅超支 —— 这是成本护栏，不是计费闸门。
+         */
+        private int dailyTokenBudgetUser = 200000;
+        private int dailyTokenBudgetGlobal = 0;
+        /**
+         * 上游失败时按这个值记账。失败的那一轮（尤其是跑满工具循环后才超时的）真的
+         * 烧了 token，但 Python 的 502 里没有 usage；不记账的话，能稳定触发失败的
+         * 用户等于拥有无限预算。
+         */
+        private int failureTokenPenalty = 2000;
+        /** AI 结果缓存总开关；没有 Redis 时无论如何都不缓存。 */
+        private boolean cacheEnabled = true;
+        private int cacheImproveTtlSeconds = 3600;
+        private int cacheDiscoveryTtlSeconds = 120;
 
         public boolean isEnabled() {
             return enabled;
@@ -153,6 +170,54 @@ public class AppProperties {
 
         public void setTimeZone(String timeZone) {
             this.timeZone = timeZone;
+        }
+
+        public int getDailyTokenBudgetUser() {
+            return dailyTokenBudgetUser;
+        }
+
+        public void setDailyTokenBudgetUser(int dailyTokenBudgetUser) {
+            this.dailyTokenBudgetUser = dailyTokenBudgetUser;
+        }
+
+        public int getDailyTokenBudgetGlobal() {
+            return dailyTokenBudgetGlobal;
+        }
+
+        public void setDailyTokenBudgetGlobal(int dailyTokenBudgetGlobal) {
+            this.dailyTokenBudgetGlobal = dailyTokenBudgetGlobal;
+        }
+
+        public int getFailureTokenPenalty() {
+            return failureTokenPenalty;
+        }
+
+        public void setFailureTokenPenalty(int failureTokenPenalty) {
+            this.failureTokenPenalty = failureTokenPenalty;
+        }
+
+        public boolean isCacheEnabled() {
+            return cacheEnabled;
+        }
+
+        public void setCacheEnabled(boolean cacheEnabled) {
+            this.cacheEnabled = cacheEnabled;
+        }
+
+        public int getCacheImproveTtlSeconds() {
+            return cacheImproveTtlSeconds;
+        }
+
+        public void setCacheImproveTtlSeconds(int cacheImproveTtlSeconds) {
+            this.cacheImproveTtlSeconds = cacheImproveTtlSeconds;
+        }
+
+        public int getCacheDiscoveryTtlSeconds() {
+            return cacheDiscoveryTtlSeconds;
+        }
+
+        public void setCacheDiscoveryTtlSeconds(int cacheDiscoveryTtlSeconds) {
+            this.cacheDiscoveryTtlSeconds = cacheDiscoveryTtlSeconds;
         }
     }
 

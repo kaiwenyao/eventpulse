@@ -47,6 +47,7 @@ describe('AiCopyAssistant', () => {
         venueName: '',
         startsAt: expect.any(String),
         tone: '',
+        refresh: false,
       }),
     )
     expect(screen.getByText('周末爵士夜：在城市里听见即兴')).toBeInTheDocument()
@@ -109,4 +110,23 @@ describe('AiCopyAssistant', () => {
     expect(patch.description).toBeUndefined()
     expect(patch.attendanceNotes).toBe('须知')
   })
+
+  it('sends refresh on regenerate so the button is not served a cached copy', async () => {
+    apiMock.fn
+      .mockResolvedValueOnce(suggestion)
+      .mockResolvedValueOnce(suggestion)
+    render(<AiCopyAssistant form={createInitialForm()} onApply={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'AI 完善文案' }))
+    await userEvent.click(await screen.findByRole('button', { name: '生成建议' }))
+    await screen.findByText('周末爵士夜：在城市里听见即兴')
+    // 首次生成允许命中缓存。
+    expect(apiMock.fn.mock.calls[0][2]).toMatchObject({ refresh: false })
+
+    await userEvent.click(screen.getByRole('button', { name: '重新生成' }))
+    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledTimes(2))
+    // 重新生成必须绕过缓存读，否则会拿到一字不差的同一份文案。
+    expect(apiMock.fn.mock.calls[1][2]).toMatchObject({ refresh: true })
+  })
+
 })

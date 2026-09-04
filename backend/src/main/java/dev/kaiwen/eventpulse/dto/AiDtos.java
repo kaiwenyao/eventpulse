@@ -27,7 +27,12 @@ public final class AiDtos {
             @Size(max = 300) String audience,
             @Size(max = 200) String tone,
             Instant startsAt,
-            Integer priceCents) {
+            Integer priceCents,
+            /**
+             * 「重新生成」传 true：跳过缓存读、但仍然写回。否则主办方点重新生成会拿到
+             * 一字不差的同一份文案，等于按钮失灵。
+             */
+            Boolean refresh) {
     }
 
     /** 文案建议：固定结构，主办方逐项确认后才能应用到表单。 */

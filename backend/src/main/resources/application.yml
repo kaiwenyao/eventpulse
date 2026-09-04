@@ -125,3 +125,14 @@ eventpulse:
     history-limit: 8
     context-token-ttl-seconds: 300
     time-zone: ${AI_TIME_ZONE:Europe/Berlin}
+    # 每日 token 预算（0 = 关闭）。限流挡短时间刷调用，预算挡长尾的成本失控。
+    # 语义是「先检查、后记账」，跨过阈值的那一次仍会放行并小幅超支。
+    daily-token-budget-user: ${AI_DAILY_TOKEN_BUDGET_USER:200000}
+    daily-token-budget-global: ${AI_DAILY_TOKEN_BUDGET_GLOBAL:0}
+    # 上游失败时按这个值记账：失败的那一轮真的烧了 token，但 502 里没有 usage。
+    failure-token-penalty: ${AI_FAILURE_TOKEN_PENALTY:2000}
+    # AI 结果缓存。没有 Redis 时无论如何都不缓存（直接回源真调一次 LLM）。
+    # 换模型后最多 cache-improve-ttl-seconds 内仍可能返回旧模型的文案。
+    cache-enabled: ${AI_CACHE_ENABLED:true}
+    cache-improve-ttl-seconds: ${AI_CACHE_IMPROVE_TTL_SECONDS:3600}
+    cache-discovery-ttl-seconds: ${AI_CACHE_DISCOVERY_TTL_SECONDS:120}

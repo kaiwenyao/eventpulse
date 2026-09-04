@@ -1,11 +1,13 @@
 package dev.kaiwen.eventpulse.service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,12 +72,15 @@ public class AiGatewayService {
     private final AiConversationRepository conversations;
     private final AiMessageRepository messages;
     private final AiRequestLogRepository requestLogs;
+    private final AiTokenBudget budget;
+    private final AiResponseCache cache;
     private final MeterRegistry meterRegistry;
 
     public AiGatewayService(AppProperties properties, AiServiceClient client, AiRateLimiter rateLimiter,
             JwtService jwtService, EventRepository events, EventService eventService,
             AiConversationRepository conversations, AiMessageRepository messages,
-            AiRequestLogRepository requestLogs, MeterRegistry meterRegistry) {
+            AiRequestLogRepository requestLogs, AiTokenBudget budget, AiResponseCache cache,
+            MeterRegistry meterRegistry) {
         this.properties = properties;
         this.client = client;
         this.rateLimiter = rateLimiter;
@@ -85,6 +90,8 @@ public class AiGatewayService {
         this.conversations = conversations;
         this.messages = messages;
         this.requestLogs = requestLogs;
+        this.budget = budget;
+        this.cache = cache;
         this.meterRegistry = meterRegistry;
     }
 
@@ -107,7 +114,26 @@ public class AiGatewayService {
         if (!rateLimiter.tryAcquire("user:" + userId, rateLimiter.userLimit())) {
             throw tooManyRequests();
         }
+        // requestId 每次都是新的，所以它绝不能进缓存 key（否则命中率恒为 0），
+        // 而命中缓存时返回的 requestId 也必须换成这一次的。
         String requestId = UUID.randomUUID().toString();
+        String cacheKey = improveCacheKey(request);
+        if (cacheKey != null && !Boolean.TRUE.equals(request.refresh())) {
+            ImproveEventResult cached = cache.get(cacheKey, ImproveEventResult.class).orElse(null);
+            if (cached != null && cached.suggestion() != null) {
+                countCache(FEATURE_IMPROVE, "hit");
+                return toImproveResponse(requestId, cached);
+            }
+        }
+        if (cacheKey != null) {
+            countCache(FEATURE_IMPROVE, "miss");
+        }
+
+        // 预算检查放在缓存之后：命中缓存没有真的调模型，既不该扣预算，也不该被预算挡住。
+        if (!budget.hasBudget(userId)) {
+            throw budgetExhausted(FEATURE_IMPROVE);
+        }
+
         ImproveEventPayload payload = new ImproveEventPayload(
                 requestId,
                 truncate(request.title(), 200),
@@ -128,21 +154,47 @@ public class AiGatewayService {
             if (result.suggestion() == null) {
                 throw new AiUnavailableException(AiServiceClient.UNAVAILABLE);
             }
+            if (cacheKey != null) {
+                cache.put(cacheKey, result, Duration.ofSeconds(properties.getAi().getCacheImproveTtlSeconds()));
+            }
             countMetric("ai.requests", FEATURE_IMPROVE, "success");
-            return new ImproveEventResponse(
-                    requestId,
-                    new CopySuggestion(
-                            truncate(result.suggestion().title(), 200),
-                            truncate(result.suggestion().summary(), 300),
-                            truncate(result.suggestion().description(), 5000),
-                            truncate(result.suggestion().attendanceNotes(), 1000),
-                            sanitizeWarnings(result.suggestion().warnings())),
-                    sanitizeWarnings(result.warnings()));
+            return toImproveResponse(requestId, result);
         }
         catch (AiUnavailableException e) {
             recordFailure(requestId, userId, FEATURE_IMPROVE, start, "upstream_unavailable");
             throw e;
         }
+    }
+
+    private ImproveEventResponse toImproveResponse(String requestId, ImproveEventResult result) {
+        return new ImproveEventResponse(
+                requestId,
+                new CopySuggestion(
+                        truncate(result.suggestion().title(), 200),
+                        truncate(result.suggestion().summary(), 300),
+                        truncate(result.suggestion().description(), 5000),
+                        truncate(result.suggestion().attendanceNotes(), 1000),
+                        sanitizeWarnings(result.suggestion().warnings())),
+                sanitizeWarnings(result.warnings()));
+    }
+
+    /**
+     * 文案建议只由提示词里的这些字段决定，所以 key 也只由它们决定：不含 requestId
+     * （每次都变）、不含 refresh（是控制位不是输入）、也不含 eventId（根本没进提示词，
+     * 带上只会白白降低命中率）。
+     */
+    private String improveCacheKey(ImproveEventRequest request) {
+        if (!cacheUsable()) {
+            return null;
+        }
+        return cache.key("improve",
+                request.title(), request.summary(), request.description(),
+                request.category(), request.city(), request.venueName(),
+                request.audience(), request.tone(), request.startsAt(), request.priceCents());
+    }
+
+    private boolean cacheUsable() {
+        return properties.getAi().isCacheEnabled() && cache.isAvailable();
     }
 
     /**
@@ -179,6 +231,25 @@ public class AiGatewayService {
         String requestId = UUID.randomUUID().toString();
         String contextToken = user == null ? null : jwtService.createContextToken(
                 user.userId(), user.role(), requestId, properties.getAi().getContextTokenTtlSeconds());
+
+        // 可共享缓存的判据是「没有用户上下文」而不是「没有登录用户」：contextToken 为空时
+        // Python 侧的 has_user_context 为假，压根不会注册任何个人化工具，答案与身份无关。
+        // 再加上「没有历史」，这一问就是可以复用的独立提问 —— 首页那几个固定引导语正是如此。
+        String cacheKey = contextToken == null && history.isEmpty() ? discoveryCacheKey(message) : null;
+        if (cacheKey != null) {
+            DiscoveryResult cached = cache.get(cacheKey, DiscoveryResult.class).orElse(null);
+            if (cached != null) {
+                countCache(FEATURE_DISCOVERY, "hit");
+                // 卡片仍会重新复核可见性；answer 正文是最长 TTL 之前的措辞，不再复核。
+                return toDiscoveryResponse(requestId, null, cached);
+            }
+            countCache(FEATURE_DISCOVERY, "miss");
+        }
+
+        if (!budget.hasBudget(userId)) {
+            throw budgetExhausted(FEATURE_DISCOVERY);
+        }
+
         DiscoveryPayload payload = new DiscoveryPayload(
                 requestId,
                 message,
@@ -193,24 +264,42 @@ public class AiGatewayService {
             DiscoveryResult result = client.discoveryChat(payload);
             recordSuccess(requestId, userId, FEATURE_DISCOVERY, result.provider(), result.model(),
                     start, result.usage());
-            List<DiscoveryEventMention> mentions = verifyEvents(result.events());
             if (userId != null) {
                 appendMessages(conversation, message, result.answer());
             }
+            if (cacheKey != null) {
+                cache.put(cacheKey, result, Duration.ofSeconds(properties.getAi().getCacheDiscoveryTtlSeconds()));
+            }
             countMetric("ai.requests", FEATURE_DISCOVERY, "success");
-            return new DiscoveryChatResponse(
-                    requestId,
-                    conversation == null ? null : String.valueOf(conversation.getId()),
-                    truncate(result.answer() == null || result.answer().isBlank()
-                            ? "I could not produce an answer this time, please try again." : result.answer(),
-                            MAX_ANSWER_CHARS),
-                    mentions,
-                    sanitizeFollowUps(result.followUpQuestions()));
+            return toDiscoveryResponse(requestId, conversation, result);
         }
         catch (AiUnavailableException e) {
             recordFailure(requestId, userId, FEATURE_DISCOVERY, start, "upstream_unavailable");
             throw e;
         }
+    }
+
+    private DiscoveryChatResponse toDiscoveryResponse(String requestId, AiConversation conversation,
+            DiscoveryResult result) {
+        return new DiscoveryChatResponse(
+                requestId,
+                conversation == null ? null : String.valueOf(conversation.getId()),
+                truncate(result.answer() == null || result.answer().isBlank()
+                        ? "I could not produce an answer this time, please try again." : result.answer(),
+                        MAX_ANSWER_CHARS),
+                verifyEvents(result.events()),
+                sanitizeFollowUps(result.followUpQuestions()));
+    }
+
+    /**
+     * 只按用户这一句话建 key。刻意不含时区（它来自 properties 的服务端常量，放进去
+     * 只会制造虚假的安全感），也不含 nowIso —— 相对日期的漂移由 120s 的 TTL 兜住。
+     */
+    private String discoveryCacheKey(String message) {
+        if (!cacheUsable()) {
+            return null;
+        }
+        return cache.key("discovery", message.toLowerCase(java.util.Locale.ROOT));
     }
 
     private void requireEnabled() {
@@ -221,6 +310,13 @@ public class AiGatewayService {
 
     private static BusinessException tooManyRequests() {
         return new BusinessException("Too many AI requests, please try again in a minute",
+                org.springframework.http.HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    /** 与限流区分开：这是「今天的额度用完了」，等一分钟没有用。 */
+    private BusinessException budgetExhausted(String feature) {
+        countMetric("ai.budget.rejected", feature, "rejected");
+        return new BusinessException("The daily AI budget has been used up, please try again tomorrow",
                 org.springframework.http.HttpStatus.TOO_MANY_REQUESTS);
     }
 
@@ -359,13 +455,22 @@ public class AiGatewayService {
 
     private void recordSuccess(String requestId, Long userId, String feature, String provider, String model,
             long start, dev.kaiwen.eventpulse.dto.AiDtos.AiUsage usage) {
-        saveLog(requestId, userId, feature, provider, model, "success", null,
-                (int) (System.currentTimeMillis() - start), usage);
+        int latencyMs = (int) (System.currentTimeMillis() - start);
+        saveLog(requestId, userId, feature, provider, model, "success", null, latencyMs, usage);
+        recordLatency(feature, latencyMs);
+        countTokens(feature, usage);
+        if (usage != null) {
+            budget.record(userId, usage.inputTokens(), usage.outputTokens());
+        }
     }
 
     private void recordFailure(String requestId, Long userId, String feature, long start, String errorCode) {
-        saveLog(requestId, userId, feature, "unknown", "unknown", "failure", errorCode,
-                (int) (System.currentTimeMillis() - start), null);
+        int latencyMs = (int) (System.currentTimeMillis() - start);
+        saveLog(requestId, userId, feature, "unknown", "unknown", "failure", errorCode, latencyMs, null);
+        recordLatency(feature, latencyMs);
+        // 失败的那一轮同样烧掉了 token（跑满工具循环后才超时的最贵），但上游 502 不带
+        // usage。按固定惩罚值记账，否则能稳定触发失败的用户就等于没有预算。
+        budget.record(userId, properties.getAi().getFailureTokenPenalty(), 0);
         countMetric("ai.requests", feature, "failure");
         countMetric("ai.failures", feature, "failure");
     }
@@ -396,6 +501,32 @@ public class AiGatewayService {
 
     private void countMetric(String name, String feature, String status) {
         meterRegistry.counter(name, "feature", feature, "status", status).increment();
+    }
+
+    /**
+     * 缓存命中/未命中单独一个指标，刻意不塞进 ai.requests 的 status 标签：那会改变
+     * 现有面板里 failure/(success+failure) 的分母。
+     */
+    private void countCache(String feature, String result) {
+        meterRegistry.counter("ai.cache", "feature", feature, "result", result).increment();
+    }
+
+    private void recordLatency(String feature, int latencyMs) {
+        meterRegistry.timer("ai.latency", "feature", feature).record(latencyMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void countTokens(String feature, dev.kaiwen.eventpulse.dto.AiDtos.AiUsage usage) {
+        if (usage == null) {
+            return;
+        }
+        if (usage.inputTokens() != null && usage.inputTokens() > 0) {
+            meterRegistry.counter("ai.tokens", "feature", feature, "kind", "input")
+                    .increment(usage.inputTokens());
+        }
+        if (usage.outputTokens() != null && usage.outputTokens() > 0) {
+            meterRegistry.counter("ai.tokens", "feature", feature, "kind", "output")
+                    .increment(usage.outputTokens());
+        }
     }
 
 }

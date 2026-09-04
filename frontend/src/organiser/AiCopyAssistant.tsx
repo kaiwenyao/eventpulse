@@ -61,7 +61,11 @@ export function AiCopyAssistant({
     attendanceNotes: true,
   })
 
-  async function improve() {
+  /**
+   * refresh=true 表示「重新生成」：服务端会跳过缓存读、但仍然写回。不传的话，
+   * 相同草稿在缓存有效期内会拿到一字不差的同一份文案，按钮等于失灵。
+   */
+  async function improve(refresh = false) {
     setLoading(true)
     setError('')
     try {
@@ -75,6 +79,7 @@ export function AiCopyAssistant({
         venueName: form.venueName,
         startsAt: localInputToIso(form.startsAt),
         tone: '',
+        refresh,
       })
       const next = {
         title: response.suggestion.title ?? '',
@@ -172,7 +177,7 @@ export function AiCopyAssistant({
             <button type="button" className="btn-primary" onClick={applySelected}>
               {t('ai.copy.apply')}
             </button>
-            <button type="button" className="btn-ghost" onClick={() => void improve()}>
+            <button type="button" className="btn-ghost" onClick={() => void improve(true)}>
               {t('ai.copy.regenerate')}
             </button>
           </div>
