@@ -46,8 +46,8 @@ Docker Compose, and the same images deploy straight to Kubernetes (k3s). 🎉
 ## ✨ Features
 
 - **🎫 End-to-end ticketing**: attendees discover / search / favourite events, place bookings, and track orders and e-tickets in real time; organisers publish events and manage lifecycles and attendee data.
-- **🛒 Cart & wallet**: a cross-device cart settled in a single transaction per checkout; booking and top-up require an `Idempotency-Key`, so retries never double-order or double-charge; the wallet ledger records the balance before and after every change.
-- **📡 Real-time notifications (SSE)**: order / wallet / cart changes flow through Kafka → Outbox → Redis broadcast to the browsers connected to any api instance; changes missed during a disconnection are backfilled on reconnect.
+- **🛒 Cart & wallet**: a cross-device cart settled in a single transaction per checkout; cart checkout requires an `Idempotency-Key` (direct bookings and top-ups accept one optionally for the same retry protection), so retries never double-order or double-charge; the wallet ledger records the balance before and after every change.
+- **📡 Real-time notifications (SSE)**: order / wallet / cart changes flow through Outbox → Kafka → Redis broadcast to the browsers connected to any api instance; changes missed during a disconnection are backfilled on reconnect.
 - **🔁 Neither lost nor duplicated**: the Outbox is claimed by an atomic UPDATE with `FOR UPDATE SKIP LOCKED` (lease + heartbeat renewal), the consumer-side `consumed_events` idempotency table absorbs redeliveries, and `message_key` keeps a given order's messages in the same Kafka partition, in order.
 - **⚖️ Multi-instance safety**: hot events and statistics never live in a JVM's own fields (Redis cache with PostgreSQL fallback); concurrent bookings never oversell; event lifecycles are two conditional UPDATEs, so concurrent workers simply update 0 rows.
 - **🤖 AI assistant**: natural-language event discovery (a LangChain agent over read-only tools querying real events) + organiser copywriting polish (structured output); with no key configured it clearly reports unavailable and normal features are unaffected.
@@ -123,7 +123,7 @@ demo defaults run as-is. Key variables:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `SECRET_KEY` | placeholder | JWT signing key; the prod profile refuses dev defaults, and rotating it invalidates issued tokens |
+| `SECRET_KEY` | placeholder | JWT signing key; replace the dev default in real deployments (startup does not enforce it), and rotating it invalidates issued tokens |
 | `DB_PASSWORD` | `eventpulse` | PostgreSQL password |
 | `CORS_ORIGINS` | two localhost origins | allowed cross-origin sources (frontend proxy + Vite dev server) |
 | `LLM_MODEL` / `LLM_API_KEY` | `gpt-4o-mini` / empty | model and credentials for the AI service; with an empty key the AI endpoints clearly report unavailable |

@@ -44,8 +44,8 @@ Kubernetes（k3s）。🎉
 ## ✨ 特性
 
 - **🎫 全流程票务**：观众发现 / 搜索 / 收藏活动，下单购票，订单与电子票实时跟踪；主办方发布活动、管理生命周期与参与者数据。
-- **🛒 购物车与钱包**：跨设备购物车、结算一次事务结清；下单 / 充值必须带 `Idempotency-Key`，重试不会重复扣款；钱包流水记录变动前后余额，全程可追溯。
-- **📡 实时通知（SSE）**：订单 / 钱包 / 购物车变化经 Kafka → Outbox → Redis 广播，送达连在任意 api 实例上的浏览器，断线重连自动补回。
+- **🛒 购物车与钱包**：跨设备购物车、结算一次事务结清；购物车结算必须带 `Idempotency-Key`（直接下单 / 充值可选带上，享受同样的幂等保护），重试不会重复扣款；钱包流水记录变动前后余额，全程可追溯。
+- **📡 实时通知（SSE）**：订单 / 钱包 / 购物车变化经 Outbox → Kafka → Redis 广播，送达连在任意 api 实例上的浏览器，断线重连自动补回。
 - **🔁 消息不重不丢**：Outbox 用带 `FOR UPDATE SKIP LOCKED` 的原子 UPDATE 领取（租约 + 心跳续租），消费端 `consumed_events` 幂等表兜底，`message_key` 让同一订单进同一 Kafka 分区保序。
 - **⚖️ 多实例安全**：热门与统计不落本机 JVM（Redis 缓存 + 回源 PostgreSQL）；并发下单不超卖；活动生命周期靠数据库条件更新，多 Worker 并发执行只会更新 0 行。
 - **🤖 AI 助手**：自然语言找活动（LangChain Agent 经只读工具查真实活动）+ 主办方文案完善（结构化输出）；未配置 Key 时明确返回不可用，普通业务不受影响。
@@ -118,7 +118,7 @@ curl -s http://localhost:3000/actuator/health
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `SECRET_KEY` | 占位值 | JWT 签名密钥；prod profile 拒绝 dev 默认值，轮换会使已发 token 失效 |
+| `SECRET_KEY` | 占位值 | JWT 签名密钥；真实部署务必替换 dev 默认值（启动不做强制校验），轮换会使已发 token 失效 |
 | `DB_PASSWORD` | `eventpulse` | PostgreSQL 密码 |
 | `CORS_ORIGINS` | localhost 两端口 | 允许的跨域来源（前端反代 + Vite 开发端口） |
 | `LLM_MODEL` / `LLM_API_KEY` | `gpt-4o-mini` / 空 | AI 服务的模型与凭证；Key 留空时 AI 明确返回不可用 |
