@@ -81,11 +81,11 @@
   }
 }
 
-@media (max-width: 720px) {
-  :root {
-    --gutter: var(--space-4);
-  }
-
+/* The signed-in English organiser row (eight tabs + brand + toggles + account)
+   first fits around 1135px with no slack. Collapse until 1200px — earlier than
+   the 720px phone layout — so the GitHub tab cannot shove theme / account /
+   sign-out off the row. Keep in sync with TOPBAR_COLLAPSE_PX in smoke.spec.ts. */
+@media (max-width: 1200px) {
   .topbar-inner {
     flex-wrap: wrap;
     height: auto;
@@ -159,6 +159,12 @@
 
   .hide-sm {
     display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --gutter: var(--space-4);
   }
 
   .hero-copy {

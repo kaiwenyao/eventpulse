@@ -236,4 +236,41 @@ test.describe('SPA smoke', () => {
     // The 2px ink border is the only inset; anything near --gutter (32px) is the bug.
     expect(gap.inset).toBeLessThanOrEqual(4)
   })
+
+  test('signed-in top bar does not overflow at tablet or desktop widths', async ({ page }) => {
+    await mockApi(page)
+    await page.addInitScript(() => {
+      localStorage.setItem('ep_token', 'demo')
+      localStorage.setItem('locale', 'en')
+    })
+
+    // Keep in sync with the top-bar collapse media query in responsive.css.
+    const TOPBAR_COLLAPSE_PX = 1200
+
+    const probe = async (width: number) => {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/')
+      await page.waitForSelector('.topbar-inner a.github-link', { state: 'attached' })
+      return page.evaluate(() => {
+        const inner = document.querySelector('.topbar-inner')!
+        const toggle = document.querySelector('.nav-toggle')!
+        const children = [...inner.children] as HTMLElement[]
+        const rightmost = Math.max(...children.map((el) => el.getBoundingClientRect().right))
+        return {
+          hamburger: getComputedStyle(toggle).display !== 'none',
+          overflow: rightmost > inner.getBoundingClientRect().right + 1,
+        }
+      })
+    }
+
+    const assertFits = async (width: number, hamburger: boolean) => {
+      const measured = await probe(width)
+      expect(measured, `${width}px`).toEqual({ hamburger, overflow: false })
+    }
+
+    await assertFits(900, true)
+    await assertFits(TOPBAR_COLLAPSE_PX, true)
+    await assertFits(TOPBAR_COLLAPSE_PX + 1, false)
+    await assertFits(1440, false)
+  })
 })
