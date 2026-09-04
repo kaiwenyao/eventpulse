@@ -102,7 +102,7 @@ make up API=3 WORKER=1       # 3 个 api + 1 个 worker
 | 3000 | 前端（`/api` 反代到 api 服务，SSE 已做免缓冲） |
 | 5432 | PostgreSQL |
 | 6379 | Redis |
-| 9092 | Kafka（宿主机侧 19092） |
+| 9092 | Kafka（容器 EXTERNAL 监听 19092） |
 
 ```bash
 # 走前端反代验证（api 不再固定占用宿主机 8080，才能 --scale 扩容）
@@ -548,7 +548,7 @@ Authorization 头、指数退避自动重连），收到提醒后重新拉取 RE
 | `*ProfileWiringIT` | api / worker / seeder 三个 Profile 各自装配了什么、排除了什么 |
 | `JwtInterceptorAsyncTest` | SSE 异步请求的 ThreadLocal 清理、线程复用不串身份 |
 | `BookingConcurrencyIT` | 并发下单不超卖 |
-| `AiMigrationIT` | V9 迁移：全新建库 + 旧库升级两条路径，旧推荐表被删除 |
+| `WalletLedgerMigrationIT` | V2 迁移两阶段验证：老账户期初记录不改余额、余额可由期初加流水核对、迁移前的老订单仍能正常退款记账 |
 | `AiGatewayServiceTest` / `AiServiceClientTest` / `InternalServiceInterceptorTest` | AI 网关限流、活动复核、编造 ID 过滤、服务间认证 |
 | `MediaServiceTest` / `S3MediaStorageTest` / `MediaPurgeWorkerTest` | 图片上传校验、key 生成、DB 失败补偿删除、读取 404/503 映射、软删除不碰对象、S3 异常翻译、清理任务语义 |
 | `MediaS3ProfileWiringIT` / `MediaS3WorkerProfileWiringIT` / `MediaS3SeederProfileWiringIT` | S3 启用后 api / worker / seeder 装配与启动兼容性（S3Client 构造不联网），默认回落本地磁盘 |

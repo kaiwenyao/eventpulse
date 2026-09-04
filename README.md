@@ -106,7 +106,7 @@ health check has a 60s `start_period`.
 | 3000 | frontend (`/api` reverse-proxied to the api service, SSE buffering disabled) |
 | 5432 | PostgreSQL |
 | 6379 | Redis |
-| 9092 | Kafka (host side: 19092) |
+| 9092 | Kafka (container EXTERNAL listener on 19092) |
 
 ```bash
 # Verify through the frontend proxy (api no longer binds a fixed host port 8080, which is what makes --scale possible)
@@ -656,7 +656,7 @@ the distributed behaviour:
 | `*ProfileWiringIT` | what each of the api / worker / seeder profiles wires up and excludes |
 | `JwtInterceptorAsyncTest` | ThreadLocal cleanup for async SSE requests; thread reuse never mixes identities |
 | `BookingConcurrencyIT` | concurrent bookings never oversell |
-| `AiMigrationIT` | V9 migration: fresh database and upgrade-from-old paths; old recommendation tables dropped |
+| `WalletLedgerMigrationIT` | two-phase V2 migration: old accounts get opening-balance records without changing balances, balances reconcile from opening + subsequent entries, pre-migration orders still refund correctly |
 | `AiGatewayServiceTest` / `AiServiceClientTest` / `InternalServiceInterceptorTest` | AI gateway rate limiting, event re-verification, fabricated-ID filtering, service-to-service auth |
 | `MediaServiceTest` / `S3MediaStorageTest` / `MediaPurgeWorkerTest` | image upload validation, key generation, compensation delete on DB failure, 404/503 mapping on reads, soft delete never touches objects, S3 exception translation, cleanup-task semantics |
 | `MediaS3ProfileWiringIT` / `MediaS3WorkerProfileWiringIT` / `MediaS3SeederProfileWiringIT` | S3-enabled wiring and startup compatibility for api / worker / seeder (S3Client construction makes no network calls); default falls back to local disk |
