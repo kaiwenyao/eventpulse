@@ -38,8 +38,10 @@ class CopySuggestionOut(BaseModel):
 
     def to_suggestion(self) -> Suggestion:
         return Suggestion(
-            # 占位标题会直接展示给主办方：中英双语，避免英文草稿收到纯中文兜底文案。
-            title=self.title.strip()[:200] or "（请重新生成标题 / Please regenerate the title）",
+            # 空标题保持为空：任何写死的占位文案都无法跟随输入语言，而且非空占位会
+            # 被前端默认勾选、应用时覆盖主办方原标题。空串由前端按 UI 语言本地化
+            # 展示（该字段不勾选、不会写入表单）。
+            title=self.title.strip()[:200],
             summary=self.summary.strip()[:300],
             description=self.description.strip()[:5000],
             attendance_notes=self.attendance_notes.strip()[:1000],

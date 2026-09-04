@@ -113,7 +113,7 @@ class TestImproveEventCopy:
             )
         )
         suggestion, warnings, _usage = improve_event_copy(model, request())
-        assert suggestion.title != ""  # 标题非法 → 使用占位文案，不会出现对象注入
+        assert suggestion.title == ""  # 标题非法 → 保持为空，由前端本地化兜底，不会出现对象注入
         assert "hacked" not in suggestion.title
         assert warnings == ["需要确认场地"]
 
@@ -183,11 +183,12 @@ class TestPromptInjection:
         assert "JSON" in IMPROVE_SYSTEM_PROMPT
 
     def test_system_prompt_adapts_output_language_to_input(self):
-        # 语言规则：输出跟随资料语言（含 warnings），中文只是无法判断时的兜底；
+        # 语言规则：输出跟随资料语言（含 warnings），无法判断时默认英文；
         # 不允许再出现写死的「默认输出中文」（bug：polish 输出总是中文）。
         assert "跟随输入资料" in IMPROVE_SYSTEM_PROMPT
         assert "warnings" in IMPROVE_SYSTEM_PROMPT
-        assert "才默认使用中文" in IMPROVE_SYSTEM_PROMPT
+        assert "才默认使用英文" in IMPROVE_SYSTEM_PROMPT
+        assert "默认使用中文" not in IMPROVE_SYSTEM_PROMPT
         assert "没有就使用自然、清晰的中文" not in IMPROVE_SYSTEM_PROMPT
 
     def test_injected_instructions_stay_data(self):
