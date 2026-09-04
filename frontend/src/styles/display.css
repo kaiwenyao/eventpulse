@@ -1637,7 +1637,11 @@ li > .card {
   text-align: right;
 }
 
+/* 步进器用 stretch 拉伸子项，数字需要自己居中，否则会贴在 44px 格子的顶部。 */
 .cart-qty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-width: 2ch;
   text-align: center;
   font-variant-numeric: tabular-nums;
