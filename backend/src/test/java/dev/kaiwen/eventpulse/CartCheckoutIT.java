@@ -282,6 +282,52 @@ class CartCheckoutIT {
         assertThat(walletOf(buyer.getId())).isEqualTo(50000 - 3000);
     }
 
+    @Test
+    void cartQuantityIsCappedByRemainingTicketsLikeTheDetailPage() {
+        User buyer = newUser("USER", 0);
+        User organiser = newUser("ORGANISER", 0);
+        // 限购 10、余票 4（容量 5 已售 1）：详情页对用户承诺「最多 4 张」，
+        // 购物车写入必须同口径，不能按限购 10 放行。
+        Event event = newEvent(organiser.getId(), 1200, 5, EventStatus.PUBLISHED);
+        event.setSold(1);
+        Event scarce = events.save(event);
+
+        login(buyer.getId());
+        CartVo cart = carts.add(scarce.getId(), 4);
+        assertThat(cart.items().get(0).quantity()).isEqualTo(4);
+        // 合并加 1 → 5 张 > 余票 4：拒绝
+        assertThatThrownBy(() -> carts.add(scarce.getId(), 1))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Only 4 tickets left");
+
+        // 改数量：往上加超过余票被拦，往下减与余票内加量放行
+        Long itemId = cart.items().get(0).id();
+        assertThatThrownBy(() -> carts.update(itemId, 5, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Only 4 tickets left");
+        assertThat(carts.update(itemId, 2, null).items().get(0).quantity()).isEqualTo(2);
+        assertThat(carts.update(itemId, 4, null).items().get(0).quantity()).isEqualTo(4);
+
+        // 加购后余票变少（别人买走 3 张，剩 1）：行数量 4 超余票 → LOW_STOCK，
+        // 减量永远放行，加量只能加到余票以内
+        scarce.setSold(4);
+        events.save(scarce);
+        cart = carts.view();
+        assertThat(cart.items().get(0).issues()).contains("LOW_STOCK");
+        assertThatThrownBy(() -> carts.update(itemId, 5, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Only 1 tickets left");
+        assertThat(carts.update(itemId, 3, null).items().get(0).quantity()).isEqualTo(3);
+
+        // 新用户直接加购同样受余票约束：加 2 拒绝，加 1 成功
+        User latecomer = newUser("USER", 0);
+        login(latecomer.getId());
+        assertThatThrownBy(() -> carts.add(scarce.getId(), 2))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Only 1 tickets left");
+        assertThat(carts.add(scarce.getId(), 1).items().get(0).quantity()).isEqualTo(1);
+    }
+
     // ------------------------------------------------------------------
     // 批量结算：整次成功 / 整次回滚
     // ------------------------------------------------------------------
