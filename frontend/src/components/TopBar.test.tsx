@@ -38,6 +38,15 @@ describe('TopBar', () => {
     expect(screen.getByRole('link', { name: '登录 / 注册' })).toBeInTheDocument()
   })
 
+  it('links to the project GitHub repository from the tab bar', async () => {
+    apiMock.fn.mockResolvedValue([])
+    renderApp()
+    const github = await screen.findByRole('link', { name: 'GitHub' })
+    expect(github).toHaveAttribute('href', 'https://github.com/kaiwenyao/eventpulse')
+    expect(github).toHaveAttribute('target', '_blank')
+    expect(github).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
   it('shows the console link only for organisers', async () => {
     apiMock.token = 'tok'
     apiMock.fn.mockImplementation((_m: string, path: string) => {

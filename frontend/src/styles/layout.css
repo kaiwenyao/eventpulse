@@ -121,6 +121,12 @@ body {
   background: var(--accent);
 }
 
+.topbar nav a.github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .user-box {
   gap: var(--space-3);
 }
