@@ -86,6 +86,17 @@ test.describe('SPA smoke', () => {
     await expect(page.getByRole('button', { name: '注册' })).toBeVisible()
   })
 
+  test('a signed-in visitor opening /login lands on the discovery page', async ({ page }) => {
+    // Regression: the login route had no guest guard, so an authenticated
+    // user typing the URL directly still got the auth form.
+    await mockApi(page)
+    await page.addInitScript(() => localStorage.setItem('ep_token', 'demo'))
+    await page.goto('/login')
+    await expect(page).toHaveURL(/\/$/)
+    await expect(page.getByRole('heading', { name: '发现今晚的城市脉搏' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '登录' })).toBeHidden()
+  })
+
   test('two tabs stay in sync through login and logout', async ({ context, page }) => {
     // Regression: the token used to live in per-tab sessionStorage, so a second
     // tab was always bounced to /login even though the first was logged in.

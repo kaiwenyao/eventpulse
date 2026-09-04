@@ -30,6 +30,19 @@ beforeEach(() => {
 })
 
 describe('LoginPage', () => {
+  it('bounces a signed-in visitor back to the discovery page instead of the auth form', async () => {
+    apiMock.token = 'stored'
+    apiMock.fn.mockImplementation((_m: string, path: string) => {
+      if (path === '/api/auth/me') return Promise.resolve(user)
+      return Promise.resolve([])
+    })
+    renderLogin()
+    // The session probe restores the user, then the guest guard on /login
+    // redirects to the discovery page — the auth form must never render.
+    await waitFor(() => expect(screen.getByPlaceholderText('搜索活动…')).toBeInTheDocument())
+    expect(screen.queryByRole('heading', { name: '登录' })).not.toBeInTheDocument()
+  })
+
   it('fills the form from a demo account chip', async () => {
     apiMock.fn.mockResolvedValue([])
     renderLogin()

@@ -66,6 +66,10 @@ export default function App() {
   }
 
   const requireUser = (element: React.ReactNode) => (user ? element : <Navigate to="/login" replace />)
+  // A signed-in visitor landing on /login directly is bounced back to the
+  // discovery page — the auth form is only for guests. `replace` keeps the
+  // login URL out of history so Back never re-triggers the redirect.
+  const requireGuest = (element: React.ReactNode) => (user ? <Navigate to="/" replace /> : element)
 
   return (
     <ToastProvider>
@@ -74,7 +78,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<EventsPage />} />
           <Route path="/events/:id" element={<EventDetailPage />} />
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/login" element={requireGuest(<LoginPage />)} />
           <Route path="/bookings" element={requireUser(<BookingsPage />)} />
           <Route path="/bookings/:id" element={requireUser(<BookingDetailPage />)} />
           <Route path="/cart" element={requireUser(<CartPage />)} />
