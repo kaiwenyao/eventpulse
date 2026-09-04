@@ -2,6 +2,8 @@ package dev.kaiwen.eventpulse.seed;
 
 import java.util.List;
 
+import dev.kaiwen.eventpulse.domain.EventCategory;
+
 /**
  * 演示数据目录：只有常量和纯函数，没有持久化逻辑。
  *
@@ -281,9 +283,9 @@ final class DemoCatalog {
     /** 分类对应的入场提示，避免每个活动都手写一遍相同的说明。 */
     static String attendanceNotes(String category) {
         return switch (category) {
-            case "music" -> "Scan the e-ticket QR code at the door. One ticket per person. Under-16s must be accompanied by an adult.";
-            case "tech" -> "Bring a laptop with internet access. Power and Wi-Fi are provided.";
-            case "sports" -> "Wear running shoes and check in 30 minutes early. Goes ahead in rain.";
+            case EventCategory.MUSIC -> "Scan the e-ticket QR code at the door. One ticket per person. Under-16s must be accompanied by an adult.";
+            case EventCategory.TECH -> "Bring a laptop with internet access. Power and Wi-Fi are provided.";
+            case EventCategory.SPORTS -> "Wear running shoes and check in 30 minutes early. Goes ahead in rain.";
             default -> "E-ticket required. Photos are allowed; no flash or tripods.";
         };
     }

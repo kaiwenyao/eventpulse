@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.common.PageResult;
+import dev.kaiwen.eventpulse.domain.EventCategory;
 import dev.kaiwen.eventpulse.domain.EventStatus;
 import dev.kaiwen.eventpulse.dto.BookingDtos.NotificationVo;
 import dev.kaiwen.eventpulse.dto.EventDtos.EventVo;
@@ -215,7 +216,8 @@ public class PlatformService {
         Long userId = requireUser();
         UserPreference pref = preferences.findById(userId).orElseGet(UserPreference::new);
         pref.setUserId(userId);
-        pref.setCategories(categories);
+        // 偏好分类同样只收白名单值：脏值留在这里会让推荐永远命中不到活动。
+        pref.setCategories(EventCategory.filterCsv(categories));
         pref.setCities(cities);
         pref.setLatitude(lat);
         pref.setLongitude(lng);
