@@ -72,10 +72,12 @@ public class CartConsumer {
                           purchased_quantity = cart_daily_stats.purchased_quantity + ?,
                           purchased_amount_cents = cart_daily_stats.purchased_amount_cents + ?
                     """,
-                    event.totalQuantity() == null ? 0 : event.totalQuantity(),
-                    event.totalAmountCents() == null ? 0L : event.totalAmountCents(),
-                    event.totalQuantity() == null ? 0 : event.totalQuantity(),
-                    event.totalAmountCents() == null ? 0L : event.totalAmountCents());
+                    // 装箱类型的空安全兜底：三元两侧都用装箱字面量（Integer/Long.valueOf），
+                    // 避免 int/Integer 混合三元触发的「拆箱后立刻再装箱」（BX_UNBOXING_IMMEDIATELY_REBOXED）。
+                    event.totalQuantity() == null ? Integer.valueOf(0) : event.totalQuantity(),
+                    event.totalAmountCents() == null ? Long.valueOf(0L) : event.totalAmountCents(),
+                    event.totalQuantity() == null ? Integer.valueOf(0) : event.totalQuantity(),
+                    event.totalAmountCents() == null ? Long.valueOf(0L) : event.totalAmountCents());
         }
         else if (event.itemId() != null && isItemEvent(event.eventType())) {
             if (staleVersion(event.itemId(), event.version())) {
@@ -92,8 +94,8 @@ public class CartConsumer {
                           SET items_added = cart_daily_stats.items_added + 1,
                               quantity_added = cart_daily_stats.quantity_added + ?
                         """,
-                        event.deltaQuantity() == null ? 0 : event.deltaQuantity(),
-                        event.deltaQuantity() == null ? 0 : event.deltaQuantity());
+                        event.deltaQuantity() == null ? Integer.valueOf(0) : event.deltaQuantity(),
+                        event.deltaQuantity() == null ? Integer.valueOf(0) : event.deltaQuantity());
                 case "CART_ITEM_REMOVED" -> jdbc.update("""
                         INSERT INTO cart_daily_stats (stat_date, items_removed, quantity_removed)
                         VALUES (CURRENT_DATE, 1, ?)
@@ -101,8 +103,8 @@ public class CartConsumer {
                           SET items_removed = cart_daily_stats.items_removed + 1,
                               quantity_removed = cart_daily_stats.quantity_removed + ?
                         """,
-                        event.quantity() == null ? 0 : event.quantity(),
-                        event.quantity() == null ? 0 : event.quantity());
+                        event.quantity() == null ? Integer.valueOf(0) : event.quantity(),
+                        event.quantity() == null ? Integer.valueOf(0) : event.quantity());
                 default -> {
                     // CART_ITEM_UPDATED 只推进版本号，不计入统计。
                 }
@@ -113,8 +115,8 @@ public class CartConsumer {
                     ON CONFLICT (item_id) DO UPDATE
                       SET last_version = GREATEST(cart_seen_item_versions.last_version, ?)
                     """,
-                    event.itemId(), event.version() == null ? 0L : event.version(),
-                    event.version() == null ? 0L : event.version());
+                    event.itemId(), event.version() == null ? Long.valueOf(0L) : event.version(),
+                    event.version() == null ? Long.valueOf(0L) : event.version());
         }
 
         // 提交成功后才发布：提醒该用户的其他页面 / 设备刷新购物车。

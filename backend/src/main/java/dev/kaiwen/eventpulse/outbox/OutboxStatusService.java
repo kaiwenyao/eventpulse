@@ -93,7 +93,8 @@ public class OutboxStatusService {
     /** 最老的待发送消息已经等了多久（秒）。没有待发送消息时返回 0，避免监控字段为 null。 */
     public Double oldestPendingAgeSeconds() {
         Double age = outbox.secondsSinceOldestPending();
-        return age == null ? 0d : age;
+        // 三元两侧保持 Double，避免 double/Double 混合触发的拆箱再装箱（BX_UNBOXING_IMMEDIATELY_REBOXED）。
+        return age == null ? Double.valueOf(0d) : age;
     }
 
     /**

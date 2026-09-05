@@ -33,7 +33,12 @@ public class LocalStorageMediaStorage implements MediaStorage {
     public void put(String key, byte[] bytes, String contentType) {
         Path dest = Path.of(properties.getMediaDir(), key);
         try {
-            Files.createDirectories(dest.getParent());
+            // getParent() 在 mediaDir 为空串等畸形配置下可能为 null；判空后再建目录，
+            // 把错误留给 Files.write 的 IOException 路径去报告，而不是无意义的 NPE。
+            Path parent = dest.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
             Files.write(dest, bytes);
         }
         catch (IOException e) {

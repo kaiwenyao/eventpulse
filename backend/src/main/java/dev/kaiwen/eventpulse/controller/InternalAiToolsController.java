@@ -108,7 +108,9 @@ public class InternalAiToolsController {
     @GetMapping("/events/popular")
     public Result<List<ToolEventVo>> popular(@RequestParam(required = false) Integer limit) {
         count("get_popular_events");
-        int capped = cap(limit == null ? 8 : limit);
+        // cap(Integer) 的三元参数会经历拆箱再装箱（BX_UNBOXING_IMMEDIATELY_REBOXED）；
+        // 先判空再取 cap(int) 即可全程 int，语义不变（null -> 8 条默认值）。
+        int capped = limit == null ? 8 : cap(limit);
         return Result.success(platformService.popular().stream()
                 .limit(capped)
                 .map(this::toToolVo)

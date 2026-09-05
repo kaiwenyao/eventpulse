@@ -138,7 +138,9 @@ public class MediaService {
         if (filename == null || filename.isBlank()) {
             return "cover";
         }
-        String base = java.nio.file.Path.of(filename).getFileName().toString().replaceAll("[^a-zA-Z0-9._-]", "_");
+        // Path.getFileName() 对根路径（如 "/"）返回 null，直接 toString() 会 NPE；按空文件名处理。
+        java.nio.file.Path fileName = java.nio.file.Path.of(filename).getFileName();
+        String base = (fileName == null ? "cover" : fileName.toString()).replaceAll("[^a-zA-Z0-9._-]", "_");
         return base.length() > 40 ? base.substring(0, 40) : base;
     }
 }

@@ -1,6 +1,8 @@
 // EventPulse backend CI — modeled on dublin-bikes/backend/Jenkinsfile.
 // Kubernetes cloud agent (the plugin supplies jnlp's default image and connection args):
-//   - maven: tests (unit + Testcontainers ITs), coverage and packaging in one verify invocation.
+//   - maven: static analysis (Checkstyle at validate + SpotBugs at verify, both bound
+//     into the lifecycle by backend/pom.xml), tests (unit + Testcontainers ITs),
+//     coverage and packaging in one verify invocation.
 //   - docker: on main, build & push ghcr.io/<user>/eventpulse-backend:<short-sha>
 //     (same tagging as nightdeal: commit short SHA, no latest).
 //   - gitops: after a successful main image push, update k3s-home/main.
@@ -183,8 +185,12 @@ spec:
                     steps {
                         container('maven') {
                             dir('backend') {
-                                // One lifecycle runs unit/IT tests, generates the coverage
-                                // report, packages the JAR and enforces the coverage gate.
+                            // One lifecycle runs: Checkstyle（validate 阶段最先跑，风格
+                            // 问题不用等 Testcontainers 起容器才暴露）→ unit/IT tests →
+                            // coverage report → packaging → coverage gate → SpotBugs
+                            // (verify 阶段末尾，超阈值即失败)。两个静态分析门禁都由
+                            // backend/pom.xml 绑定进生命周期，与本地 mvn verify、
+                            // GitHub Actions backend job 共用同一套规则。
                                 sh '''
                                 set -eu
                                 java -version
@@ -219,6 +225,10 @@ spec:
                                 }
                             }
                             archiveArtifacts artifacts: 'backend/target/backend-test-logs.tar.gz', allowEmptyArchive: true
+                            // 静态分析报告：checkstyle 与 spotbugs 失败时可直接下载定位。
+                            // checkstyle 在 validate 阶段运行，失败时测试还没跑，
+                            // 报告仍会写出，所以两类报告都允许缺失。
+                            archiveArtifacts artifacts: 'backend/target/checkstyle-result.xml, backend/target/spotbugsXml.xml', allowEmptyArchive: true
                             junit testResults: 'backend/target/surefire-reports/*.xml', allowEmptyResults: false, keepLongStdio: false
                         }
                     }
