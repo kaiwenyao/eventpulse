@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setAccessToken } from '../api'
-import { MAX_BACKOFF_MS, parseReminder, streamBookingEvents } from './sse'
+import { MAX_BACKOFF_MS, parseReminder, streamBookingEvents, streamChatAnswer } from './sse'
 
 const REMINDER_FRAME =
   'event: reminder\ndata: {"eventId":"evt-1","type":"BOOKING_UPDATED","bookingId":7,"occurredAt":"2026-09-02T10:20:30Z"}\n\n'
@@ -125,5 +125,115 @@ describe('streamBookingEvents()', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('streamChatAnswer()', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    setAccessToken(null)
+  })
+
+  const DONE_FRAME =
+    'event: done\ndata: {"requestId":"r1","conversationId":"31","answer":"找到了。","events":[],"followUpQuestions":[]}\n\n'
+
+  function streamFetch(frames: string[], status = 200): Response {
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(encoder.encode(frame))
+        controller.close()
+      },
+    })
+    return new Response(stream, { status, headers: { 'Content-Type': 'text/event-stream' } })
+  }
+
+  it('posts JSON and forwards deltas then done with bearer token', async () => {
+    setAccessToken('tok-ai')
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      streamFetch([
+        'event: delta\ndata: {"text":"找到"}\n\n',
+        'event: delta\ndata: {"text":"两场"}\n\n',
+        DONE_FRAME,
+      ]),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const deltas: string[] = []
+    const done: unknown[] = []
+    const controller = new AbortController()
+    const p = streamChatAnswer(
+      { conversationId: null, message: '周末有什么活动' },
+      {
+        onDelta: (t) => deltas.push(t),
+        onDone: (d) => done.push(d),
+        onError: () => {},
+      },
+      controller.signal,
+    )
+    await p
+    expect(deltas).toEqual(['找到', '两场'])
+    expect(done).toHaveLength(1)
+    expect((done[0] as { conversationId: string }).conversationId).toBe('31')
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/ai/discovery/chat/stream')
+    expect(init?.method).toBe('POST')
+    expect(JSON.parse(init?.body as string)).toEqual({
+      conversationId: null,
+      message: '周末有什么活动',
+    })
+    expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer tok-ai')
+  })
+
+  it('reports error frames and non-2xx JSON errors; no reconnect', async () => {
+    const errorBody = new Response(JSON.stringify({ msg: 'Too many AI requests' }), {
+      status: 429,
+      headers: { 'Content-Type': 'application/json' },
+    })
+    const fetchMock = vi.fn(async () => errorBody)
+    vi.stubGlobal('fetch', fetchMock)
+    const errors: string[] = []
+    const controller = new AbortController()
+    await streamChatAnswer(
+      { conversationId: null, message: 'hi' },
+      { onDelta: () => {}, onDone: () => {}, onError: (m) => errors.push(m) },
+      controller.signal,
+    )
+    expect(errors).toEqual(['Too many AI requests'])
+    // 失败后不会自动重试：fetch 只被调用一次。
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not auto-reconnect when the stream ends without done', async () => {
+    // 一次回答的语义：流结束但没有 done（服务端异常）不重连，交由调用方判失败。
+    const fetchMock = vi.fn(async () => streamFetch(['event: delta\ndata: {"text":"半截"}\n\n']))
+    vi.stubGlobal('fetch', fetchMock)
+    const errors: string[] = []
+    await streamChatAnswer(
+      { conversationId: null, message: 'hi' },
+      { onDelta: () => {}, onDone: () => {}, onError: (m) => errors.push(m) },
+      new AbortController().signal,
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores malformed frames and unknown event names', async () => {
+    const fetchMock = vi.fn(async () =>
+      streamFetch([
+        'event: ping\ndata: {"text":"x"}\n\n',
+        'data: {broken json\n\n',
+        'event: delta\ndata: {"text":"好的"}\n\n',
+        DONE_FRAME,
+      ]),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const deltas: string[] = []
+    const done: unknown[] = []
+    await streamChatAnswer(
+      { conversationId: null, message: 'hi' },
+      { onDelta: (t) => deltas.push(t), onDone: (d) => done.push(d), onError: () => {} },
+      new AbortController().signal,
+    )
+    expect(deltas).toEqual(['好的'])
+    expect(done).toHaveLength(1)
   })
 })

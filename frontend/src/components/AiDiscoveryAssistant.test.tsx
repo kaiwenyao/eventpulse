@@ -14,6 +14,61 @@ vi.mock('../api', async (importOriginal) => {
   return { ...actual, api: apiMock.fn }
 })
 
+/** 可控的流式回答替身：每次 send 捕获 handlers，测试手动推 delta/done/error。 */
+const streamMock = vi.hoisted(() => ({
+  fn: vi.fn(),
+  calls: [] as { body: { conversationId: string | null; message: string; locale?: string | null }; handlers: {
+    onDelta: (t: string) => void
+    onDone: (d: unknown) => void
+    onError: (m: string) => void
+  } }[],
+}))
+vi.mock('../lib/sse', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/sse')>()
+  return { ...actual, streamChatAnswer: streamMock.fn }
+})
+
+/** endStream=true 时，streamChatAnswer 在调用方主动 resolve 前一直挂起（默认），
+ * 传 false 表示服务端会关流（模拟“没有 done 就结束”的异常流）。 */
+let resolveCurrent: ((value: void | PromiseLike<void>) => void) | null = null
+function captureStream(endStream: boolean | (() => boolean) = false) {
+  streamMock.fn.mockImplementation((body: { conversationId: string | null; message: string },
+      handlers: { onDelta: (t: string) => void; onDone: (d: unknown) => void; onError: (m: string) => void }) => {
+    streamMock.calls.push({ body, handlers })
+    if (typeof endStream === 'function' ? endStream() : endStream) {
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve) => {
+      resolveCurrent = resolve
+    })
+  })
+  return streamMock.calls
+}
+
+/** 让挂起的流结束（模拟服务端关流）。 */
+function endStream() {
+  resolveCurrent?.()
+  resolveCurrent = null
+}
+
+function streamHandlers(): { onDelta: (t: string) => void; onDone: (d: unknown) => void; onError: (m: string) => void } {
+  const last = streamMock.calls[streamMock.calls.length - 1]
+  if (!last) throw new Error('streamChatAnswer was never called')
+  return last.handlers
+}
+
+
+function donePayload(overrides: Record<string, unknown> = {}) {
+  return {
+    requestId: 'r1',
+    conversationId: null,
+    answer: '找到了。',
+    events: [],
+    followUpQuestions: [],
+    ...overrides,
+  }
+}
+
 const event: EventVo = {
   id: 7,
   title: '周末技术沙龙',
@@ -49,6 +104,8 @@ const event: EventVo = {
 
 beforeEach(async () => {
   apiMock.fn.mockReset()
+  streamMock.fn.mockReset()
+  streamMock.calls.length = 0
   // setup.ts 没有全局重置 localStorage，会话 id 会在用例之间串。
   // token 还额外缓存在 api.ts 的模块变量里，必须走 setAccessToken 一起清。
   setAccessToken(null)
@@ -69,103 +126,110 @@ function renderAssistant() {
 }
 
 describe('AiDiscoveryAssistant', () => {
-  it('sends a question and renders the answer with real event cards', async () => {
-    apiMock.fn.mockResolvedValueOnce({
-      requestId: 'r1',
-      conversationId: '31',
-      answer: '找到 1 场周末技术活动。',
-      events: [{ event, reason: '周六下午，免费' }],
-      followUpQuestions: ['想要更便宜的吗？'],
-    })
+  it('streams deltas into a live bubble then commits the authoritative done', async () => {
+    captureStream()
     renderAssistant()
 
     await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '这个周末有什么技术活动')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
 
-    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/ai/discovery/chat', {
+    await waitFor(() => expect(streamMock.calls).toHaveLength(1))
+    expect(streamMock.calls[0].body).toEqual({
       conversationId: null,
       message: '这个周末有什么技术活动',
       locale: 'zh',
+    })
+    const { onDelta, onDone } = streamHandlers()
+    // 逐字进入草稿气泡（不把 JSON 信封给用户看）。
+    onDelta('找到')
+    expect(await screen.findByText(/找到/)).toBeInTheDocument()
+    onDelta(' 1 场。')
+    // 权威收尾：带复核过的活动卡片与追问。
+    onDone(donePayload({
+      conversationId: '31',
+      answer: '找到 1 场。',
+      events: [{ event, reason: '周六下午，免费' }],
+      followUpQuestions: ['想要更便宜的吗？'],
     }))
-    expect(await screen.findByText('找到 1 场周末技术活动。')).toBeInTheDocument()
-    expect(screen.getByText('周末技术沙龙')).toBeInTheDocument()
+    expect(await screen.findByText('周末技术沙龙')).toBeInTheDocument()
     expect(screen.getByText('周六下午，免费')).toBeInTheDocument()
+    // 草稿被正式轮次替换，不再显示闪烁光标。
+    await waitFor(() => expect(screen.queryByText('找到 1 场。')).toBeInTheDocument())
 
     // 追问：带上服务端返回的会话 ID，保证登录用户的多轮上下文。
     await userEvent.click(screen.getByRole('button', { name: '想要更便宜的吗？' }))
-    await waitFor(() =>
-      expect(apiMock.fn).toHaveBeenLastCalledWith('POST', '/api/ai/discovery/chat', {
-        conversationId: '31',
-        message: '想要更便宜的吗？',
-        locale: 'zh',
-      }),
-    )
+    await waitFor(() => expect(streamMock.calls).toHaveLength(2))
+    expect(streamMock.calls[1].body.conversationId).toBe('31')
+    streamHandlers().onDone(donePayload())
   })
 
-  it('shows a thinking indicator while the answer is in flight', async () => {
-    let resolve: (value: unknown) => void = () => {}
-    apiMock.fn.mockReturnValueOnce(new Promise((r) => { resolve = r }))
+  it('shows live streaming feedback instead of a fake progress carousel', async () => {
+    captureStream()
     renderAssistant()
 
     await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '周末有什么活动')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
 
-    // 等待期间给出明确反馈，而不是一个没有语义的骨架屏。
-    expect(await screen.findByRole('status')).toHaveTextContent('正在检索真实活动…')
-
-    resolve({ requestId: 'r3', conversationId: null, answer: '找到了。', events: [], followUpQuestions: [] })
+    await waitFor(() => expect(streamMock.calls).toHaveLength(1))
+    // 第一段 delta 出现前给读屏一个 live 区域（aria-live 在草稿上）。
+    const { onDelta } = streamHandlers()
+    onDelta('柏林有两场')
+    expect(await screen.findByText(/柏林有两场/)).toBeInTheDocument()
+    streamHandlers().onDone(donePayload({ answer: '找到了。' }))
     await waitFor(() => expect(screen.getByText('找到了。')).toBeInTheDocument())
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('offers starter questions before the first turn and sends one on click', async () => {
-    apiMock.fn.mockResolvedValueOnce({
-      requestId: 'r4', conversationId: null, answer: '好的。', events: [], followUpQuestions: [],
-    })
+    captureStream()
     renderAssistant()
 
     const starter = screen.getByRole('button', { name: '现在有什么热门活动？' })
     await userEvent.click(starter)
 
-    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/ai/discovery/chat', {
+    await waitFor(() => expect(streamMock.calls).toHaveLength(1))
+    expect(streamMock.calls[0].body).toEqual({
       conversationId: null,
       message: '现在有什么热门活动？',
       locale: 'zh',
-    }))
+    })
+    streamHandlers().onDone(donePayload({ answer: '好的。' }))
     // 开场问题只在没有任何对话时出现。
     await waitFor(() => expect(screen.queryByRole('button', { name: '现在有什么热门活动？' })).not.toBeInTheDocument())
   })
 
   it('falls back to a localised message when the answer comes back empty', async () => {
-    apiMock.fn.mockResolvedValueOnce({
-      requestId: 'r5', conversationId: null, answer: '   ', events: [], followUpQuestions: [],
-    })
+    captureStream()
     renderAssistant()
 
     await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '随便问问')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
 
+    await waitFor(() => expect(streamMock.calls).toHaveLength(1))
+    streamHandlers().onDone(donePayload({ answer: '   ' }))
+
     expect(await screen.findByText('这次没能整理出结果，换个说法再试一次吧。')).toBeInTheDocument()
   })
 
   it('shows failure with retry and clears after a successful retry', async () => {
-    apiMock.fn
-      .mockRejectedValueOnce(new ApiError(503, 'AI 助手暂时不可用'))
-      .mockResolvedValueOnce({
-        requestId: 'r2',
-        conversationId: null,
-        answer: '这次找到了。',
-        events: [],
-        followUpQuestions: [],
-      })
+    captureStream()
     renderAssistant()
 
     await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '附近的音乐活动')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() => expect(streamMock.calls).toHaveLength(1))
+    // 中途失败：先来了一段 delta，再 error —— 半截内容必须被丢弃。
+    streamHandlers().onDelta('附近的音乐活动有这些：')
+    expect(await screen.findByText(/有这些/)).toBeInTheDocument()
+    streamHandlers().onError('AI 助手暂时不可用')
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(screen.getByText('AI 助手暂时不可用')).toBeInTheDocument()
+    // 半截草稿被丢弃，不冒充完整回答。
+    await waitFor(() => expect(screen.queryByText(/有这些/)).not.toBeInTheDocument())
 
     await userEvent.click(screen.getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(streamMock.calls).toHaveLength(2))
+    streamHandlers().onDone(donePayload({ answer: '这次找到了。' }))
     await waitFor(() => expect(screen.getByText('这次找到了。')).toBeInTheDocument())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -224,18 +288,31 @@ describe('AiDiscoveryAssistant', () => {
     expect(screen.queryByText(/活动卡片与追问按钮不会重放/)).not.toBeInTheDocument()
   })
 
-  it('persists the conversation id returned by the server so a refresh can resume', async () => {
-    apiMock.fn.mockResolvedValueOnce({
-      requestId: 'r1',
-      conversationId: '31',
-      answer: '找到 1 场。',
-      events: [],
-      followUpQuestions: [],
-    })
+  it('drops the partial draft when the stream ends without done', async () => {
+    captureStream()
     renderAssistant()
 
     await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '有什么活动')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() => expect(streamMock.calls).toHaveLength(1))
+    streamHandlers().onDelta('半截答案')
+    expect(await screen.findByText(/半截答案/)).toBeInTheDocument()
+    // 服务端关流但从未发 done：半截内容不能冒充完整回答，转成明确失败。
+    endStream()
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText(/半截答案/)).not.toBeInTheDocument())
+  })
+
+  it('persists the conversation id returned by the server so a refresh can resume', async () => {
+    captureStream()
+    renderAssistant()
+
+    await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '有什么活动')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() => expect(streamMock.calls).toHaveLength(1))
+    streamHandlers().onDone(donePayload({ conversationId: '31' }))
 
     await waitFor(() => expect(localStorage.getItem('ep_ai_conversation')).toBe('31'))
   })
@@ -352,21 +429,21 @@ describe('AiDiscoveryAssistant', () => {
 
   it('sends the current UI language so short messages do not get answered in the wrong one', async () => {
     // 助手的中文提示词会把 "berlin" 这种判断不出语言的短消息带偏成中文回复；
-    // 界面语言是这种情况下唯一的依据，所以每一轮都必须带上。
+    // 界面语言是这种情况下唯一的依据，所以每一轮（含流式）都必须带上。
     await changeLocale('en')
-    apiMock.fn.mockResolvedValueOnce({
-      requestId: 'r9', conversationId: null, answer: 'ok', events: [], followUpQuestions: [],
-    })
+    captureStream()
     renderAssistant()
 
     await userEvent.type(screen.getByLabelText('Describe the event you are looking for…'), 'berlin')
     await userEvent.click(screen.getByRole('button', { name: 'Send' }))
 
-    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/ai/discovery/chat', {
+    await waitFor(() => expect(streamMock.calls).toHaveLength(1))
+    expect(streamMock.calls[0].body).toEqual({
       conversationId: null,
       message: 'berlin',
       locale: 'en',
-    }))
+    })
+    streamHandlers().onDone(donePayload({ answer: 'ok' }))
   })
 
 })

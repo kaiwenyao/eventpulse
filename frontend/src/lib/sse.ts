@@ -163,3 +163,110 @@ async function streamEvents(
     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS)
   }
 }
+
+// ---- AI 发现助手：一次性流式回答 ----
+
+/**
+ * AI 发现助手一次回答的帧载荷。
+ * done 帧携带与 /chat 相同的响应结构（活动已由 Spring 复核）。
+ */
+export interface AiStreamDelta {
+  text: string
+}
+
+export interface AiStreamDone {
+  requestId: string
+  conversationId: string | null
+  answer: string
+  events: { event: import('../types').EventVo; reason: string }[]
+  followUpQuestions: string[]
+}
+
+export interface AiStreamError {
+  message: string
+}
+
+export interface AiStreamHandlers {
+  onDelta: (text: string) => void
+  onDone: (done: AiStreamDone) => void
+  onError: (message: string) => void
+}
+
+function parseAiFrame(frame: string): { event: string; data: string } {
+  let event = ''
+  let data = ''
+  for (const line of frame.split(/\r?\n/)) {
+    if (line.startsWith('data:')) data += line.slice(5).trimStart()
+    else if (line.startsWith('event:')) event = line.slice(6).trim()
+  }
+  return { event, data }
+}
+
+/**
+ * 发一次流式问题给 AI 发现助手。
+ *
+ * 与上面的提醒频道不同，这里刻意【不自动重连】：一次回答断了就是断了，
+ * 不能把同一个回答从头再答一遍。调用方负责在 error / 异常结束时展示明确
+ * 的失败提示，并丢弃半截内容。返回 AbortController 供取消。
+ */
+export async function streamChatAnswer(
+  body: { conversationId: string | null; message: string; locale?: string | null },
+  handlers: AiStreamHandlers,
+  signal: AbortSignal,
+): Promise<void> {
+  const headers: Record<string, string> = {
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json',
+  }
+  const token = getAccessToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  const response = await fetch('/api/ai/discovery/chat/stream', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  })
+  // 非 2xx：错误体是 JSON（未钉死 produces 的好处），转成明确失败。
+  if (!response.ok) {
+    const json = (await response.json().catch(() => ({}))) as { msg?: string }
+    handlers.onError(json.msg ?? `Request failed (${response.status})`)
+    return
+  }
+  if (!response.body) {
+    handlers.onError('AI assistant is temporarily unavailable')
+    return
+  }
+  const reader = response.body.getReader()
+  const onAbort = () => {
+    void reader.cancel().catch(() => {})
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+  try {
+    const decoder = new TextDecoder()
+    let buffer = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let boundary = buffer.indexOf('\n\n')
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        const { event, data } = parseAiFrame(frame)
+        if (data) {
+          try {
+            const payload = JSON.parse(data)
+            if (event === 'delta') handlers.onDelta(String(payload.text ?? ''))
+            else if (event === 'done') handlers.onDone(payload as AiStreamDone)
+            else if (event === 'error') handlers.onError(String(payload.message ?? 'AI assistant is temporarily unavailable'))
+          } catch {
+            // 坏帧忽略；缺 done 时由调用方按「无结果」处理。
+          }
+        }
+        boundary = buffer.indexOf('\n\n')
+      }
+    }
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+  }
+}

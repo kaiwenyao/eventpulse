@@ -10,6 +10,7 @@ import { Alert } from '../ui/Alert'
 import { resolveApiError } from '../lib/apiError'
 import { readStoredConversationId, writeStoredConversationId } from '../lib/aiConversation'
 import { currentLocale } from '../i18n'
+import { streamChatAnswer } from '../lib/sse'
 
 interface ConversationDetail {
   id: string
@@ -19,14 +20,6 @@ interface ConversationDetail {
 interface AiEventMention {
   event: EventVo
   reason: string
-}
-
-interface AiChatResponse {
-  requestId: string
-  conversationId: string | null
-  answer: string
-  events: AiEventMention[]
-  followUpQuestions: string[]
 }
 
 interface ChatTurn {
@@ -48,6 +41,9 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const [turns, setTurns] = useState<ChatTurn[]>([])
+  // 正在流式产出的助手回复草稿：delta 逐字增长，done 后替换成正式轮次；
+  // error / 断线时整体丢弃——半截内容不能留在屏幕上冒充完整回答。
+  const [draft, setDraft] = useState<ChatTurn | null>(null)
   const [input, setInput] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -58,6 +54,10 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
   const listRef = useRef<HTMLDivElement>(null)
   // 恢复请求的代次：每发起一次 +1，落地前比对，过期的响应直接丢弃。
   const restoreGuard = useRef(0)
+  // 发送代次：新一轮提问会让上一轮在途的流式响应整体作废（迟到帧丢弃）。
+  const sendGuard = useRef(0)
+  // 当前提问的 AbortController：换新对话 / 卸载时主动断开流。
+  const streamAbort = useRef<AbortController | null>(null)
 
   // 只有登录用户在服务端有会话；游客的对话不落库，也就没得恢复。
   useEffect(() => {
@@ -71,7 +71,6 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
       restoreGuard.current += 1
     }
     // 只在登录态建立时尝试恢复一次。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   /** 打开一段历史会话：只回填文字，卡片与追问按钮无法重放（服务端只存 role/content）。 */
@@ -109,7 +108,12 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
   function startNewChat() {
     // 在途的恢复请求同样作废，不然它会把刚清空的对话又填回来。
     restoreGuard.current += 1
+    // 正在流的回答也要中止：新对话与旧回答互不相干。
+    sendGuard.current += 1
+    streamAbort.current?.abort()
+    streamAbort.current = null
     setTurns([])
+    setDraft(null)
     setConversationId(null)
     writeStoredConversationId(null)
     setRestored(false)
@@ -117,48 +121,102 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
     setShowHistory(false)
   }
 
+  // 组件卸载（收起助手 / 登出 / 切页）时断开在途流，避免继续往已卸载的组件写状态。
+  useEffect(() => {
+    return () => {
+      sendGuard.current += 1
+      streamAbort.current?.abort()
+    }
+  }, [])
+
   useEffect(() => {
     const list = listRef.current
     if (list && typeof list.scrollTo === 'function') {
       list.scrollTo({ top: list.scrollHeight })
     }
-  }, [turns, loading])
+  }, [turns, draft, loading])
 
   async function send(message: string) {
     const trimmed = message.trim()
     if (!trimmed || loading) return
+    const generation = ++sendGuard.current
     setError('')
     setLastMessage(trimmed)
     setInput('')
     setTurns((prev) => [...prev, { role: 'user', text: trimmed }])
+    setDraft({ role: 'assistant', text: '' })
     setLoading(true)
+    const controller = new AbortController()
+    streamAbort.current = controller
+    let sawDone = false
     try {
-      const response = await api<AiChatResponse>('POST', '/api/ai/discovery/chat', {
-        conversationId,
-        message: trimmed,
-        // 界面语言：只在消息本身判断不出语言（"berlin"、emoji）时给模型兜底，
-        // 用户这次说的语言仍然优先。
-        locale: currentLocale(),
-      })
-      if (response.conversationId) {
-        setConversationId(response.conversationId)
-        writeStoredConversationId(response.conversationId)
-      }
-      setTurns((prev) => [
-        ...prev,
+      await streamChatAnswer(
         {
-          role: 'assistant',
-          // 服务端保证不会把原始 JSON 当回答返回；万一是空回答，用本地化文案兜底。
-          text: response.answer?.trim() || t('ai.discovery.noAnswer'),
-          events: response.events,
-          followUps: response.followUpQuestions,
+          conversationId,
+          message: trimmed,
+          // 界面语言：只在消息本身判断不出语言（"berlin"、emoji）时给模型兜底，
+          // 用户这次说的语言仍然优先。
+          locale: currentLocale(),
         },
-      ])
+        {
+          onDelta: (text) => {
+            if (sendGuard.current !== generation) return
+            setDraft((current) =>
+              current ? { ...current, text: current.text + text } : current,
+            )
+          },
+          onDone: (response) => {
+            if (sendGuard.current !== generation) return
+            sawDone = true
+            if (response.conversationId) {
+              setConversationId(response.conversationId)
+              writeStoredConversationId(response.conversationId)
+            }
+            // 权威收尾：用服务端完整 answer 覆盖增量（即使增量在极端畸形输出下
+            // 放过错的内容，这里也以解析校验过的为准）。
+            setTurns((prev) => [
+              ...prev,
+              {
+                role: 'assistant',
+                // 服务端保证不会把原始 JSON 当回答返回；空回答用本地化文案兜底。
+                text: response.answer?.trim() || t('ai.discovery.noAnswer'),
+                events: response.events,
+                followUps: response.followUpQuestions,
+              },
+            ])
+            setDraft(null)
+            setLoading(false)
+          },
+          onError: (messageText) => {
+            if (sendGuard.current !== generation) return
+            // 明确失败：丢掉半截草稿，不许冒充完整回答；给出可重试的提示。
+            setDraft(null)
+            setLoading(false)
+            setError(messageText)
+          },
+        },
+        controller.signal,
+      )
+      // 流正常结束但没有 done（服务端异常流）：同样不能留半截冒充完整。
+      if (!sawDone && sendGuard.current === generation) {
+        setDraft(null)
+        setLoading(false)
+        setError(t('ai.discovery.failed'))
+      }
     } catch (e) {
+      if (sendGuard.current !== generation) return
+      // 主动中止（新对话 / 卸载）不算失败；其它错误给明确提示。
+      if (controller.signal.aborted) {
+        setDraft(null)
+        setLoading(false)
+        return
+      }
+      setDraft(null)
+      setLoading(false)
       const { message: messageText } = resolveApiError(e, 'ai.discovery.failed')
       setError(messageText)
     } finally {
-      setLoading(false)
+      if (sendGuard.current === generation) streamAbort.current = null
     }
   }
 
@@ -265,7 +323,24 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
           </div>
         ))}
 
-        {loading && <AiThinkingTurn />}
+        {draft && (
+          <div className="ai-turn ai-turn-assistant ai-turn-streaming">
+            <p className="ai-turn-role">{t('ai.discovery.assistant')}</p>
+            {/* aria-live：增量逐字进来时读屏也能跟上，而不是等整段结束。 */}
+            {draft.text ? (
+              <p className="ai-turn-text" role="status" aria-live="polite">
+                {draft.text}
+                <span className="ai-caret" aria-hidden>
+                  ▍
+                </span>
+              </p>
+            ) : (
+              // 还在跑工具 / 等第一个 token：给出真实进展反馈，而不是空白。
+              <AiThinkingTurn />
+            )}
+          </div>
+        )}
+
         {error && (
           <Alert tone="error" title={error}>
             <button type="button" className="btn-secondary btn-sm" onClick={retry}>
