@@ -235,7 +235,7 @@ public class AiGatewayService {
             client.streamDiscoveryChat(session.payload(),
                     event -> relayStreamEvent(session, emitter, accumulator, event));
         }
-        catch (StreamSendFailure aborted) {
+        catch (AiServiceClient.StreamRelayAborted aborted) {
             recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "client_disconnected");
             return;
         }
@@ -297,7 +297,7 @@ public class AiGatewayService {
         }
         catch (Exception sendFailure) {
             // 浏览器断开：转发中断。用内部信号让外层知道，别把 IO 异常泄漏成 500。
-            throw new StreamSendFailure(sendFailure);
+            throw new AiServiceClient.StreamRelayAborted(sendFailure);
         }
     }
 
@@ -342,12 +342,7 @@ public class AiGatewayService {
         private String answer = "";
     }
 
-    /** 浏览器断开导致转发中断的内部信号（不走 RuntimeException 的日志噪声）。 */
-    private static final class StreamSendFailure extends RuntimeException {
-        StreamSendFailure(Throwable cause) {
-            super(cause);
-        }
-    }
+    /** 浏览器断开导致转发中断的内部信号（由 AiServiceClient 原样传播）。 */
 
     /** 流式请求与同步请求共用的准备阶段：限流、消息校验、会话 / 历史 / 偏好、载荷。 */
     private DiscoverySession prepareDiscovery(DiscoveryChatRequest request, String authorization, String clientIp) {

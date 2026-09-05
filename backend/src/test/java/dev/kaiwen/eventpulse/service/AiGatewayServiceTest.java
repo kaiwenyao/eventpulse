@@ -45,6 +45,7 @@ import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventRequest;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventResult;
 import dev.kaiwen.eventpulse.entity.AiConversation;
 import dev.kaiwen.eventpulse.entity.AiMessage;
+import dev.kaiwen.eventpulse.entity.AiRequestLog;
 import dev.kaiwen.eventpulse.entity.Event;
 import dev.kaiwen.eventpulse.entity.UserPreference;
 import dev.kaiwen.eventpulse.exception.BusinessException;
@@ -817,6 +818,30 @@ class AiGatewayServiceTest {
         assertThat(registry.counter("ai.requests", "feature", "discovery", "status", "failure").count())
                 .isEqualTo(1.0);
         verify(requestLogs).save(any());
+    }
+
+    @Test
+    void openDiscoveryStreamBrowserDisconnectIsRecordedNotRetried() {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        org.mockito.Mockito.doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
+            // 第一帧就发不出去（客户端已断开）：转发中断。
+            consumer.accept(streamEvent("delta", "第一段", null, null));
+            return null;
+        }).when(client).streamDiscoveryChat(any(), any());
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest(null, "周末有什么活动"), null, "1.2.3.4");
+        // broken handler 的 send 会抛 IOException：模拟浏览器已离开。
+        var broken = org.springframework.web.servlet.mvc.method.annotation.CapturingEmitterHandler.broken();
+        broken.attachTo(emitter);
+
+        // 记账为 client_disconnected（不是 upstream_unavailable）；不尝试再发 error 帧。
+        waitUntil(() -> registry.counter("ai.requests", "feature", "discovery", "status", "failure").count() == 1.0);
+        ArgumentCaptor<AiRequestLog> logCaptor = ArgumentCaptor.forClass(AiRequestLog.class);
+        verify(requestLogs).save(logCaptor.capture());
+        assertThat(logCaptor.getValue().getErrorCode()).isEqualTo("client_disconnected");
     }
 
     @Test

@@ -118,6 +118,8 @@ public class AiServiceClient {
      *
      * 帧类型：delta(文本) / result(权威收尾) / error(明确降级)。连接或解析失败
      * 转成 {@link AiUnavailableException}，让上层走与同步路径一致的降级。
+     * 回调里抛出的 {@link StreamRelayAborted} 原样向上传播（调用方用于识别
+     * 「浏览器断开」，与上游故障区分开）。
      */
     public void streamDiscoveryChat(
             DiscoveryPayload payload,
@@ -132,9 +134,20 @@ public class AiServiceClient {
         catch (AiUnavailableException e) {
             throw e;
         }
+        catch (StreamRelayAborted e) {
+            // 浏览器断开：不是上游故障，原样抛出由调用方记账。
+            throw e;
+        }
         catch (Exception e) {
             log.warn("ai streaming upstream call failed", e);
             throw new AiUnavailableException(UNAVAILABLE);
+        }
+    }
+
+    /** 回调内部信号：浏览器连接已断开，转发无意义。 */
+    public static final class StreamRelayAborted extends RuntimeException {
+        public StreamRelayAborted(Throwable cause) {
+            super(cause);
         }
     }
 
