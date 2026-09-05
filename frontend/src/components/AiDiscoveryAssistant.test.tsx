@@ -233,6 +233,18 @@ describe('AiDiscoveryAssistant', () => {
     await waitFor(() => expect(screen.getByText('这次找到了。')).toBeInTheDocument())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
+  it('localises rate-limit failures from a non-2xx stream response', async () => {
+    // 429 时 streamChatAnswer 抛 ApiError：组件按旧 /chat 的映射本地化。
+    streamMock.fn.mockImplementation(() => Promise.reject(new ApiError(429, 'Too many AI requests, please try again in a minute')))
+    renderAssistant()
+
+    await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '问一下')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(screen.getByText('AI 请求过于频繁，请一分钟后再试。')).toBeInTheDocument()
+  })
+
   // ---- 会话恢复 / 历史 ----
 
   /** 让 AuthProvider 认为已登录：给个 token，并让 /api/auth/me 返回用户。 */
