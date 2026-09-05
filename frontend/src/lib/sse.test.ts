@@ -184,7 +184,7 @@ describe('streamChatAnswer()', () => {
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer tok-ai')
   })
 
-  it('reports error frames and non-2xx JSON errors; no reconnect', async () => {
+  it('reports error frames and rejects non-2xx JSON errors; no reconnect', async () => {
     const errorBody = new Response(JSON.stringify({ msg: 'Too many AI requests' }), {
       status: 429,
       headers: { 'Content-Type': 'application/json' },
@@ -193,12 +193,15 @@ describe('streamChatAnswer()', () => {
     vi.stubGlobal('fetch', fetchMock)
     const errors: string[] = []
     const controller = new AbortController()
-    await streamChatAnswer(
-      { conversationId: null, message: 'hi' },
-      { onDelta: () => {}, onDone: () => {}, onError: (m) => errors.push(m) },
-      controller.signal,
-    )
-    expect(errors).toEqual(['Too many AI requests'])
+    // 非 2xx 抛 ApiError（调用方走本地化映射），与旧 /chat 一致。
+    await expect(
+      streamChatAnswer(
+        { conversationId: null, message: 'hi' },
+        { onDelta: () => {}, onDone: () => {}, onError: (m) => errors.push(m) },
+        controller.signal,
+      ),
+    ).rejects.toMatchObject({ status: 429, message: 'Too many AI requests' })
+    expect(errors).toEqual([])
     // 失败后不会自动重试：fetch 只被调用一次。
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })

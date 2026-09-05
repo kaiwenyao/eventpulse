@@ -1,4 +1,4 @@
-import { getAccessToken } from '../api'
+import { ApiError, getAccessToken } from '../api'
 
 /**
  * 轻量 SSE 提醒：服务器只发「有变化，请刷新」，业务数据一律重新走 REST。
@@ -226,11 +226,11 @@ export async function streamChatAnswer(
     body: JSON.stringify(body),
     signal,
   })
-  // 非 2xx：错误体是 JSON（未钉死 produces 的好处），转成明确失败。
+  // 非 2xx：错误体是 JSON（未钉死 produces 的好处）。抛 ApiError 让调用方走
+  // 与旧 /chat 一致的本地化映射（限流 / 校验失败等有专属文案）。
   if (!response.ok) {
     const json = (await response.json().catch(() => ({}))) as { msg?: string }
-    handlers.onError(json.msg ?? `Request failed (${response.status})`)
-    return
+    throw new ApiError(response.status, json.msg ?? `Request failed (${response.status})`)
   }
   if (!response.body) {
     handlers.onError('AI assistant is temporarily unavailable')
