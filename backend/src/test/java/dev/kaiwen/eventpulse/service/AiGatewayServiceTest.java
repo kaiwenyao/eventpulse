@@ -729,7 +729,7 @@ class AiGatewayServiceTest {
         when(events.findAllById(any())).thenReturn(List.of(event(1L, EventStatus.PUBLISHED)));
 
         SseEmitter emitter = gateway.openDiscoveryStream(
-                new DiscoveryChatRequest(null, "周末有什么活动"), null, "1.2.3.4");
+                new DiscoveryChatRequest(null, "周末有什么活动", null), null, "1.2.3.4");
         var handler = attach(emitter);
         waitUntil(() -> payloads(handler).size() >= 3);
 
@@ -761,7 +761,7 @@ class AiGatewayServiceTest {
         }).when(client).streamDiscoveryChat(any(), any());
 
         SseEmitter emitter = gateway.openDiscoveryStream(
-                new DiscoveryChatRequest(null, "周末有什么活动"), null, "1.2.3.4");
+                new DiscoveryChatRequest(null, "周末有什么活动", null), null, "1.2.3.4");
         var handler = attach(emitter);
         waitUntil(() -> payloads(handler).size() >= 2);
 
@@ -788,7 +788,7 @@ class AiGatewayServiceTest {
                 .when(client).streamDiscoveryChat(any(), any());
 
         SseEmitter emitter = gateway.openDiscoveryStream(
-                new DiscoveryChatRequest("7", "继续"), bearer(2L, "USER"), "ip");
+                new DiscoveryChatRequest("7", "继续", null), bearer(2L, "USER"), "ip");
         var handler = attach(emitter);
         waitUntil(() -> payloads(handler).size() >= 1);
 
@@ -810,7 +810,7 @@ class AiGatewayServiceTest {
         }).when(client).streamDiscoveryChat(any(), any());
 
         SseEmitter emitter = gateway.openDiscoveryStream(
-                new DiscoveryChatRequest(null, "周末有什么活动"), null, "1.2.3.4");
+                new DiscoveryChatRequest(null, "周末有什么活动", null), null, "1.2.3.4");
         var handler = attach(emitter);
         waitUntil(() -> payloads(handler).size() >= 1);
 
@@ -839,7 +839,7 @@ class AiGatewayServiceTest {
         }).when(client).streamDiscoveryChat(any(), any());
 
         SseEmitter emitter = gateway.openDiscoveryStream(
-                new DiscoveryChatRequest("7", "周末活动"), bearer(2L, "USER"), "ip");
+                new DiscoveryChatRequest("7", "周末活动", null), bearer(2L, "USER"), "ip");
         var handler = attach(emitter);
         waitUntil(() -> payloads(handler).size() >= 1);
 
@@ -861,7 +861,7 @@ class AiGatewayServiceTest {
         }).when(client).streamDiscoveryChat(any(), any());
 
         SseEmitter emitter = gateway.openDiscoveryStream(
-                new DiscoveryChatRequest(null, "周末活动"), null, "ip");
+                new DiscoveryChatRequest(null, "周末活动", null), null, "ip");
         var handler = attach(emitter);
         waitUntil(() -> payloads(handler).size() >= 1);
 
@@ -877,7 +877,7 @@ class AiGatewayServiceTest {
                 .when(client).streamDiscoveryChat(any(), any());
 
         SseEmitter emitter = gateway.openDiscoveryStream(
-                new DiscoveryChatRequest(null, "周末活动"), null, "ip");
+                new DiscoveryChatRequest(null, "周末活动", null), null, "ip");
         var handler = attach(emitter);
         waitUntil(() -> payloads(handler).size() >= 1);
 
@@ -898,7 +898,7 @@ class AiGatewayServiceTest {
         }).when(client).streamDiscoveryChat(any(), any());
 
         SseEmitter emitter = gateway.openDiscoveryStream(
-                new DiscoveryChatRequest(null, "周末有什么活动"), null, "1.2.3.4");
+                new DiscoveryChatRequest(null, "周末有什么活动", null), null, "1.2.3.4");
         // broken handler 的 send 会抛 IOException：模拟浏览器已离开。
         var broken = org.springframework.web.servlet.mvc.method.annotation.CapturingEmitterHandler.broken();
         broken.attachTo(emitter);
@@ -914,12 +914,12 @@ class AiGatewayServiceTest {
     void openDiscoveryStreamSharesRateLimitAndValidationWithSyncPath() {
         when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(false);
         assertThatThrownBy(() -> gateway.openDiscoveryStream(
-                new DiscoveryChatRequest(null, "hi"), null, "1.2.3.4"))
+                new DiscoveryChatRequest(null, "hi", null), null, "1.2.3.4"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus().value())
                 .isEqualTo(429);
         assertThatThrownBy(() -> gateway.openDiscoveryStream(
-                new DiscoveryChatRequest(null, "   "), null, "ip"))
+                new DiscoveryChatRequest(null, "   ", null), null, "ip"))
                 .isInstanceOf(BusinessException.class);
         verify(client, never()).streamDiscoveryChat(any(), any());
     }

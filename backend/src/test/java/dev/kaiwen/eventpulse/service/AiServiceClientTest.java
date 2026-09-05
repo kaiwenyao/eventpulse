@@ -83,8 +83,7 @@ class AiServiceClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        var result = client.discoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                "r2", "m", List.of(), "2026-09-02T00:00:00Z", "Asia/Shanghai", "en", null, null, null));
+        var result = client.discoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload("r2", "m", List.of(), "2026-09-02T00:00:00Z", "Asia/Shanghai", "en", null, null, null));
 
         assertThat(result.events()).containsExactly(new DiscoveryEventRef(3L, "周六"));
         assertThat(result.followUpQuestions()).containsExactly("q1");
@@ -101,8 +100,7 @@ class AiServiceClientTest {
                 null, null, null, null, null, null)))
                 .isInstanceOf(AiUnavailableException.class);
 
-        assertThatThrownBy(() -> client.discoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                "r2", "m", List.of(), null, null, null, null, null, null)))
+        assertThatThrownBy(() -> client.discoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload("r2", "m", List.of(), null, null, null, null, null, null)))
                 .isInstanceOf(AiUnavailableException.class)
                 .hasMessageContaining("temporarily unavailable");
     }
@@ -129,8 +127,7 @@ class AiServiceClientTest {
                 .andRespond(withSuccess(STREAM_BODY, MediaType.TEXT_EVENT_STREAM));
 
         var received = new java.util.ArrayList<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>();
-        client.streamDiscoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                "r2", "m", List.of(), null, null, null, null, null), received::add);
+        client.streamDiscoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload("r2", "m", List.of(), null, null, null, null, null, null), received::add);
 
         assertThat(received).hasSize(3);
         assertThat(received.get(0).type()).isEqualTo("delta");
@@ -156,8 +153,7 @@ class AiServiceClientTest {
                         """, MediaType.TEXT_EVENT_STREAM));
 
         var received = new java.util.ArrayList<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>();
-        client.streamDiscoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                "r2", "m", List.of(), null, null, null, null, null), received::add);
+        client.streamDiscoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload("r2", "m", List.of(), null, null, null, null, null, null), received::add);
 
         assertThat(received).hasSize(1);
         assertThat(received.get(0).type()).isEqualTo("error");
@@ -171,8 +167,7 @@ class AiServiceClientTest {
                 .andRespond(withServerError());
 
         assertThatThrownBy(() -> client.streamDiscoveryChat(
-                new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                        "r2", "m", List.of(), null, null, null, null, null),
+                new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload("r2", "m", List.of(), null, null, null, null, null, null),
                 event -> {
                 }))
                 .isInstanceOf(AiUnavailableException.class);
@@ -185,8 +180,7 @@ class AiServiceClientTest {
                 .andRespond(withException(new java.net.SocketTimeoutException("read timeout")));
 
         assertThatThrownBy(() -> client.streamDiscoveryChat(
-                new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                        "r2", "m", List.of(), null, null, null, null, null),
+                new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload("r2", "m", List.of(), null, null, null, null, null, null),
                 event -> {
                 }))
                 .isInstanceOf(AiUnavailableException.class)
@@ -210,8 +204,7 @@ class AiServiceClientTest {
                         """, MediaType.TEXT_EVENT_STREAM));
 
         var received = new java.util.ArrayList<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>();
-        client.streamDiscoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                "r2", "m", List.of(), null, null, null, null, null), received::add);
+        client.streamDiscoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload("r2", "m", List.of(), null, null, null, null, null, null), received::add);
 
         // 未知事件类型与坏 JSON 帧被忽略；合法 result（无 events/usage/toolCalls）照常解析。
         assertThat(received).hasSize(1);
@@ -229,8 +222,7 @@ class AiServiceClientTest {
                 .andRespond(withSuccess(STREAM_BODY, MediaType.TEXT_EVENT_STREAM));
 
         assertThatThrownBy(() -> client.streamDiscoveryChat(
-                new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                        "r2", "m", List.of(), null, null, null, null, null),
+                new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload("r2", "m", List.of(), null, null, null, null, null, null),
                 event -> {
                     // 浏览器断开：回调抛转发中断标记，必须原样上抛（让网关记
                     // client_disconnected），不能被包成 AiUnavailableException。
@@ -250,8 +242,7 @@ class AiServiceClientTest {
                         """, MediaType.TEXT_EVENT_STREAM));
 
         var received = new java.util.ArrayList<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>();
-        client.streamDiscoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
-                "r2", "m", List.of(), null, null, null, null, null), received::add);
+        client.streamDiscoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload("r2", "m", List.of(), null, null, null, null, null, null), received::add);
 
         // 缺 eventId 的条目被跳过，带 id 的保留。
         assertThat(received).hasSize(1);

@@ -159,7 +159,7 @@ class AiControllerTest {
         AiController controller = new AiController(gateway);
 
         var entity = controller.discoveryChatStream(
-                new DiscoveryChatRequest("1", "问题"), "Bearer tok", httpRequest);
+                new DiscoveryChatRequest("1", "问题", null), "Bearer tok", httpRequest);
 
         assertThat(entity.getHeaders().getContentType()).isEqualTo(MediaType.TEXT_EVENT_STREAM);
         assertThat(entity.getBody()).isSameAs(emitter);
