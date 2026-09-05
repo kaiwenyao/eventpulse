@@ -887,11 +887,16 @@ class AiGatewayServiceTest {
     }
 
     @Test
-    void openDiscoveryStreamBrowserDisconnectIsRecordedNotRetried() {
+    void openDiscoveryStreamBrowserDisconnectIsRecordedNotRetried() throws Exception {
         when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        // relay 线程先阻塞，等测试把 broken handler 接上再推第一帧：
+        // 否则异步线程可能在 attach 之前就 send，帧被缓冲进 earlySendAttempts，
+        // attach 时 initialize 一次性 flush 抛错，测试就测不到 relay 的断线分支了。
+        java.util.concurrent.CountDownLatch attached = new java.util.concurrent.CountDownLatch(1);
         org.mockito.Mockito.doAnswer(inv -> {
             @SuppressWarnings("unchecked")
             var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
+            attached.await();
             // 第一帧就发不出去（客户端已断开）：转发中断。
             consumer.accept(streamEvent("delta", "第一段", null, null));
             return null;
@@ -902,6 +907,7 @@ class AiGatewayServiceTest {
         // broken handler 的 send 会抛 IOException：模拟浏览器已离开。
         var broken = org.springframework.web.servlet.mvc.method.annotation.CapturingEmitterHandler.broken();
         broken.attachTo(emitter);
+        attached.countDown();
 
         // 记账为 client_disconnected（不是 upstream_unavailable）；不尝试再发 error 帧。
         waitUntil(() -> registry.counter("ai.requests", "feature", "discovery", "status", "failure").count() == 1.0);
