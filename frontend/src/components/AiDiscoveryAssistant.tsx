@@ -187,12 +187,14 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
             setDraft(null)
             setLoading(false)
           },
-          onError: (messageText) => {
+          onError: () => {
             if (sendGuard.current !== generation) return
-            // 明确失败：丢掉半截草稿，不许冒充完整回答；给出可重试的提示。
+            // 明确失败：丢掉半截草稿，不许冒充完整回答。错误帧的 message 是
+            // 服务端硬编码英文（与同步路径的后端消息一样），展示文案一律走
+            // 本地化映射，跟界面语言保持一致。
             setDraft(null)
             setLoading(false)
-            setError(messageText)
+            setError(t('ai.discovery.failed'))
           },
         },
         controller.signal,

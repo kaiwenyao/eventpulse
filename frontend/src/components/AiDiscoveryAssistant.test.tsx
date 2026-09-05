@@ -218,12 +218,15 @@ describe('AiDiscoveryAssistant', () => {
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
 
     await waitFor(() => expect(streamMock.calls).toHaveLength(1))
-    // 中途失败：先来了一段 delta，再 error —— 半截内容必须被丢弃。
+    // 中途失败：先来了一段 delta，再 error —— 半截内容必须被丢弃。error 帧
+    // 之后服务端会立刻关流（真实时序），组件显示本地化文案，不透传服务端
+    // 硬编码的英文 message。
     streamHandlers().onDelta('附近的音乐活动有这些：')
     expect(await screen.findByText(/有这些/)).toBeInTheDocument()
-    streamHandlers().onError('AI 助手暂时不可用')
+    streamHandlers().onError('AI could not query events right now, please retry')
+    endStream()
     expect(await screen.findByRole('alert')).toBeInTheDocument()
-    expect(screen.getByText('AI 助手暂时不可用')).toBeInTheDocument()
+    expect(screen.getByText('AI 助手暂时不可用，请稍后再试，或使用普通搜索。')).toBeInTheDocument()
     // 半截草稿被丢弃，不冒充完整回答。
     await waitFor(() => expect(screen.queryByText(/有这些/)).not.toBeInTheDocument())
 
