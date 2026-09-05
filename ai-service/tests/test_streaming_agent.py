@@ -154,7 +154,9 @@ class TestStreamDiscoveryAgent:
     def test_double_empty_reply_fails_the_round(self):
         client = backend_returning(events_payload([1]))
         model = streaming_scripted_model(AIMessage(content=""), AIMessage(content=""))
-        with pytest.raises(AgentExecutionError):
+        # 生成器内部抛的 AgentExecutionError 必须带原消息穿出包装层——否则
+        # 服务端日志里 error=%s 只剩 "AgentExecutionError" 一个类名，排障零线索。
+        with pytest.raises(AgentExecutionError, match="agent returned empty responses"):
             collect(model, make_settings(), chat_request(), client)
 
     def test_model_timeout_fails_the_round_not_fabricates(self):

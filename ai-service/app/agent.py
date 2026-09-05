@@ -198,6 +198,12 @@ def _prepare_agent(model, settings, request, client):
 
 
 def _error_to_execution_error(exc: BaseException) -> AgentExecutionError:
+    # 流式路径把整个事件生成器包在 except Exception 里，生成器内部自己抛的
+    # AgentExecutionError（agent ended on ToolMessage / 空回复）不能重新包装：
+    # 再包一层 str 就只剩 "AgentExecutionError" 一个类名，排障时线索全丢。
+    # 同步路径这两类 raise 本就在 try 之外，这里保持幂等，不改行为。
+    if isinstance(exc, AgentExecutionError):
+        return exc
     if isinstance(exc, ToolLimitExceeded):
         return AgentExecutionError(str(exc))
     if isinstance(exc, AgentBudgetExceeded):
