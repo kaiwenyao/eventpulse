@@ -12,7 +12,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /**
  * SSE 测试替身：实现包级私有的 {@link ResponseBodyEmitter.Handler}（测试源码
  * 与框架同包才能访问）。complete() 时触发 completion 回调（与真实容器一致）；
- * {@link #broken()} 构造的实例在 send 时抛 IOException，模拟客户端断开。
+ * {@link #broken()} 构造的实例在 send 时抛 IOException，模拟客户端断开；
+ * {@link #failingOn(Class, RuntimeException)} 构造的实例只对携带指定类型
+ * 数据的帧抛 RuntimeException，模拟该帧序列化失败（如 done 帧的 Jackson
+ * 出错），其余帧正常送达。
  *
  * 测试里用 emitter.initialize(handler) 手动接上，模拟 MVC 完成的初始化。
  */
@@ -20,6 +23,8 @@ public final class CapturingEmitterHandler implements ResponseBodyEmitter.Handle
 
     private final List<Object> sent = new ArrayList<>();
     private final boolean broken;
+    private final Class<?> failOnType;
+    private final RuntimeException failOnTypeFailure;
     private Runnable onCompletion;
     private Consumer<Throwable> onError;
     private Runnable onTimeout;
@@ -29,11 +34,22 @@ public final class CapturingEmitterHandler implements ResponseBodyEmitter.Handle
     }
 
     private CapturingEmitterHandler(boolean broken) {
+        this(broken, null, null);
+    }
+
+    private CapturingEmitterHandler(boolean broken, Class<?> failOnType, RuntimeException failOnTypeFailure) {
         this.broken = broken;
+        this.failOnType = failOnType;
+        this.failOnTypeFailure = failOnTypeFailure;
     }
 
     public static CapturingEmitterHandler broken() {
         return new CapturingEmitterHandler(true);
+    }
+
+    /** 只对携带指定类型数据的帧抛 RuntimeException（该帧发不出去），其余帧正常。 */
+    public static CapturingEmitterHandler failingOn(Class<?> dataType, RuntimeException failure) {
+        return new CapturingEmitterHandler(false, dataType, failure);
     }
 
     /** 与 MVC 容器等价：把 emitter 绑定到本 Handler（initialize 是包级私有）。 */
@@ -55,6 +71,9 @@ public final class CapturingEmitterHandler implements ResponseBodyEmitter.Handle
         if (broken) {
             throw new IOException("client gone");
         }
+        if (failOnType != null && failOnType.isInstance(data)) {
+            throw failOnTypeFailure;
+        }
         sent.add(data);
     }
 
@@ -62,6 +81,9 @@ public final class CapturingEmitterHandler implements ResponseBodyEmitter.Handle
     public void send(java.util.Set<ResponseBodyEmitter.DataWithMediaType> data) throws IOException {
         if (broken) {
             throw new IOException("client gone");
+        }
+        if (data.stream().anyMatch(item -> failOnType != null && failOnType.isInstance(item.getData()))) {
+            throw failOnTypeFailure;
         }
         data.forEach(item -> sent.add(item.getData()));
     }

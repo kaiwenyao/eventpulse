@@ -987,6 +987,45 @@ class AiGatewayServiceTest {
     }
 
     @Test
+    void openDiscoveryStreamDoneFrameSerializationFailureIsUpstreamNotClientDisconnect() throws Exception {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        // done 帧的 Jackson 序列化失败（EventVo 卡片出问题）是服务端 bug：必须记成
+        // upstream_unavailable 并补发 error 帧，不能伪装成 client_disconnected——
+        // 否则监控里全是「用户关页面」，真实故障排障零线索。只有 send 抛
+        // IOException 才算浏览器断线。
+        java.util.concurrent.CountDownLatch attached = new java.util.concurrent.CountDownLatch(1);
+        org.mockito.Mockito.doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
+            attached.await();
+            consumer.accept(streamEvent("delta", "第一段", null, null));
+            consumer.accept(streamEvent("result", null, new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamResult(
+                    "找到了。", List.of(), List.of(), "openai", "gpt-test", new AiUsage(5, 3), 0), null));
+            return null;
+        }).when(client).streamDiscoveryChat(any(), any());
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest(null, "周末有什么活动", null), null, "1.2.3.4");
+        // 只有 done 帧发不出去（序列化炸了），delta / error 帧正常送达。
+        var handler = org.springframework.web.servlet.mvc.method.annotation.CapturingEmitterHandler
+                .failingOn(DiscoveryChatResponse.class, new IllegalStateException("jackson blew up"));
+        handler.attachTo(emitter);
+        attached.countDown();
+
+        // 浏览器拿到明确失败信号；发不出去的 done 不能把半截结果冒充成功。
+        waitUntil(() -> payloads(handler).size() >= 2);
+        assertThat(payloads(handler).stream().noneMatch(item -> item instanceof DiscoveryChatResponse))
+                .as("done 帧序列化失败不能把半截结果冒充成功")
+                .isTrue();
+        assertThat(payloads(handler).get(1)).isEqualTo(Map.of("message", AiServiceClient.UNAVAILABLE));
+        ArgumentCaptor<AiRequestLog> logCaptor = ArgumentCaptor.forClass(AiRequestLog.class);
+        verify(requestLogs).save(logCaptor.capture());
+        assertThat(logCaptor.getValue().getErrorCode()).isEqualTo("upstream_unavailable");
+        assertThat(registry.counter("ai.requests", "feature", "discovery", "status", "failure").count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
     void openDiscoveryStreamSharesRateLimitAndValidationWithSyncPath() {
         when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(false);
         assertThatThrownBy(() -> gateway.openDiscoveryStream(

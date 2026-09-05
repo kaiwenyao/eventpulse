@@ -1,5 +1,6 @@
 package dev.kaiwen.eventpulse.service;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -323,12 +324,16 @@ public class AiGatewayService {
         }
     }
 
-    /** 发一帧；浏览器断开（send 抛错）转成内部信号，别把 IO 异常泄漏成 500。 */
+    /** 发一帧；浏览器断开（send 抛 IOException）转成内部信号，别把 IO 异常泄漏成 500。
+     * 只有 IOException 才算断线：send 的其它 RuntimeException（如 done 帧 Jackson
+     * 序列化失败）是服务端 bug，让它穿出去——AiServiceClient 会把回调异常包成
+     * AiUnavailableException，落到 upstream_unavailable 分支并补发 error 帧，
+     * 不能在监控里伪装成「用户关页面」。 */
     private static void sendOrAbort(SseEmitter emitter, SseEmitter.SseEventBuilder frame) {
         try {
             emitter.send(frame);
         }
-        catch (Exception sendFailure) {
+        catch (IOException sendFailure) {
             throw new AiServiceClient.StreamRelayAborted(sendFailure);
         }
     }
