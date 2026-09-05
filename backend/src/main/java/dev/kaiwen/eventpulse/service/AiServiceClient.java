@@ -139,7 +139,9 @@ public class AiServiceClient {
             throw e;
         }
         catch (Exception e) {
-            log.warn("ai streaming upstream call failed", e);
+            // 上游调用失败，或转发回调（verifyEvents / 落库）抛出的异常：统一按
+            // 不可用降级。原始异常带完整堆栈进日志。
+            log.warn("ai streaming upstream call or relay callback failed", e);
             throw new AiUnavailableException(UNAVAILABLE);
         }
     }

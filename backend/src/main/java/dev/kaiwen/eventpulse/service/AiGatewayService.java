@@ -240,6 +240,11 @@ public class AiGatewayService {
         try {
             client.streamDiscoveryChat(session.payload(),
                     event -> relayStreamEvent(session, emitter, accumulator, event));
+            // Python 关流但既没给 result 也没发过 error 帧：补一条明确的 error 帧，
+            // 不让浏览器只看到连接静默关闭。
+            if (!accumulator.gotResult && !accumulator.failed) {
+                sendErrorBestEffort(emitter, AiServiceClient.UNAVAILABLE);
+            }
         }
         catch (AiServiceClient.StreamRelayAborted aborted) {
             if (finished.compareAndSet(false, true)) {
@@ -248,6 +253,8 @@ public class AiGatewayService {
             return;
         }
         catch (AiUnavailableException e) {
+            // 上游故障，或转发回调里的 verifyEvents / 落库失败（AiServiceClient
+            // 会把回调抛出的其它异常也转成 AiUnavailableException）。
             if (finished.compareAndSet(false, true)) {
                 recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "upstream_unavailable");
             }
@@ -276,43 +283,52 @@ public class AiGatewayService {
                     accumulator.failed ? "upstream_error" : "no_result");
             return;
         }
-        // 成功：会话落库 + 日志 + 计量都在流结束后做（Python 的 usage 此时才有）。
+        // 成功：日志与计量在流结束后做（Python 的 usage 此时才有）；会话落库
+        // 已提前到 done 帧之前（见 relayStreamEvent），用户追问时历史才完整。
         recordSuccess(session.requestId(), session.userId(), FEATURE_DISCOVERY, accumulator.provider,
                 accumulator.model, session.start(), accumulator.usage);
-        if (session.userId() != null) {
-            appendMessages(session.conversation(), session.message(), accumulator.answer);
-        }
         countMetric("ai.requests", FEATURE_DISCOVERY, "success");
     }
 
     private void relayStreamEvent(DiscoverySession session, SseEmitter emitter,
             StreamAccumulator accumulator, DiscoveryStreamEvent event) {
+        if ("delta".equals(event.type())) {
+            sendOrAbort(emitter, SseEmitter.event().name("delta")
+                    .data(Map.of("text", event.text()), MediaType.APPLICATION_JSON));
+        }
+        else if ("result".equals(event.type())) {
+            DiscoveryStreamResult result = event.result();
+            accumulator.gotResult = true;
+            accumulator.provider = result.provider();
+            accumulator.model = result.model();
+            accumulator.usage = result.usage();
+            accumulator.answer = result.answer();
+            // 活动卡片只在流结束时一次性发：verifyEvents 需要完整列表。
+            // verifyEvents / 落库抛出的异常绝不能包成 StreamRelayAborted——只有
+            // send 失败才是浏览器断开，DB 故障要走 upstream_unavailable 降级。
+            List<DiscoveryEventMention> verified = verifyEvents(toRefs(result.events()));
+            // 落库必须先于 done：done 一到前端就会解锁追问按钮，若此刻历史里
+            // 还没有本轮问答，紧跟着的追问会丢掉刚发生的这一轮上下文。
+            if (session.userId() != null) {
+                appendMessages(session.conversation(), session.message(), accumulator.answer);
+            }
+            sendOrAbort(emitter, SseEmitter.event().name("done")
+                    .data(toStreamDone(session, result.answer(), verified,
+                            result.followUpQuestions()), MediaType.APPLICATION_JSON));
+        }
+        else if ("error".equals(event.type())) {
+            accumulator.failed = true;
+            sendOrAbort(emitter, SseEmitter.event().name("error")
+                    .data(Map.of("message", event.error()), MediaType.APPLICATION_JSON));
+        }
+    }
+
+    /** 发一帧；浏览器断开（send 抛错）转成内部信号，别把 IO 异常泄漏成 500。 */
+    private static void sendOrAbort(SseEmitter emitter, SseEmitter.SseEventBuilder frame) {
         try {
-            if ("delta".equals(event.type())) {
-                emitter.send(SseEmitter.event().name("delta")
-                        .data(Map.of("text", event.text()), MediaType.APPLICATION_JSON));
-            }
-            else if ("result".equals(event.type())) {
-                DiscoveryStreamResult result = event.result();
-                accumulator.gotResult = true;
-                accumulator.provider = result.provider();
-                accumulator.model = result.model();
-                accumulator.usage = result.usage();
-                accumulator.answer = result.answer();
-                // 活动卡片只在流结束时一次性发：verifyEvents 需要完整列表。
-                List<DiscoveryEventMention> verified = verifyEvents(toRefs(result.events()));
-                emitter.send(SseEmitter.event().name("done")
-                        .data(toStreamDone(session, result.answer(), verified,
-                                result.followUpQuestions()), MediaType.APPLICATION_JSON));
-            }
-            else if ("error".equals(event.type())) {
-                accumulator.failed = true;
-                emitter.send(SseEmitter.event().name("error")
-                        .data(Map.of("message", event.error()), MediaType.APPLICATION_JSON));
-            }
+            emitter.send(frame);
         }
         catch (Exception sendFailure) {
-            // 浏览器断开：转发中断。用内部信号让外层知道，别把 IO 异常泄漏成 500。
             throw new AiServiceClient.StreamRelayAborted(sendFailure);
         }
     }

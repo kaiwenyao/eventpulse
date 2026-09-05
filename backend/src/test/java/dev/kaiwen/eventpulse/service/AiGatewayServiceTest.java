@@ -802,6 +802,8 @@ class AiGatewayServiceTest {
     void openDiscoveryStreamStreamWithoutResultIsRecordedAsFailure() {
         when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
         // Python 连接结束但一条 result 都没有：异常流，不能留半截冒充完整。
+        // 除记账为 no_result 外，还补发一条明确的 error 帧，浏览器拿到显式
+        // 失败信号而不是只看到连接静默关闭。
         org.mockito.Mockito.doAnswer(inv -> {
             @SuppressWarnings("unchecked")
             var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
@@ -812,12 +814,80 @@ class AiGatewayServiceTest {
         SseEmitter emitter = gateway.openDiscoveryStream(
                 new DiscoveryChatRequest(null, "周末有什么活动", null), null, "1.2.3.4");
         var handler = attach(emitter);
-        waitUntil(() -> payloads(handler).size() >= 1);
+        waitUntil(() -> payloads(handler).size() >= 2);
 
-        assertThat(payloads(handler)).hasSize(1);
+        assertThat(payloads(handler).get(0)).isEqualTo(Map.of("text", "半截"));
+        assertThat(payloads(handler).get(1)).isEqualTo(Map.of("message", AiServiceClient.UNAVAILABLE));
         assertThat(registry.counter("ai.requests", "feature", "discovery", "status", "failure").count())
                 .isEqualTo(1.0);
         verify(requestLogs).save(any());
+    }
+
+    @Test
+    void openDiscoveryStreamVerifyEventsFailureIsUpstreamNotClientDisconnect() {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        // result 帧到了，但 verifyEvents 查库失败：这是服务端故障，必须记成
+        // upstream_unavailable——只有 send 失败才是浏览器断开（client_disconnected）。
+        when(events.findAllById(any())).thenThrow(new IllegalStateException("db down"));
+        org.mockito.Mockito.doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
+            consumer.accept(streamEvent("result", null, new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamResult(
+                    "找到了。", List.of(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEventRef(1L, "r")),
+                    List.of(), "openai", "gpt-test", new AiUsage(5, 3), 0), null));
+            return null;
+        }).when(client).streamDiscoveryChat(any(), any());
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest(null, "周末活动", null), null, "1.2.3.4");
+        var handler = attach(emitter);
+        waitUntil(() -> payloads(handler).size() >= 1);
+
+        // 浏览器拿到通用降级 error 帧（卡片没有可信来源，不发 done）。
+        assertThat(payloads(handler).get(0)).isEqualTo(Map.of("message", AiServiceClient.UNAVAILABLE));
+        ArgumentCaptor<AiRequestLog> logCaptor = ArgumentCaptor.forClass(AiRequestLog.class);
+        verify(requestLogs).save(logCaptor.capture());
+        assertThat(logCaptor.getValue().getErrorCode()).isEqualTo("upstream_unavailable");
+        assertThat(registry.counter("ai.requests", "feature", "discovery", "status", "failure").count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void openDiscoveryStreamPersistsMessagesBeforeDoneFrameIsSent() throws Exception {
+        // done 一到前端就解锁追问按钮：落库必须发生在 done 之前，否则紧跟着的
+        // 追问从库里读到的历史会缺掉刚发生的这一轮问答。
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        AiConversation conversation = conversationOf(7L, 2L);
+        when(conversations.findById(7L)).thenReturn(Optional.of(conversation));
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        java.util.concurrent.CountDownLatch handlerAttached = new java.util.concurrent.CountDownLatch(1);
+        org.mockito.Mockito.doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
+            consumer.accept(streamEvent("delta", "先到", null, null));
+            // 等 handler 接好、落库断言就位之后再发 result，保证时序可断言。
+            handlerAttached.await();
+            consumer.accept(streamEvent("result", null, new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamResult(
+                    "找到了。", List.of(), List.of(), "openai", "gpt-test", new AiUsage(5, 3), 0), null));
+            return null;
+        }).when(client).streamDiscoveryChat(any(), any());
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest("7", "周末活动", null), bearer(2L, "USER"), "ip");
+        var handler = attach(emitter);
+        org.mockito.Mockito.doAnswer(inv -> {
+            assertThat(payloads(handler).stream().noneMatch(item -> item instanceof DiscoveryChatResponse))
+                    .as("done 帧必须在会话落库之后才发给浏览器")
+                    .isTrue();
+            return inv.getArgument(0);
+        }).when(messages).save(any());
+        handlerAttached.countDown();
+
+        waitUntil(() -> payloads(handler).size() >= 2);
+        verify(messages, org.mockito.Mockito.times(2)).save(any());
     }
 
     @Test
