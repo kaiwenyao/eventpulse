@@ -1,0 +1,83 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<!--
+  仓库统一 Checkstyle 规则：只保留「低成本、高信噪比」的检查——
+  命名/导入/基本防错，不掺入强主观风格的空白符规则。
+  与 SpotBugs 互补：Checkstyle 管源码层面约定，SpotBugs 管字节码层面缺陷。
+-->
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+    <property name="fileExtensions" value="java"/>
+
+    <!-- 文件必须以换行符结尾，避免 POSIX diff 噪声 -->
+    <module name="NewlineAtEndOfFile"/>
+
+    <!-- 禁用 Tab 缩进，统一空格（与主流格式化工具默认一致） -->
+    <module name="FileTabCharacter">
+        <property name="eachLine" value="true"/>
+    </module>
+
+    <!-- 行宽上限 140：URL 和 package/import 行不计 -->
+    <module name="LineLength">
+        <property name="fileExtensions" value="java"/>
+        <property name="max" value="140"/>
+        <property name="ignorePattern" value="^package.*|^import.*|a href|href|http://|https://"/>
+    </module>
+
+    <module name="TreeWalker">
+        <!-- ===== 顶层结构 ===== -->
+        <!-- 文件名必须与其中的唯一顶层类型一致 -->
+        <module name="OuterTypeFilename"/>
+        <!-- 一个文件只放一个顶层类型，避免「隐藏在底部的第二个类」 -->
+        <module name="OneTopLevelClass"/>
+
+        <!-- ===== 命名约定（JLS 标准） ===== -->
+        <module name="PackageName">
+            <property name="format" value="^[a-z]+(\.[a-z][a-z0-9]*)*$"/>
+        </module>
+        <module name="TypeName"/>
+        <module name="MemberName"/>
+        <module name="MethodName"/>
+        <module name="ParameterName"/>
+        <module name="LocalVariableName"/>
+        <module name="LambdaParameterName"/>
+        <module name="PatternVariableName"/>
+        <!-- 常量用 UPPER_SNAKE；放行 Spring 生态惯例的小写 log 日志字段 -->
+        <module name="ConstantName">
+            <property name="format" value="^log$|^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$"/>
+        </module>
+
+        <!-- ===== 导入 ===== -->
+        <!-- 禁止 * 导入：破坏可读性，且重构时容易漏改 -->
+        <module name="AvoidStarImport"/>
+        <!-- 未使用/重复导入是死代码 -->
+        <module name="UnusedImports"/>
+        <module name="RedundantImport"/>
+
+        <!-- ===== 基本防错 ===== -->
+        <!-- if (x == "y") 这种按引用比较字符串几乎必然是 bug -->
+        <module name="StringLiteralEquality"/>
+        <!-- 重写 equals 必须重写 hashCode，否则 HashMap/HashSet 行为破坏 -->
+        <module name="EqualsHashCode"/>
+        <!-- 多余的分号 ;;; 是手误 -->
+        <module name="EmptyStatement"/>
+        <!-- 空 switch 分支需要注释说明为什么留空 -->
+        <module name="EmptyBlock">
+            <property name="option" value="text"/>
+        </module>
+        <!-- switch 穿透必须显式 -->
+        <module name="FallThrough"/>
+        <!-- default 必须在最后 -->
+        <module name="DefaultComesLast"/>
+        <!-- 修饰符顺序遵循 JLS -->
+        <module name="ModifierOrder"/>
+        <!-- long 字面量统一大写 L，避免与 1 混淆 -->
+        <module name="UpperEll"/>
+        <!-- 数组类型声明统一 Java 风格 String[] args -->
+        <module name="ArrayTypeStyle"/>
+    </module>
+</module>

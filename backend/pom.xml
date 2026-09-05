@@ -209,6 +209,65 @@
           </environmentVariables>
         </configuration>
       </plugin>
+      <!-- 静态代码分析：SpotBugs（字节码缺陷） + Checkstyle（源码约定）。
+           两者都绑定进 Maven 生命周期，与 CI 的 mvn verify（Jenkins 与 GitHub Actions）
+           共用同一套门禁；本地 mvn verify 也会执行同样的检查。 -->
+      <plugin>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-maven-plugin</artifactId>
+        <version>4.9.8.0</version>
+        <configuration>
+          <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
+          <!-- Max 力度全量分析；Medium 阈值即 CI 门禁线。
+               不开 xmlOutput/htmlOutput：XML 报告默认就会写 target/spotbugsXml.xml
+              （check 目标与 Jenkins 归档都读它）；显式开启这两个开关反而会触发插件
+               4.9.8.0 的已知问题（github issue #965）：XML 汇总元数据损坏
+              （total_classes=0 等），归档报告会误导排障，故保持默认关闭。 -->
+          <effort>Max</effort>
+          <threshold>Medium</threshold>
+        </configuration>
+        <executions>
+          <!-- 绑定到 verify：需要先编译出 class 才能分析；在测试/覆盖率之后执行，
+              失败即整个 verify 失败（Jenkins Maven Verify / GH Actions backend 门禁）。 -->
+          <execution>
+            <id>spotbugs-check</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <version>3.6.0</version>
+        <configuration>
+          <configLocation>checkstyle.xml</configLocation>
+          <!-- 插件默认捆绑 checkstyle 9.3（只认 Java 17 语法），显式升级到
+               12.3.1 以支持 record pattern / switch pattern 等新语法；
+               12.x 对 Java 21 编译链完全兼容。 -->
+          <includeTestSourceDirectory>false</includeTestSourceDirectory>
+        </configuration>
+        <dependencies>
+          <dependency>
+            <groupId>com.puppycrawl.tools</groupId>
+            <artifactId>checkstyle</artifactId>
+            <version>12.3.1</version>
+          </dependency>
+        </dependencies>
+        <executions>
+          <!-- 绑定到 validate：生命周期构建最先跑风格检查，Testcontainers 
+              集成测试之前就失败，CI 反馈更快 -->
+          <execution>
+            <id>checkstyle-check</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 </project>

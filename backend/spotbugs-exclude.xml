@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!-- Spring 构造器注入把协作者「原样」存进字段，DTO/record 的集合字段也直接
+         暴露给 Jackson 序列化。EI_EXPOSE_REP / EI_EXPOSE_REP2 对这类代码几乎
+         必然报警且无实际风险（组件生命周期由容器管理，DTO 不跨信任边界），
+         行业通行做法是整体排除，让 SpotBugs 聚焦真正的高危缺陷。 -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- DataSeeder 是一次性 CLI 播种器：跑完必须 SpringApplication.exit +
+         System.exit 把退出码交给 JVM/编排系统，不能留在常驻进程里。 -->
+    <Match>
+        <Class name="dev.kaiwen.eventpulse.seed.DataSeeder"/>
+        <Bug pattern="DM_EXIT"/>
+    </Match>
+    <!-- AiServiceClient.parseEvent 解析 AI 服务的单条 SSE 帧：任何一条坏帧
+         （含预期外的 RuntimeException）都不能毁掉整条流，catch Exception 是
+         设计选择，见方法内注释。 -->
+    <Match>
+        <Class name="dev.kaiwen.eventpulse.service.AiServiceClient"/>
+        <Method name="parseEvent"/>
+        <Bug pattern="REC_CATCH_EXCEPTION"/>
+    </Match>
+</FindBugsFilter>

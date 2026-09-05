@@ -78,19 +78,28 @@ final class DemoCatalog {
     }
 
     // 主场：柏林。六个场地集中在市区，半径 25km 的「附近」查询能一次覆盖。
-    static final Venue LIVEHOUSE = new Venue("Berlin", "Kreuzberg Sound Space", "Skalitzer Strasse 134, Kreuzberg, 10999 Berlin", 52.4995, 13.4300);
+    static final Venue LIVEHOUSE = new Venue("Berlin", "Kreuzberg Sound Space",
+            "Skalitzer Strasse 134, Kreuzberg, 10999 Berlin", 52.4995, 13.4300);
     static final Venue THINK_TANK = new Venue("Berlin", "Spreeufer Think Tank", "Spreeufer 5, Mitte, 10178 Berlin", 52.5185, 13.4020);
-    static final Venue RIVERSIDE = new Venue("Berlin", "Treptower Riverside Track", "Puschkinallee 76, Treptow, 12435 Berlin", 52.4930, 13.4690);
-    static final Venue CANAL_WALK = new Venue("Berlin", "Landwehr Canal Promenade", "Paul-Lincke-Ufer 21, Kreuzberg, 10999 Berlin", 52.4945, 13.4270);
-    static final Venue CRAFT_LOFT = new Venue("Berlin", "Prenzlauer Berg Craft Studio", "Kastanienallee 49, Prenzlauer Berg, 10119 Berlin", 52.5390, 13.4100);
-    static final Venue OLD_TOWN = new Venue("Berlin", "Nikolaiviertel Old Town", "Nikolaikirchplatz 1, Mitte, 10178 Berlin", 52.5160, 13.4070);
+    static final Venue RIVERSIDE = new Venue("Berlin", "Treptower Riverside Track",
+            "Puschkinallee 76, Treptow, 12435 Berlin", 52.4930, 13.4690);
+    static final Venue CANAL_WALK = new Venue("Berlin", "Landwehr Canal Promenade",
+            "Paul-Lincke-Ufer 21, Kreuzberg, 10999 Berlin", 52.4945, 13.4270);
+    static final Venue CRAFT_LOFT = new Venue("Berlin", "Prenzlauer Berg Craft Studio",
+            "Kastanienallee 49, Prenzlauer Berg, 10119 Berlin", 52.5390, 13.4100);
+    static final Venue OLD_TOWN = new Venue("Berlin", "Nikolaiviertel Old Town",
+            "Nikolaikirchplatz 1, Mitte, 10178 Berlin", 52.5160, 13.4070);
 
     // 其余城市：每座一到两个场地，用来演示城市筛选与跨时区的活动列表。
-    static final Venue NAVY_YARD = new Venue("New York", "Brooklyn Navy Yard Gallery", "63 Flushing Avenue, Brooklyn, NY 11205", 40.7010, -73.9720);
-    static final Venue PARK_LAWN = new Venue("London", "Victoria Park Lawn Stage", "Grove Road, Victoria Park, London E3 5TB", 51.5360, -0.0400);
-    static final Venue MAKER_PLAZA = new Venue("Tokyo", "Ariake Maker Plaza", "3-11-1 Ariake, Koto City, Tokyo 135-0063", 35.6300, 139.7950);
+    static final Venue NAVY_YARD = new Venue("New York", "Brooklyn Navy Yard Gallery",
+            "63 Flushing Avenue, Brooklyn, NY 11205", 40.7010, -73.9720);
+    static final Venue PARK_LAWN = new Venue("London", "Victoria Park Lawn Stage",
+            "Grove Road, Victoria Park, London E3 5TB", 51.5360, -0.0400);
+    static final Venue MAKER_PLAZA = new Venue("Tokyo", "Ariake Maker Plaza",
+            "3-11-1 Ariake, Koto City, Tokyo 135-0063", 35.6300, 139.7950);
     static final Venue FILM_LANE = new Venue("Melbourne", "Fitzroy Film Lane", "112 Gertrude Street, Fitzroy VIC 3065", -37.7990, 144.9780);
-    static final Venue WAREHOUSE = new Venue("Sao Paulo", "Vila Leopoldina Warehouse", "Rua Carlos Weber 800, Vila Leopoldina, Sao Paulo 05303-000", -23.5290, -46.7350);
+    static final Venue WAREHOUSE = new Venue("Sao Paulo", "Vila Leopoldina Warehouse",
+            "Rua Carlos Weber 800, Vila Leopoldina, Sao Paulo 05303-000", -23.5290, -46.7350);
 
     /** 索引 0 是 README 里给出的普通用户，1 是主办方；后面是让列表更真实的陪衬账号。 */
     static final List<UserSpec> USERS = List.of(
@@ -130,12 +139,14 @@ final class DemoCatalog {
                     "tech", THINK_TANK, 9 * DAY, 3, 4900, 120, 74, "PUBLISHED", 0, null),
             new EventSpec("Riverside Morning 5K",
                     "A 5 km jog along the river, grouped by pace, breakfast at the finish.",
-                    "Three pace groups at 5'30\", 6'30\", and 7'30\" per kilometre, with pacers and a sweep. Coffee and sandwiches at the finish; "
+                    "Three pace groups at 5'30\", 6'30\", and 7'30\" per kilometre, with pacers and a sweep. "
+                            + "Coffee and sandwiches at the finish; "
                             + "bag drop next to the start arch.",
                     "sports", RIVERSIDE, 5 * DAY, 2, 0, 200, 96, "PUBLISHED", 0, null),
             new EventSpec("City Light · Digital Art Show",
                     "Twelve immersive installations, night hours until 22:00.",
-                    "Twelve digital installations by artists from four continents, all built around \"city and memory\". Three interactive works need a timed slot; "
+                    "Twelve digital installations by artists from four continents, all built around \"city and memory\". "
+                            + "Three interactive works need a timed slot; "
                             + "curator tours every evening at 19:30.",
                     "art", NAVY_YARD, 21 * DAY, 8, 8800, 500, 212, "PUBLISHED", 0, null),
             new EventSpec("Late-Night Jazz Trio",
@@ -150,17 +161,20 @@ final class DemoCatalog {
                     "tech", THINK_TANK, 12 * DAY, 6, 29900, 60, 31, "PUBLISHED", 0, null),
             new EventSpec("City Ride · Canal Night Ride",
                     "20 km night ride along the canal across eight bridges.",
-                    "An easy 20 km out-and-back along the Landwehr Canal and the Spree, crossing eight bridges. Bring your own bike, lights, and helmet; "
+                    "An easy 20 km out-and-back along the Landwehr Canal and the Spree, crossing eight bridges. "
+                            + "Bring your own bike, lights, and helmet; "
                             + "a lead and a sweep ride with the group.",
                     "sports", CANAL_WALK, 7 * DAY, 3, 3900, 150, 88, "PUBLISHED", 0, null),
             new EventSpec("Pottery Studio · One-Day Making",
                     "From throwing to glazing; take two pieces home.",
-                    "Throwing in the morning, trimming and glazing in the afternoon; fired pieces ship to you. Clay, aprons, and tools provided. Beginners welcome, "
+                    "Throwing in the morning, trimming and glazing in the afternoon; fired pieces ship to you. "
+                            + "Clay, aprons, and tools provided. Beginners welcome, "
                             + "one assistant per table.",
                     "art", CRAFT_LOFT, 10 * DAY, 5, 26800, 24, 19, "PUBLISHED", 0, null),
             new EventSpec("Folk on the Lawn · Victoria Park",
                     "Open lawn, bring a picnic blanket, music at sunset.",
-                    "Four folk acts outdoors. Free seating on the lawn; picnic blankets and folding chairs welcome. Rain date is one week later, "
+                    "Four folk acts outdoors. Free seating on the lawn; picnic blankets and folding chairs welcome. "
+                            + "Rain date is one week later, "
                             + "announced in-app.",
                     "music", PARK_LAWN, 18 * DAY, 3, 15800, 400, 156, "PUBLISHED", 1, null),
             new EventSpec("Open Hardware Fair",
@@ -175,7 +189,8 @@ final class DemoCatalog {
                     "sports", OLD_TOWN, 25 * DAY, 4, 5900, 300, 64, "PUBLISHED", 2, null),
             new EventSpec("Film Photography Walk",
                     "Bring a film camera and shoot the streets for four hours.",
-                    "A local photographer leads a four-hour walk through the Fitzroy laneways, covering composition and exposure. Film cameras available to rent; "
+                    "A local photographer leads a four-hour walk through the Fitzroy laneways, covering composition and exposure. "
+                            + "Film cameras available to rent; "
                             + "film is developed together and shared online afterwards.",
                     "art", FILM_LANE, 11 * DAY, 4, 12800, 40, 27, "PUBLISHED", 2, null),
             new EventSpec("Electronic Live · Warehouse",
@@ -198,12 +213,14 @@ final class DemoCatalog {
                     "art", NAVY_YARD, -60 * DAY, 8, 6800, 300, 287, "FINISHED", 0, null),
             new EventSpec("City Sound Festival · Open Air",
                     "Two days, three stages, outdoor festival.",
-                    "A two-day, three-stage open-air festival with twenty-four acts. Cancelled with a full refund after the venue permit was denied.",
+                    "A two-day, three-stage open-air festival with twenty-four acts. "
+                            + "Cancelled with a full refund after the venue permit was denied.",
                     "music", WAREHOUSE, 30 * DAY, 10, 38000, 1200, 246, "CANCELLED", 1,
                     "Venue construction permit denied; the festival is cancelled with a full refund"),
             new EventSpec("City Talks · Architecture and Memory",
                     "A city architecture conversation still being planned.",
-                    "Three architects on the renewal and preservation of Berlin's courtyard tenements. Venue and time still to be confirmed; not yet public.",
+                    "Three architects on the renewal and preservation of Berlin's courtyard tenements. "
+                            + "Venue and time still to be confirmed; not yet public.",
                     "art", CRAFT_LOFT, 45 * DAY, 3, 9800, 60, 0, "DRAFT", 0, null),
             new EventSpec("Vinyl Swap Meet",
                     "Bring one record, leave with another.",
@@ -283,7 +300,8 @@ final class DemoCatalog {
     /** 分类对应的入场提示，避免每个活动都手写一遍相同的说明。 */
     static String attendanceNotes(String category) {
         return switch (category) {
-            case EventCategory.MUSIC -> "Scan the e-ticket QR code at the door. One ticket per person. Under-16s must be accompanied by an adult.";
+            case EventCategory.MUSIC -> "Scan the e-ticket QR code at the door. One ticket per person. "
+                    + "Under-16s must be accompanied by an adult.";
             case EventCategory.TECH -> "Bring a laptop with internet access. Power and Wi-Fi are provided.";
             case EventCategory.SPORTS -> "Wear running shoes and check in 30 minutes early. Goes ahead in rain.";
             default -> "E-ticket required. Photos are allowed; no flash or tripods.";

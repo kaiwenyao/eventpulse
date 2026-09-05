@@ -72,6 +72,17 @@ jobs:
           cache: maven
       - name: Build, unit + Testcontainers integration tests
         run: mvn -B verify
+      # Checkstyle（validate 阶段）与 SpotBugs（verify 阶段）由 backend/pom.xml 绑定进
+      # 生命周期，上面的 mvn verify 同时跑静态分析门禁；失败时上传两份报告便于定位。
+      - name: Upload static analysis reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis-reports
+          path: |
+            backend/target/checkstyle-result.xml
+            backend/target/spotbugsXml.xml
+          if-no-files-found: ignore
       - name: Cleanup Testcontainers leftovers (Ryuk disabled)
         if: always()
         run: docker ps -aq --filter label=org.testcontainers=true | xargs -r docker rm -f

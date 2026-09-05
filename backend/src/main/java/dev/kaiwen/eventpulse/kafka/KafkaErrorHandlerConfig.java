@@ -10,7 +10,6 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
 
-import dev.kaiwen.eventpulse.outbox.KafkaTopics;
 
 /**
  * Consumer 错误处理：有限重试（每 1 秒一次，最多再试 4 次）后，

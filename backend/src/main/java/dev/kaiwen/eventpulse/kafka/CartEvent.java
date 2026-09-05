@@ -1,6 +1,5 @@
 package dev.kaiwen.eventpulse.kafka;
 
-import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 

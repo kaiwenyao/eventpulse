@@ -21,7 +21,6 @@ import dev.kaiwen.eventpulse.repository.EventFavouriteRepository;
 import dev.kaiwen.eventpulse.repository.NotificationRepository;
 import dev.kaiwen.eventpulse.repository.TicketRepository;
 import dev.kaiwen.eventpulse.repository.UserRepository;
-import dev.kaiwen.eventpulse.service.WalletService;
 
 import jakarta.persistence.EntityManager;
 

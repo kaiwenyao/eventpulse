@@ -164,16 +164,14 @@ public class SseConnectionRegistry {
 
     /** 给所有连接发一次心跳，避免空闲连接被代理/负载均衡器掐断。返回剩余连接数。 */
     public int heartbeat() {
-        for (String connectionId : connections.keySet()) {
-            Connection connection = connections.get(connectionId);
-            if (connection == null) {
-                continue;
-            }
+        // entrySet() 一次遍历拿到 key 和 value；keySet() 循环里再 get() 既多余，
+        // 也会在并发删除时拿到 null（WMI_WRONG_MAP_ITERATOR）。
+        for (Map.Entry<String, Connection> entry : connections.entrySet()) {
             try {
-                connection.emitter().send(SseEmitter.event().comment("ping"));
+                entry.getValue().emitter().send(SseEmitter.event().comment("ping"));
             }
             catch (Exception e) {
-                remove(connectionId);
+                remove(entry.getKey());
             }
         }
         return connections.size();
@@ -182,18 +180,14 @@ public class SseConnectionRegistry {
     /** API 停机时主动关闭本实例的全部连接，让浏览器尽快重连到其他实例。 */
     public int closeAll() {
         int closed = connections.size();
-        connections.keySet().forEach(connectionId -> {
-            Connection connection = connections.get(connectionId);
-            if (connection == null) {
-                return;
-            }
+        connections.entrySet().forEach(entry -> {
             try {
-                connection.emitter().complete();
+                entry.getValue().emitter().complete();
             }
             catch (Exception ignored) {
                 // 连接可能已经断开；无论如何都会从注册表里删掉。
             }
-            remove(connectionId);
+            remove(entry.getKey());
         });
         return closed;
     }

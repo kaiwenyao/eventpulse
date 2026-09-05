@@ -8,6 +8,12 @@ WORKDIR /app
 COPY pom.xml .
 RUN mvn -q -B dependency:go-offline
 
+# Static analysis configs: checkstyle:check is bound to the validate phase by
+# pom.xml, so the `mvn package` below runs it before compiling — copy both
+# configs (spotbugs:check would join at verify) or the build fails to resolve
+# them from /app.
+COPY checkstyle.xml spotbugs-exclude.xml ./
+
 COPY src ./src
 RUN mvn -q -B package -DskipTests
 
