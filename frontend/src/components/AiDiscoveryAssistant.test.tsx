@@ -384,6 +384,34 @@ describe('AiDiscoveryAssistant', () => {
     expect(localStorage.getItem('ep_ai_conversation')).toBeNull()
   })
 
+  it('new chat mid-stream clears loading so the composer stays usable', async () => {
+    signIn()
+    routeApi({ 'GET /api/auth/me': { id: 2, email: 'a@b.c', name: 'A', role: 'USER' } })
+    captureStream()
+    renderAssistant()
+
+    await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '这个周末有什么活动')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(streamMock.calls).toHaveLength(1))
+    streamHandlers().onDelta('正在生成的半截回答')
+
+    // 流式进行中点「新对话」：abort 触发的 send catch 会因代次不匹配直接返回，
+    // loading 只能由 startNewChat 自己清，否则输入框和开场问题会永久禁用。
+    await userEvent.click(screen.getByRole('button', { name: '新对话' }))
+
+    // 旧轮次迟到的 done 不能落进新对话，也不能把刚清掉的会话 id 又写回去。
+    streamHandlers().onDone(donePayload({ conversationId: '31', answer: '迟到的回答' }))
+    expect(screen.queryByText('迟到的回答')).not.toBeInTheDocument()
+    expect(localStorage.getItem('ep_ai_conversation')).toBeNull()
+
+    // loading 已清：空态开场问题重新出现，输入框恢复可用，能立刻发起新一轮。
+    expect(await screen.findByRole('button', { name: '现在有什么热门活动？' })).toBeInTheDocument()
+    expect(screen.getByLabelText('用一句话描述你想找的活动…')).toBeEnabled()
+    await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '换个问题')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(streamMock.calls).toHaveLength(2))
+  })
+
   it('keeps the active conversation when opening another one fails transiently', async () => {
     signIn()
     localStorage.setItem('ep_ai_conversation', '31')
@@ -409,6 +437,51 @@ describe('AiDiscoveryAssistant', () => {
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('GET', '/api/ai/conversations/32'))
     expect(localStorage.getItem('ep_ai_conversation')).toBe('31')
     expect(screen.getByText('会话A的内容')).toBeInTheDocument()
+  })
+
+  it('opening a conversation mid-stream stops the old answer from leaking into it', async () => {
+    signIn()
+    routeApi({
+      'GET /api/auth/me': { id: 2, email: 'a@b.c', name: 'A', role: 'USER' },
+      'GET /api/ai/conversations': [
+        { id: '32', preview: '会话B的预览', updatedAt: '2026-09-04T10:00:00Z' },
+      ],
+      'GET /api/ai/conversations/32': {
+        id: '32',
+        messages: [{ role: 'user', content: '会话B的第一问', createdAt: '2026-09-04T10:00:05Z' }],
+      },
+    })
+    captureStream()
+    renderAssistant()
+
+    await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '有什么活动')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(streamMock.calls).toHaveLength(1))
+    const stale = streamHandlers()
+    stale.onDelta('正在生成的半截回答')
+    expect(await screen.findByText(/正在生成的半截回答/)).toBeInTheDocument()
+
+    // 流式进行中打开历史会话 B：旧会话的流必须随切换作废。
+    await userEvent.click(screen.getByRole('button', { name: '历史' }))
+    await userEvent.click(await screen.findByText('会话B的预览'))
+    expect(await screen.findByText('会话B的第一问')).toBeInTheDocument()
+    // 半截草稿随切换消失，输入框立刻恢复可用。
+    await waitFor(() => expect(screen.queryByText(/正在生成的半截回答/)).not.toBeInTheDocument())
+    expect(screen.getByLabelText('用一句话描述你想找的活动…')).toBeEnabled()
+
+    // 旧流迟到的 delta/done 不能写进 B 的轮次，也不能把 active id 劫持回旧会话。
+    stale.onDelta('迟到的增量')
+    stale.onDone(donePayload({ conversationId: '31', answer: '迟到的回答' }))
+    expect(screen.queryByText(/迟到的增量/)).not.toBeInTheDocument()
+    expect(screen.queryByText('迟到的回答')).not.toBeInTheDocument()
+    expect(localStorage.getItem('ep_ai_conversation')).toBe('32')
+    expect(screen.getByText('会话B的第一问')).toBeInTheDocument()
+
+    // 切换后还能在 B 里继续提问，并带上 B 的会话 id。
+    await userEvent.type(screen.getByLabelText('用一句话描述你想找的活动…'), '继续问')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(streamMock.calls).toHaveLength(2))
+    expect(streamMock.calls[1].body.conversationId).toBe('32')
   })
 
   it('discards an in-flight restore that lands after the chat was reset', async () => {

@@ -75,6 +75,14 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
 
   /** 打开一段历史会话：只回填文字，卡片与追问按钮无法重放（服务端只存 role/content）。 */
   async function openConversation(id: string) {
+    // 先作废在途的流式回答再取历史：不这样的话，旧会话的 delta 会继续写进刚
+    // 打开会话的草稿，done 更会把回答 append 到别人的轮次里、把 active id 改回去。
+    // 与 startNewChat 同理，代次作废后 send 的 catch 不会清 loading，得在这里清。
+    sendGuard.current += 1
+    streamAbort.current?.abort()
+    streamAbort.current = null
+    setDraft(null)
+    setLoading(false)
     const generation = ++restoreGuard.current
     try {
       const detail = await api<ConversationDetail>('GET', `/api/ai/conversations/${id}`)
@@ -108,12 +116,15 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
   function startNewChat() {
     // 在途的恢复请求同样作废，不然它会把刚清空的对话又填回来。
     restoreGuard.current += 1
-    // 正在流的回答也要中止：新对话与旧回答互不相干。
+    // 正在流的回答也要中止：新对话与旧回答互不相干。abort 触发的 send catch 会
+    // 因代次不匹配直接返回，loading 只有在这里清——不清的话输入框、发送按钮
+    // 和空态的开场问题会永久禁用，只能关掉助手重开。
     sendGuard.current += 1
     streamAbort.current?.abort()
     streamAbort.current = null
     setTurns([])
     setDraft(null)
+    setLoading(false)
     setConversationId(null)
     writeStoredConversationId(null)
     setRestored(false)
