@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -216,12 +217,17 @@ public class AiGatewayService {
     public SseEmitter openDiscoveryStream(DiscoveryChatRequest request, String authorization, String clientIp) {
         DiscoverySession session = prepareDiscovery(request, authorization, clientIp);
         SseEmitter emitter = new SseEmitter(DISCOVERY_STREAM_TIMEOUT_MS);
+        // 终态记账只做一次：timeout 回调（容器线程）与 relay 线程（收尾）都可能
+        // 到达终态，用 finished 保证不会重复记 failure / 重复 countMetric。
+        AtomicBoolean finished = new AtomicBoolean(false);
         // 每轮回答是单次、非重连的流：客户端断开即整体放弃，不留半截。
-        Runnable relay = () -> relayDiscoveryStream(session, emitter);
+        Runnable relay = () -> relayDiscoveryStream(session, emitter, finished);
         emitter.onCompletion(() -> log.debug("discovery stream completed request_id={}", session.requestId()));
         emitter.onTimeout(() -> {
             log.warn("discovery stream timed out request_id={}", session.requestId());
-            recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "stream_timeout");
+            if (finished.compareAndSet(false, true)) {
+                recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "stream_timeout");
+            }
             emitter.complete();
         });
         DISCOVERY_STREAM_EXECUTOR.execute(relay);
@@ -229,30 +235,40 @@ public class AiGatewayService {
     }
 
     /** 后台线程：把 Python 流逐条转发；成功时落库会话 + 记日志，出错时发 error 事件。 */
-    private void relayDiscoveryStream(DiscoverySession session, SseEmitter emitter) {
+    private void relayDiscoveryStream(DiscoverySession session, SseEmitter emitter, AtomicBoolean finished) {
         StreamAccumulator accumulator = new StreamAccumulator();
         try {
             client.streamDiscoveryChat(session.payload(),
                     event -> relayStreamEvent(session, emitter, accumulator, event));
         }
         catch (AiServiceClient.StreamRelayAborted aborted) {
-            recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "client_disconnected");
+            if (finished.compareAndSet(false, true)) {
+                recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "client_disconnected");
+            }
             return;
         }
         catch (AiUnavailableException e) {
-            recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "upstream_unavailable");
+            if (finished.compareAndSet(false, true)) {
+                recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "upstream_unavailable");
+            }
             sendErrorBestEffort(emitter, e.getMessage());
             return;
         }
         catch (RuntimeException e) {
             // 帧解析 / 其它意外：不能把内部细节带给浏览器，统一按不可用降级。
             log.warn("discovery stream relay failed request_id={}", session.requestId(), e);
-            recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "upstream_unavailable");
+            if (finished.compareAndSet(false, true)) {
+                recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "upstream_unavailable");
+            }
             sendErrorBestEffort(emitter, AiServiceClient.UNAVAILABLE);
             return;
         }
         finally {
             emitter.complete();
+        }
+        if (!finished.compareAndSet(false, true)) {
+            // 已被 timeout 回调收尾（30 分钟挂起 + 迟到完成）：不重复记账。
+            return;
         }
         if (accumulator.failed || !accumulator.gotResult) {
             // Python 明确发过 error 帧，或流结束了却没给 result：不能留半截冒充完整。
@@ -341,8 +357,6 @@ public class AiGatewayService {
         private AiUsage usage;
         private String answer = "";
     }
-
-    /** 浏览器断开导致转发中断的内部信号（由 AiServiceClient 原样传播）。 */
 
     /** 流式请求与同步请求共用的准备阶段：限流、消息校验、会话 / 历史 / 偏好、载荷。 */
     private DiscoverySession prepareDiscovery(DiscoveryChatRequest request, String authorization, String clientIp) {
