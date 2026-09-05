@@ -79,8 +79,9 @@ public class JwtInterceptor implements AsyncHandlerInterceptor {
             return true;
         }
         // AI 找活动助手是公开路径：游客可单轮提问；带 Bearer 时由 AiGateway
-        // 自行解析用户身份并加载其会话。
-        if ("POST".equals(method) && "/api/ai/discovery/chat".equals(path)) {
+        // 自行解析用户身份并加载其会话。流式版同一语义。
+        if ("POST".equals(method)
+                && ("/api/ai/discovery/chat".equals(path) || "/api/ai/discovery/chat/stream".equals(path))) {
             return true;
         }
         if ("GET".equals(method) && path.startsWith("/api/events") && !path.equals("/api/events/mine")

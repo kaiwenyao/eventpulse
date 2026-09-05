@@ -3,6 +3,8 @@ package dev.kaiwen.eventpulse.controller;
 import java.util.List;
 
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import dev.kaiwen.eventpulse.common.Result;
 import dev.kaiwen.eventpulse.dto.AiDtos.ConversationDetail;
@@ -55,6 +58,27 @@ public class AiController {
             @RequestHeader(value = "Authorization", required = false) String authorization,
             HttpServletRequest httpRequest) {
         return Result.success(gateway.discoveryChat(request, authorization, clientIp(httpRequest)));
+    }
+
+    /**
+     * 发现助手的流式回答。与 PlatformController 的做法一致：不在注解上钉死
+     * produces=text/event-stream——那样错误路径（限流 / 校验失败）就写不出
+     * JSON，403/429 会变成空 body 的 500。这里成功路径才声明
+     * text/event-stream，错误交给 GlobalExceptionHandler 返回 JSON。
+     *
+     * 事件：delta(文本) → done(权威收尾，含复核过的活动卡片) 或 error(明确降级)。
+     * 这是 fetch + ReadableStream 的一次性流（非 EventSource）：没有自动重连，
+     * 断线由前端显式提示，不会把同一回答从头再答一遍。
+     */
+    @PostMapping("/api/ai/discovery/chat/stream")
+    public ResponseEntity<SseEmitter> discoveryChatStream(
+            @Valid @RequestBody DiscoveryChatRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            HttpServletRequest httpRequest) {
+        SseEmitter emitter = gateway.openDiscoveryStream(request, authorization, clientIp(httpRequest));
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_EVENT_STREAM)
+                .body(emitter);
     }
 
     @GetMapping("/api/ai/conversations")

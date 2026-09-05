@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.common.Result;
@@ -146,6 +147,40 @@ class AiControllerTest {
 
         mvc.perform(get("/api/ai/conversations/7"))
                 .andExpect(status().isForbidden());
+    }
+
+    // ---- 流式发现端点 ----
+
+    @Test
+    void discoveryChatStreamReturnsTextEventStreamEmitter() {
+        SseEmitter emitter = new SseEmitter();
+        when(gateway.openDiscoveryStream(any(), eq("Bearer tok"), eq("10.0.0.2"))).thenReturn(emitter);
+        when(httpRequest.getHeader("X-Forwarded-For")).thenReturn("10.0.0.1, 10.0.0.2");
+        AiController controller = new AiController(gateway);
+
+        var entity = controller.discoveryChatStream(
+                new DiscoveryChatRequest("1", "问题", null), "Bearer tok", httpRequest);
+
+        assertThat(entity.getHeaders().getContentType()).isEqualTo(MediaType.TEXT_EVENT_STREAM);
+        assertThat(entity.getBody()).isSameAs(emitter);
+    }
+
+    @Test
+    void discoveryChatStreamValidationFailureStaysJsonNotSse() throws Exception {
+        // 不在注解上钉死 produces=text/event-stream 的意义：错误路径（限流 /
+        // 校验失败）由 GlobalExceptionHandler 返回 JSON，而不是空 body 的 500。
+        when(gateway.openDiscoveryStream(any(), any(), any()))
+                .thenThrow(BusinessException.forbidden("Too many AI requests"));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new AiController(gateway))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        mvc.perform(post("/api/ai/discovery/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"hi\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.msg").value("Too many AI requests"));
     }
 
 }

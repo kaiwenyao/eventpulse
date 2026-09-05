@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # 仍低于 Spring 侧 AI_READ_TIMEOUT 的 90s，让 Spring 能拿到真实结果或
     # 明确降级，而不是在 Python 还在跑时就先超时。
     agent_total_budget_seconds: float = 45.0
+    # 最终答案文本按「信封内 answer 字段」逐字流给浏览器。为防模型在信封之外
+    # 先写一段散文、或用大块 reasoning token 拖时间，流式提取只在进入 answer
+    # 字段的字符串值之后才允许放行；下面是给「尚未进入该字段」的中间内容（前缀
+    # 键名、events JSON 等）的保留缓冲，超过即整体放弃流式、退回整块一次性返回。
+    stream_answer_budget_chars: int = 1200
     max_history_messages: int = 8
     max_input_chars: int = 2000
     max_tool_results: int = 20

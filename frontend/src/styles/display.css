@@ -1882,3 +1882,22 @@ li > .card {
   color: var(--n-500);
 }
 
+
+/* 流式回答中的草稿气泡：正文逐字出现，收尾处一个闪烁光标提示仍在产出。 */
+.ai-turn-streaming .ai-turn-text {
+  color: var(--text);
+}
+
+.ai-caret {
+  display: inline-block;
+  width: 0.6em;
+  margin-left: 2px;
+  color: var(--accent);
+  animation: ai-caret-blink 1s steps(1) infinite;
+}
+
+@keyframes ai-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}

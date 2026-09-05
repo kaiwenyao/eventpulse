@@ -1,5 +1,6 @@
 """HTTP 层：服务认证、健康检查、未配置 Key 的降级、响应结构。"""
 
+import inspect
 import json
 
 import pytest
@@ -212,3 +213,91 @@ def test_guest_null_context_token_is_accepted(client, monkeypatch):
     assert response.status_code == 200, response.text
     assert seen["context_token"] is None
     app.dependency_overrides.clear()
+
+
+# ---- 流式发现端点 /internal/v1/discovery/chat/stream ----
+
+def test_discovery_stream_requires_service_token(client):
+    assert client.post("/internal/v1/discovery/chat/stream", json={}).status_code == 401
+    assert (
+        client.post("/internal/v1/discovery/chat/stream", json={}, headers=auth_header("wrong")).status_code == 401
+    )
+
+
+def test_discovery_stream_relays_deltas_then_result(client, monkeypatch):
+    def fake_backend(path, payload, headers):
+        assert path == "/internal/ai-tools/events/search"
+        return 200, {"code": 1, "data": [{"id": 7, "title": "音乐节"}]}
+
+    from conftest import FakeBackend
+    from app.backend_client import BackendClient
+
+    fake = FakeBackend(fake_backend)
+
+    def override_client(settings, request_id, context_token, http_client=None):
+        return BackendClient(settings, request_id, context_token, fake.client())
+
+    monkeypatch.setattr(main_module, "BackendClient", override_client)
+    from fake_model import streaming_scripted_model, tool_call_message
+
+    override_model(
+        monkeypatch,
+        streaming_scripted_model(
+            tool_call_message("search_published_events", {"category": "music"}),
+            AIMessage(
+                content=json.dumps(
+                    {"answer": "找到了音乐节", "events": [{"event_id": 7, "reason": "周末"}],
+                     "follow_up_questions": ["要免费的吗?"]},
+                    ensure_ascii=False,
+                )
+            ),
+        ),
+    )
+    response = client.post(
+        "/internal/v1/discovery/chat/stream",
+        json={
+            "requestId": "r2",
+            "message": "这个周末有什么音乐活动",
+            "nowIso": "2026-09-02T10:00:00Z",
+            "timeZone": "Asia/Shanghai",
+            "userContextToken": "signed-token",
+        },
+        headers=auth_header(),
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    body = response.text
+    # 逐字放行 answer 文本，不放原始 JSON 信封。
+    assert "找到了音乐节" in body
+    assert '"event_id"' not in body
+    # 权威收尾带 events / followUps。
+    assert '"followUpQuestions"' in body
+    assert '"eventId"' in body
+    # 帧按顺序：delta 全在 result 之前。
+    assert body.index("event: result") > body.rindex("event: delta")
+    app.dependency_overrides.clear()
+
+
+def test_discovery_stream_error_frame_on_agent_failure(client, monkeypatch):
+    from fake_model import ExplodingChatModel
+
+    override_model(monkeypatch, ExplodingChatModel())
+    response = client.post(
+        "/internal/v1/discovery/chat/stream",
+        json={
+            "requestId": "r9",
+            "message": "hi",
+            "nowIso": "2026-09-02T10:00:00Z",
+        },
+        headers=auth_header(),
+    )
+    assert response.status_code == 200  # SSE 一旦建立就用事件表达错误，不再换 HTTP 状态
+    assert "event: error" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_discovery_stream_events_is_a_sync_generator():
+    # _discovery_sse_events 必须保持同步生成器：Agent 的 LLM 流式调用与工具
+    # 往返是阻塞 IO，async 生成器会把它们全部卡在事件循环上（健康检查、并发
+    # 请求一起停摆）；同步生成器由 Starlette 包进 iterate_in_threadpool 驱动。
+    assert inspect.isgeneratorfunction(main_module._discovery_sse_events)

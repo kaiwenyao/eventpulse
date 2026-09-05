@@ -462,6 +462,11 @@ class UnitTest {
         req.setMethod("POST");
         req.setRequestURI("/api/auth/login");
         assertThat(JwtInterceptor.isPublic(req)).isTrue();
+        // AI 找活动（含流式版）对游客开放：带 Bearer 时由网关自行解析身份。
+        req.setRequestURI("/api/ai/discovery/chat/stream");
+        assertThat(JwtInterceptor.isPublic(req)).isTrue();
+        req.setRequestURI("/api/ai/discovery/chat");
+        assertThat(JwtInterceptor.isPublic(req)).isTrue();
         req.setMethod("OPTIONS");
         assertThat(JwtInterceptor.isPublic(req)).isTrue();
         MockHttpServletRequest authed = new MockHttpServletRequest("GET", "/api/bookings");
