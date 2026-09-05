@@ -47,7 +47,9 @@ public final class AiDtos {
 
     public record DiscoveryChatRequest(
             String conversationId,
-            @NotBlank @Size(max = 1000) String message) {
+            @NotBlank @Size(max = 1000) String message,
+            /** 前端当前的 UI 语言（en / zh），服务端会归一化后再往下传。 */
+            @Size(max = 10) String locale) {
     }
 
     public record DiscoveryChatResponse(
@@ -122,6 +124,13 @@ public final class AiDtos {
             List<HistoryMessage> history,
             String nowIso,
             String timeZone,
+            /**
+             * 归一化后的界面语言（"en" / "zh"，识别不了就是 null）。
+             *
+             * 只在用户消息本身判断不出语言时给模型兜底：提示词、工具描述都是
+             * 中文，短消息（"berlin"、emoji）很容易被带偏成中文回复。
+             */
+            String locale,
             AiUser user,
             String userContextToken,
             /**

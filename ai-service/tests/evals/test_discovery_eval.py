@@ -44,9 +44,14 @@ def model():
     return build_chat_model(env_settings)
 
 
-def run(model, message: str, catalogue=None):
+def run(model, message: str, catalogue=None, **overrides):
     client = backend_returning(CATALOGUE if catalogue is None else catalogue)
-    return run_discovery_agent(model, make_settings(), chat_request(message=message), client)
+    request = chat_request(message=message, **overrides)
+    return run_discovery_agent(model, make_settings(), request, client)
+
+
+def has_han(text: str) -> bool:
+    return any("\u4e00" <= ch <= "\u9fff" for ch in text)
 
 
 @pytest.mark.parametrize("message", [
@@ -94,3 +99,31 @@ def test_out_of_scope_requests_are_declined(model):
     # 只有查询工具，没有下单/退款能力；应当说明并引导去普通页面。
     assert answer.events == []
     assert answer.answer.strip()
+
+
+class TestOutputLanguage:
+    """回复语言：英文提问必须得到英文回复，包括 follow_up_questions。
+
+    这一组补的是一个真实回归：其余探针全是中文消息，所以「英文进、中文出」
+    在这个套件里天然不可见。bug 现场是 answer 之外的 follow-up chip 照抄了
+    提示词里的中文示例。
+    """
+
+    def test_english_question_gets_a_fully_english_reply(self, model):
+        answer, _usage, _calls = run(model, "What tech events are happening in Berlin?", locale="en")
+        assert not has_han(answer.answer), answer.answer
+        for question in answer.follow_up_questions:
+            assert not has_han(question), question
+        for event in answer.events:
+            assert not has_han(event.reason), event.reason
+
+    def test_chinese_question_still_gets_a_chinese_reply(self, model):
+        answer, _usage, _calls = run(model, "柏林有什么科技活动？", locale="zh")
+        assert has_han(answer.answer), answer.answer
+
+    def test_language_ambiguous_message_falls_back_to_ui_locale(self, model):
+        # "berlin" 判断不出语言：只有界面语言能把输出锚定在英文上。
+        answer, _usage, _calls = run(model, "berlin", locale="en")
+        assert not has_han(answer.answer), answer.answer
+        for question in answer.follow_up_questions:
+            assert not has_han(question), question

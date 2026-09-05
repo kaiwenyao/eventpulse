@@ -83,7 +83,7 @@ class AiControllerTest {
         when(gateway.discoveryChat(any(), eq("Bearer tok"), eq("10.0.0.2")))
                 .thenReturn(new DiscoveryChatResponse("r", "1", "ok", List.of(), List.of()));
         AiController controller = new AiController(gateway);
-        var result = controller.discoveryChat(new DiscoveryChatRequest("1", "问题"), "Bearer tok", httpRequest);
+        var result = controller.discoveryChat(new DiscoveryChatRequest("1", "问题", null), "Bearer tok", httpRequest);
         assertThat(result.getData().answer()).isEqualTo("ok");
     }
 
@@ -94,7 +94,7 @@ class AiControllerTest {
         when(gateway.discoveryChat(any(), eq(null), eq("127.0.0.1")))
                 .thenReturn(new DiscoveryChatResponse("r", null, "ok", List.of(), List.of()));
         AiController controller = new AiController(gateway);
-        assertThat(controller.discoveryChat(new DiscoveryChatRequest(null, "问题"), null, httpRequest)
+        assertThat(controller.discoveryChat(new DiscoveryChatRequest(null, "问题", null), null, httpRequest)
                 .getData().answer()).isEqualTo("ok");
     }
 

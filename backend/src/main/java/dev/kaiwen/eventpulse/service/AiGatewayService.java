@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -211,6 +212,7 @@ public class AiGatewayService {
                 history,
                 Instant.now().toString(),
                 properties.getAi().getTimeZone(),
+                normalizeLocale(request.locale()),
                 user,
                 contextToken,
                 preferencesOf(userId));
@@ -232,14 +234,34 @@ public class AiGatewayService {
         }
     }
 
+    /**
+     * 界面语言只接受白名单，其余一律 null。
+     *
+     * 这个值会拼进 Python 侧的系统提示词，属于外部输入：放行自由文本等于开了
+     * 一个注入口子。识别不出来时交给提示词自己的「默认英文」兜底。
+     */
+    private String normalizeLocale(String locale) {
+        if (locale == null) {
+            return null;
+        }
+        String normalized = locale.trim().toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("en")) {
+            return "en";
+        }
+        if (normalized.startsWith("zh")) {
+            return "zh";
+        }
+        return null;
+    }
+
     private DiscoveryChatResponse toDiscoveryResponse(String requestId, AiConversation conversation,
             DiscoveryResult result) {
         return new DiscoveryChatResponse(
                 requestId,
                 conversation == null ? null : String.valueOf(conversation.getId()),
-                truncate(result.answer() == null || result.answer().isBlank()
-                        ? "I could not produce an answer this time, please try again." : result.answer(),
-                        MAX_ANSWER_CHARS),
+                // 空回答不在这里补写死文案：任何写死的句子都只有一种语言，塞进来
+                // 反而会盖掉前端按 UI 语言渲染的 ai.discovery.noAnswer。
+                truncate(result.answer() == null ? "" : result.answer(), MAX_ANSWER_CHARS),
                 verifyEvents(result.events()),
                 sanitizeFollowUps(result.followUpQuestions()));
     }

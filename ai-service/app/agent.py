@@ -20,7 +20,12 @@ from pydantic import BaseModel, Field
 
 from .backend_client import BackendClient
 from .chains import _content_to_text, extract_json
-from .prompts import DISCOVERY_SYSTEM_PROMPT, discovery_context, user_preferences_context
+from .prompts import (
+    DISCOVERY_SYSTEM_PROMPT,
+    discovery_context,
+    ui_language_context,
+    user_preferences_context,
+)
 from .schemas import DiscoveryChatRequest, DiscoveryEventRef
 from .tools import ToolLedger, ToolLimitExceeded, build_tools
 
@@ -168,6 +173,11 @@ def run_discovery_agent(
         + "\n\n"
         + discovery_context(request.now_iso, request.time_zone)
     )
+    # 用户消息太短（只有地名、数字、emoji）时模型判断不出语言，会被中文提示词
+    # 带偏；界面语言就是这种情况下唯一可靠的依据。未知 locale 返回空串，跳过。
+    language_block = ui_language_context(request.locale)
+    if language_block:
+        system = system + "\n\n" + language_block
     # 偏好由 Spring 随请求带过来（它本来就持有这张表），省掉「模型决定调工具 +
     # 一次 HTTP 往返」。get_my_preferences 工具保留，模型需要时仍可显式重查。
     preferences_block = user_preferences_context(request.preferences)

@@ -25,8 +25,9 @@ export function readStoredLocale(): AppLocale | null {
 }
 
 export function detectBrowserLocale(): AppLocale {
-  if (typeof navigator === 'undefined') return 'zh'
-  return navigator.language.toLowerCase().startsWith('en') ? 'en' : 'zh'
+  // 默认英文：只有明确是中文浏览器才给中文，其余（含拿不到 navigator）都用英文。
+  if (typeof navigator === 'undefined') return 'en'
+  return navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
 }
 
 export function htmlLang(locale: AppLocale): string {
@@ -60,7 +61,7 @@ void i18n.use(initReactI18next).init({
     en: { translation: en },
   },
   lng: initial,
-  fallbackLng: 'zh',
+  fallbackLng: 'en',
   interpolation: { escapeValue: false },
 })
 
