@@ -1,8 +1,8 @@
 package org.springframework.web.servlet.mvc.method.annotation;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 import org.springframework.http.MediaType;
@@ -21,7 +21,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  */
 public final class CapturingEmitterHandler implements ResponseBodyEmitter.Handler {
 
-    private final List<Object> sent = new ArrayList<>();
+    /** 流式帧由异步线程写入，断言线程并发读取，故用写时复制列表避免 ConcurrentModificationException。 */
+    private final List<Object> sent = new CopyOnWriteArrayList<>();
     private final boolean broken;
     private final Class<?> failOnType;
     private final RuntimeException failOnTypeFailure;
