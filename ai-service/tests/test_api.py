@@ -1,5 +1,6 @@
 """HTTP 层：服务认证、健康检查、未配置 Key 的降级、响应结构。"""
 
+import inspect
 import json
 
 import pytest
@@ -293,3 +294,10 @@ def test_discovery_stream_error_frame_on_agent_failure(client, monkeypatch):
     assert response.status_code == 200  # SSE 一旦建立就用事件表达错误，不再换 HTTP 状态
     assert "event: error" in response.text
     app.dependency_overrides.clear()
+
+
+def test_discovery_stream_events_is_a_sync_generator():
+    # _discovery_sse_events 必须保持同步生成器：Agent 的 LLM 流式调用与工具
+    # 往返是阻塞 IO，async 生成器会把它们全部卡在事件循环上（健康检查、并发
+    # 请求一起停摆）；同步生成器由 Starlette 包进 iterate_in_threadpool 驱动。
+    assert inspect.isgeneratorfunction(main_module._discovery_sse_events)

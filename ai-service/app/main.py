@@ -9,10 +9,12 @@
 每次请求随载荷带最有限的历史。
 """
 
+import json
 import logging
 import secrets
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
-from typing import Annotated, Any, AsyncGenerator
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, security, status
 from fastapi.responses import StreamingResponse
@@ -137,17 +139,20 @@ def discovery_chat(request: DiscoveryChatRequest, _: AuthDep, model: ModelDep, s
 
 def _sse_frame(name: str, payload: dict[str, Any]) -> str:
     """包一个 SSE 帧。StreamingResponse 不引入 sse-starlette：帧格式很简单。"""
-    import json as _json
-
-    return f"event: {name}\ndata: {_json.dumps(payload, ensure_ascii=False)}\n\n"
+    return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-async def _discovery_sse_events(
+def _discovery_sse_events(
     request: DiscoveryChatRequest,
     model: BaseChatModel,
     settings: Settings,
-) -> AsyncGenerator[str, None]:
+) -> Iterator[str]:
     """把 Agent 事件流包装成 SSE 帧序列。
+
+    刻意用同步生成器而不是 async：Agent 的 LLM 流式调用与工具往返都是阻塞
+    IO，async 生成器会在事件循环线程上执行它们，把健康检查和并发请求一起
+    卡死；同步生成器由 Starlette 自动包进 iterate_in_threadpool，在 worker
+    线程里逐次驱动，事件循环保持空闲。
 
     逐字转发的字符全部来自可信的最终解析（权威收尾 result 会覆盖任何增量）；
     中途失败发一条 error 帧（前端明确降级），而不是把半截内容冒充完整。
@@ -202,5 +207,3 @@ def discovery_chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
-
-

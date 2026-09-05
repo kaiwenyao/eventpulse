@@ -4,6 +4,8 @@
 - 只放行 answer 字段字符串值内的字符（含 JSON 转义翻译），events/reason 等
   结构一律不放行；
 - 放行结果必须与 json 解码完整信封得到的 answer 完全一致（对任意分块大小）；
+  合法 UTF-16 代理对合并后仍一致；畸形孤代理按原始转义文本放行，绝不产生
+  无法 UTF-8 编码的字符（那会在写出 SSE 帧时炸掉整条流）；
 - 信封外先写大段散文（未进入 JSON）时超过 lead 预算即放弃流式；
 - 已进入信封 { 后耐心等待 answer（events 可能先出现）；
 - answer 值硬上限 2000 字符。
@@ -55,6 +57,7 @@ CASES = [
     '{"answer": "a\\\\b path", "events": []}',
     '{"reason": "has \\\\n", "answer": "multi\\nline"}',
     '{"answer": "只给答案不带任何结构"}',
+    '{"answer": "emoji \\ud83d\\ude00 end", "events": []}',
 ]
 
 
@@ -124,3 +127,35 @@ def test_truncated_envelope_streams_partial_without_crash():
     got, abandoned = run('{"answer": "partial', 1)
     assert not abandoned
     assert got == "partial"
+
+
+def test_surrogate_pair_escapes_are_combined_and_always_encodable():
+    # 合法代理对（emoji 的 \ud83d\ude00 JSON 转义写法）必须合并成真实字符：
+    # 直接 chr() 出孤代理会在响应写出时抛 UnicodeEncodeError 炸掉整条 SSE 流。
+    text = '{"answer": "e\\ud83d\\ude00 x", "events": []}'
+    expected = json.loads(complete_json(text))["answer"]
+    assert expected == "e\U0001f600 x"
+    for chunk in (1, 2, 3, 7, 100):
+        got, abandoned = run(text, chunk)
+        assert not abandoned, f"abandoned at chunk {chunk}"
+        assert got == expected
+        got.encode("utf-8")
+
+
+def test_lone_surrogate_is_emitted_as_literal_escape_text():
+    # 畸形输出里的孤代理不能 chr() 出去（无法编码）：按原始转义文本放行，
+    # 权威收尾会用完整解析覆盖展示内容。
+    text = '{"answer": "lone \\ud83d x", "events": []}'
+    got, abandoned = run(text, 1)
+    assert not abandoned
+    assert got == "lone \\ud83d x"
+    got.encode("utf-8")
+
+
+def test_pending_high_surrogate_is_flushed_when_answer_value_closes():
+    # 高位代理后面直接闭合字符串：扣住的转义文本必须在收尾时放出来。
+    text = '{"answer": "end \\ud83d"}'
+    got, abandoned = run(text, 1)
+    assert not abandoned
+    assert got == "end \\ud83d"
+    got.encode("utf-8")

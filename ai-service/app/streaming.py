@@ -87,6 +87,9 @@ class EnvelopeStreamExtractor:
         # answer 值内的 \\uXXXX 累积（仅在 _value_unicode 为 True 时使用）。
         self._value_unicode = False
         self._unicode_digits: list[str] = []
+        # 扣住未配对的 UTF-16 高位代理（存原始转义文本）：孤代理无法 UTF-8
+        # 编码，直接 chr() 会在写出 SSE 帧时炸掉整条流，见 _emit_code_point。
+        self._pending_surrogate: str | None = None
         # 累计放行字符数（硬上限）。
         self.emitted_chars = 0
         # 是否已看到顶层信封对象 { （进入后对前缀更耐心）。
@@ -118,8 +121,11 @@ class EnvelopeStreamExtractor:
         return emitted
 
     def finish(self) -> str:
-        """流结束：没有更多字符。多余内容不再放行（宁缺毋滥）。"""
-        return ""
+        """流结束：没有更多字符。多余内容不再放行（宁缺毋滥）；只有扣住的
+        孤代理转义文本需要放出来，保证不丢字也不产生孤代理。"""
+        pending = self._pending_surrogate
+        self._pending_surrogate = None
+        return pending or ""
 
     # ---- 内部：单字符状态推进 ----
 
@@ -137,12 +143,9 @@ class EnvelopeStreamExtractor:
                     self._unicode_digits.append(ch)
                     if len(self._unicode_digits) == 4:
                         code = int("".join(self._unicode_digits), 16)
-                        try:
-                            self._emit_answer(out, chr(code))
-                        except ValueError:
-                            self._emit_answer(out, "\\u" + "".join(self._unicode_digits))
                         self._value_unicode = False
                         self._unicode_digits = []
+                        self._emit_code_point(out, code)
                     i += 1
                     continue
                 # 非 hex 打断（畸形转义）：原样放行已收集的部分，再正常处理本字符。
@@ -160,6 +163,7 @@ class EnvelopeStreamExtractor:
                             self._value_unicode = True
                             self._unicode_digits = []
                         else:
+                            self._flush_pending_surrogate(out)
                             self._emit_answer(out, _SIMPLE_ESCAPES.get(ch, "\\" + ch))
                     elif self._string_is_key:
                         self._key_chars.append(ch)
@@ -171,11 +175,12 @@ class EnvelopeStreamExtractor:
                     continue
                 if ch == '"':
                     self._in_string = False
-                    self._close_string()
+                    self._close_string(out)
                     i += 1
                     continue
                 # 普通字符串字符。
                 if self._in_answer_value:
+                    self._flush_pending_surrogate(out)
                     self._emit_answer(out, ch)
                 elif self._string_is_key:
                     self._key_chars.append(ch)
@@ -243,6 +248,37 @@ class EnvelopeStreamExtractor:
             out.append(part)
             self.emitted_chars += len(part)
 
+    def _flush_pending_surrogate(self, out: list[str]) -> None:
+        """高位代理后来了别的字符：扣住的转义文本按原样（ASCII）放行。"""
+        if self._pending_surrogate is not None:
+            self._emit_answer(out, self._pending_surrogate)
+            self._pending_surrogate = None
+
+    def _emit_code_point(self, out: list[str], code: int) -> None:
+        """放行一个 \\uXXXX 解出的码点。
+
+        代理区（U+D800–U+DFFF）不能直接 chr()：孤代理字符无法 UTF-8 编码，
+        会在响应写出时抛 UnicodeEncodeError 炸掉整条流。合法的代理对
+        （\\ud83d\\ude00 这类 emoji）在这里合并成真实字符；配不上对的按原始
+        转义文本放行——牺牲孤代理场景下「与 json 解码逐字一致」，换取任何
+        输出都可编码，且权威收尾仍会用完整解析覆盖。
+        """
+        if 0xD800 <= code <= 0xDBFF:
+            # 高位代理：扣住，等下一个 \uXXXX 看能否配成代理对。
+            self._pending_surrogate = "\\u" + format(code, "04x")
+            return
+        if 0xDC00 <= code <= 0xDFFF:
+            if self._pending_surrogate is not None:
+                high = int(self._pending_surrogate[2:], 16)
+                combined = 0x10000 + ((high - 0xD800) << 10) + (code - 0xDC00)
+                self._pending_surrogate = None
+                self._emit_answer(out, chr(combined))
+            else:
+                self._emit_answer(out, "\\u" + format(code, "04x"))
+            return
+        self._flush_pending_surrogate(out)
+        self._emit_answer(out, chr(code))
+
     def _open_string(self) -> None:
         top = self.stack[-1] if self.stack else None
         is_key = isinstance(top, _ObjectFrame) and top.expect == "key"
@@ -260,12 +296,13 @@ class EnvelopeStreamExtractor:
             self._in_answer_value = True
             self._answer_key_pending = False
 
-    def _close_string(self) -> None:
+    def _close_string(self, out: list[str]) -> None:
         if self._in_answer_value:
             # answer 字符串值结束。
             self._in_answer_value = False
             self._value_unicode = False
             self._unicode_digits = []
+            self._flush_pending_surrogate(out)
             top = self.stack[-1] if self.stack else None
             if isinstance(top, _ObjectFrame):
                 top.expect = "sep"
