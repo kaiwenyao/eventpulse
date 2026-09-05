@@ -9,6 +9,7 @@ import { EventVo } from '../types'
 import { Alert } from '../ui/Alert'
 import { resolveApiError } from '../lib/apiError'
 import { readStoredConversationId, writeStoredConversationId } from '../lib/aiConversation'
+import { currentLocale } from '../i18n'
 
 interface ConversationDetail {
   id: string
@@ -135,6 +136,9 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
       const response = await api<AiChatResponse>('POST', '/api/ai/discovery/chat', {
         conversationId,
         message: trimmed,
+        // 界面语言：只在消息本身判断不出语言（"berlin"、emoji）时给模型兜底，
+        // 用户这次说的语言仍然优先。
+        locale: currentLocale(),
       })
       if (response.conversationId) {
         setConversationId(response.conversationId)

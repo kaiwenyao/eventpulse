@@ -6,6 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.agent import AgentExecutionError, parse_discovery_answer, run_discovery_agent
+from app.prompts import DISCOVERY_SYSTEM_PROMPT
 from app.tools import ToolLedger, build_tools
 from app.backend_client import BackendClient
 from app.schemas import DiscoveryChatRequest, HistoryMessage, DiscoveryUser
@@ -304,3 +305,60 @@ class TestUserPreferences:
 
         block = user_preferences_context(DiscoveryPreferences(cities="Berlin"))
         assert "以这次的话为准" in block
+
+
+class TestOutputLanguage:
+    """回复语言：跟随用户消息，判断不出时用界面语言，再兜底英文。
+
+    这个 bug 的现场：用户全程英文提问，follow_up_questions 却是提示词里那三条
+    中文「正确示例」的近似复写。示例被当成语言样板照抄了，而约束语言的那句话
+    排在示例后面，压不住它。
+    """
+
+    def test_language_rule_is_a_top_level_rule_with_english_default(self):
+        assert "输出语言必须跟随用户最新一条消息的语言" in DISCOVERY_SYSTEM_PROMPT
+        assert "默认使用英文" in DISCOVERY_SYSTEM_PROMPT
+        # 三个面向用户的字段都要跟随，不能只约束 answer。
+        assert "events[].reason" in DISCOVERY_SYSTEM_PROMPT
+        assert "follow_up_questions，三者语言必须一致" in DISCOVERY_SYSTEM_PROMPT
+        # 提示词自己是中文，必须明说这件事不决定输出语言。
+        assert "绝不影响输出语言" in DISCOVERY_SYSTEM_PROMPT
+
+    def test_follow_up_examples_are_not_chinese_only(self):
+        # 中文示例仍在（视角说明得靠它），但必须配一份英文示例，并写明
+        # 示例不决定语言，否则模型会把示例的语言当成输出语言。
+        assert "Show me tech events in Berlin next week" in DISCOVERY_SYSTEM_PROMPT
+        assert "帮我看看柏林下周的科技活动" in DISCOVERY_SYSTEM_PROMPT
+        assert "不决定语言" in DISCOVERY_SYSTEM_PROMPT
+
+    def test_ui_locale_reaches_the_system_prompt(self):
+        client = backend_returning(events_payload([1]))
+        model = RecordingChatModel(script=[AIMessage(content=answer_json("ok", []))])
+
+        run_discovery_agent(model, make_settings(), chat_request(locale="en"), client)
+
+        system = next(m.content for m in model.received[0] if isinstance(m, SystemMessage))
+        assert "用户界面语言：English" in system
+        # 界面语言只是兜底，不能盖过用户这次说的话。
+        assert "用户消息本身的语言永远优先" in system
+
+    @pytest.mark.parametrize("locale", [None, "", "  ", "fr", "en-US", "'; DROP"])
+    def test_unknown_locale_never_reaches_the_prompt(self, locale):
+        # locale 来自请求，是外部输入：只认白名单，其余一律不拼进提示词。
+        client = backend_returning(events_payload([1]))
+        model = RecordingChatModel(script=[AIMessage(content=answer_json("ok", []))])
+
+        run_discovery_agent(model, make_settings(), chat_request(locale=locale), client)
+
+        system = next(m.content for m in model.received[0] if isinstance(m, SystemMessage))
+        # 规则 8 本身就提到「用户界面语言」，所以要用注入块特有的措辞来判断。
+        assert "用户界面语言：" not in system
+
+    def test_ui_language_context_maps_only_whitelisted_values(self):
+        from app.prompts import ui_language_context
+
+        assert "English" in ui_language_context("en")
+        assert "中文" in ui_language_context("zh")
+        assert ui_language_context("EN") == ui_language_context("en")
+        assert ui_language_context("de") == ""
+        assert ui_language_context(None) == ""

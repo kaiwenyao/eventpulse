@@ -87,6 +87,8 @@ class DiscoveryChatRequest(CamelModel):
     history: list[HistoryMessage] = Field(default_factory=list, max_length=8)
     now_iso: str = Field(max_length=40)
     time_zone: str | None = Field(default=None, max_length=60)
+    # 前端 UI 语言，Spring 已归一化成 en / zh；只在用户消息判断不出语言时兜底。
+    locale: str | None = Field(default=None, max_length=10)
     user: DiscoveryUser | None = None
     # 游客请求时 Spring 发 null；登录时是签名的用户上下文 token。
     user_context_token: str | None = Field(default=None, max_length=4096)

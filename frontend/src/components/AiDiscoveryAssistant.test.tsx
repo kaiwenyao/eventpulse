@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AiDiscoveryAssistant } from './AiDiscoveryAssistant'
 import { ApiError, setAccessToken } from '../api'
 import { EventVo } from '../types'
+import { changeLocale } from '../i18n'
 
 const apiMock = vi.hoisted(() => ({ fn: vi.fn() }))
 vi.mock('../api', async (importOriginal) => {
@@ -46,12 +47,14 @@ const event: EventVo = {
   unbookableReason: undefined,
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   apiMock.fn.mockReset()
   // setup.ts 没有全局重置 localStorage，会话 id 会在用例之间串。
   // token 还额外缓存在 api.ts 的模块变量里，必须走 setAccessToken 一起清。
   setAccessToken(null)
   localStorage.clear()
+  // 语言是模块级状态，切过之后不复位会串到后面的用例。
+  await changeLocale('zh')
 })
 
 // 助手要读登录态来决定是否恢复服务端会话，所以必须带上 AuthProvider。
@@ -82,6 +85,7 @@ describe('AiDiscoveryAssistant', () => {
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/ai/discovery/chat', {
       conversationId: null,
       message: '这个周末有什么技术活动',
+      locale: 'zh',
     }))
     expect(await screen.findByText('找到 1 场周末技术活动。')).toBeInTheDocument()
     expect(screen.getByText('周末技术沙龙')).toBeInTheDocument()
@@ -93,6 +97,7 @@ describe('AiDiscoveryAssistant', () => {
       expect(apiMock.fn).toHaveBeenLastCalledWith('POST', '/api/ai/discovery/chat', {
         conversationId: '31',
         message: '想要更便宜的吗？',
+        locale: 'zh',
       }),
     )
   })
@@ -125,6 +130,7 @@ describe('AiDiscoveryAssistant', () => {
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/ai/discovery/chat', {
       conversationId: null,
       message: '现在有什么热门活动？',
+      locale: 'zh',
     }))
     // 开场问题只在没有任何对话时出现。
     await waitFor(() => expect(screen.queryByRole('button', { name: '现在有什么热门活动？' })).not.toBeInTheDocument())
@@ -342,6 +348,25 @@ describe('AiDiscoveryAssistant', () => {
     await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('GET', '/api/ai/conversations/31'))
     expect(screen.queryByText('旧会话内容')).not.toBeInTheDocument()
     expect(localStorage.getItem('ep_ai_conversation')).toBeNull()
+  })
+
+  it('sends the current UI language so short messages do not get answered in the wrong one', async () => {
+    // 助手的中文提示词会把 "berlin" 这种判断不出语言的短消息带偏成中文回复；
+    // 界面语言是这种情况下唯一的依据，所以每一轮都必须带上。
+    await changeLocale('en')
+    apiMock.fn.mockResolvedValueOnce({
+      requestId: 'r9', conversationId: null, answer: 'ok', events: [], followUpQuestions: [],
+    })
+    renderAssistant()
+
+    await userEvent.type(screen.getByLabelText('Describe the event you are looking for…'), 'berlin')
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(apiMock.fn).toHaveBeenCalledWith('POST', '/api/ai/discovery/chat', {
+      conversationId: null,
+      message: 'berlin',
+      locale: 'en',
+    }))
   })
 
 })
