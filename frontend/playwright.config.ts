@@ -12,6 +12,10 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // The CI agent runs two workers plus the dev server on two cores, where a
+  // full SPA boot costs seconds rather than the ~100ms it costs locally; 30s
+  // left multi-navigation specs timing out on the last step.
+  timeout: process.env.CI ? 60_000 : 30_000,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:5173',

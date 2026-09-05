@@ -196,8 +196,11 @@ test.describe('SPA smoke', () => {
     await mockApi(page)
     await page.addInitScript(() => localStorage.setItem('ep_token', 'demo'))
 
+    // Every page.goto reboots the whole SPA, and under the dev server that means
+    // re-fetching the unbundled module graph — seconds per route on a CI agent.
+    // Only the two entries into the shell are loaded; the remaining console
+    // routes are reached through the rail, the way an operator moves around.
     const widths = async (route: string) => {
-      await page.goto(route)
       await page.waitForSelector('.topbar-inner')
       if (route.startsWith('/organiser')) await page.waitForSelector('.console')
       return page.evaluate(() => {
@@ -208,10 +211,16 @@ test.describe('SPA smoke', () => {
       })
     }
 
+    await page.goto('/')
     const reference = await widths('/')
-    for (const route of ['/organiser', '/organiser/events', '/organiser/events/new', '/organiser/analytics']) {
-      const m = await widths(route)
-      expect(m, route).toEqual(reference)
+
+    await page.goto('/organiser')
+    expect(await widths('/organiser'), '/organiser').toEqual(reference)
+
+    for (const route of ['/organiser/events', '/organiser/events/new', '/organiser/analytics']) {
+      await page.click(`.console-nav a[href="${route}"]`)
+      await page.waitForURL((url) => url.pathname === route)
+      expect(await widths(route), route).toEqual(reference)
     }
   })
 
@@ -247,10 +256,12 @@ test.describe('SPA smoke', () => {
     // Keep in sync with the top-bar collapse media query in responsive.css.
     const TOPBAR_COLLAPSE_PX = 1200
 
+    // The top bar is responsive through CSS alone — no script reads the width —
+    // so resizing the open page probes exactly what a reload would, without
+    // paying for five SPA boots against the dev server.
     const probe = async (width: number) => {
       await page.setViewportSize({ width, height: 900 })
-      await page.goto('/')
-      await page.waitForSelector('.topbar-inner a.github-link', { state: 'attached' })
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
       return page.evaluate(() => {
         const inner = document.querySelector('.topbar-inner')!
         const toggle = document.querySelector('.nav-toggle')!
@@ -279,6 +290,9 @@ test.describe('SPA smoke', () => {
         userBoxWrapped: false,
       })
     }
+
+    await page.goto('/')
+    await page.waitForSelector('.topbar-inner a.github-link', { state: 'attached' })
 
     await assertFits(900, true)
     await assertFits(TOPBAR_COLLAPSE_PX, true)
