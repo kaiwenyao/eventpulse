@@ -205,6 +205,11 @@ export function AiDiscoveryAssistant({ onClose }: { onClose: () => void }) {
       }
     } catch (e) {
       if (sendGuard.current !== generation) return
+      // done 已经落地（答案已完整展示）：之后连接断开不算失败。
+      if (sawDone) {
+        setLoading(false)
+        return
+      }
       // 主动中止（新对话 / 卸载）不算失败；其它错误给明确提示。
       if (controller.signal.aborted) {
         setDraft(null)
