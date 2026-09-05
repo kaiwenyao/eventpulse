@@ -222,4 +222,41 @@ class AiServiceClientTest {
         assertThat(result.toolCalls()).isNull();
         server.verify();
     }
+
+    @Test
+    void streamDiscoveryChatPropagatesConsumerAbortUnwrapped() {
+        server.expect(requestTo("http://ai-service:8090/internal/v1/discovery/chat/stream"))
+                .andRespond(withSuccess(STREAM_BODY, MediaType.TEXT_EVENT_STREAM));
+
+        assertThatThrownBy(() -> client.streamDiscoveryChat(
+                new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
+                        "r2", "m", List.of(), null, null, null, null, null),
+                event -> {
+                    // 浏览器断开：回调抛转发中断标记，必须原样上抛（让网关记
+                    // client_disconnected），不能被包成 AiUnavailableException。
+                    throw new AiServiceClient.StreamRelayAborted(new java.io.IOException("client gone"));
+                }))
+                .isInstanceOf(AiServiceClient.StreamRelayAborted.class);
+        server.verify();
+    }
+
+    @Test
+    void streamDiscoveryChatToleratesMissingEventIdInResult() {
+        server.expect(requestTo("http://ai-service:8090/internal/v1/discovery/chat/stream"))
+                .andRespond(withSuccess("""
+                        event: result
+                        data: {"answer":"a","events":[{"reason":"no id"},{"eventId":4,"reason":"ok"}],"followUpQuestions":[]}
+
+                        """, MediaType.TEXT_EVENT_STREAM));
+
+        var received = new java.util.ArrayList<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>();
+        client.streamDiscoveryChat(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload(
+                "r2", "m", List.of(), null, null, null, null, null), received::add);
+
+        // 缺 eventId 的条目被跳过，带 id 的保留。
+        assertThat(received).hasSize(1);
+        assertThat(received.get(0).result().events())
+                .containsExactly(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEventRef(4L, "ok"));
+        server.verify();
+    }
 }

@@ -821,6 +821,72 @@ class AiGatewayServiceTest {
     }
 
     @Test
+    void openDiscoveryStreamSignedInUserPersistsMessagesAndConversation() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        AiConversation conversation = conversationOf(7L, 2L);
+        when(conversations.findById(7L)).thenReturn(Optional.of(conversation));
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(messages.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
+            consumer.accept(streamEvent("result", null, new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamResult(
+                    "找到了。", List.of(), List.of(), "openai", "gpt-test", new AiUsage(5, 3), 0), null));
+            return null;
+        }).when(client).streamDiscoveryChat(any(), any());
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest("7", "周末活动"), bearer(2L, "USER"), "ip");
+        var handler = attach(emitter);
+        waitUntil(() -> payloads(handler).size() >= 1);
+
+        // 登录用户：流结束后把一问一答落进 PostgreSQL 会话。
+        verify(messages, org.mockito.Mockito.times(2)).save(any());
+        assertThat(registry.counter("ai.requests", "feature", "discovery", "status", "success").count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void openDiscoveryStreamEmptyAnswerFallsBackToLocalisedDefault() {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        org.mockito.Mockito.doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
+            consumer.accept(streamEvent("result", null, new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamResult(
+                    "   ", List.of(), List.of(), "openai", "gpt-test", null, 0), null));
+            return null;
+        }).when(client).streamDiscoveryChat(any(), any());
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest(null, "周末活动"), null, "ip");
+        var handler = attach(emitter);
+        waitUntil(() -> payloads(handler).size() >= 1);
+
+        var done = (DiscoveryChatResponse) payloads(handler).get(0);
+        assertThat(done.answer()).isEqualTo("I could not produce an answer this time, please try again.");
+        assertThat(done.events()).isEmpty();
+    }
+
+    @Test
+    void openDiscoveryStreamUnexpectedRuntimeFailureSendsGenericError() {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IllegalStateException("parser hiccup"))
+                .when(client).streamDiscoveryChat(any(), any());
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest(null, "周末活动"), null, "ip");
+        var handler = attach(emitter);
+        waitUntil(() -> payloads(handler).size() >= 1);
+
+        // 内部意外：给浏览器通用降级文案，内部细节只进日志。
+        assertThat(payloads(handler).get(0)).isEqualTo(Map.of("message", AiServiceClient.UNAVAILABLE));
+        waitUntil(() -> registry.counter("ai.requests", "feature", "discovery", "status", "failure").count() == 1.0);
+    }
+
+    @Test
     void openDiscoveryStreamBrowserDisconnectIsRecordedNotRetried() {
         when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
         org.mockito.Mockito.doAnswer(inv -> {
