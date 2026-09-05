@@ -7,17 +7,22 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
 import dev.kaiwen.eventpulse.common.BaseContext;
 import dev.kaiwen.eventpulse.domain.EventStatus;
+import dev.kaiwen.eventpulse.dto.AiDtos.AiUsage;
 import dev.kaiwen.eventpulse.dto.AiDtos.AiUser;
 import dev.kaiwen.eventpulse.dto.AiDtos.ConversationDetail;
 import dev.kaiwen.eventpulse.dto.AiDtos.ConversationMessage;
@@ -29,6 +34,9 @@ import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryEventMention;
 import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryEventRef;
 import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryPayload;
 import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryResult;
+import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent;
+import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEventRef;
+import dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamResult;
 import dev.kaiwen.eventpulse.dto.AiDtos.HistoryMessage;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventPayload;
 import dev.kaiwen.eventpulse.dto.AiDtos.ImproveEventRequest;
@@ -69,6 +77,12 @@ public class AiGatewayService {
     private static final int MAX_WARNINGS = 6;
     private static final int MAX_WARNING_CHARS = 300;
     private static final int CONVERSATION_PREVIEW_CHARS = 80;
+    /** 单次发现回答的 SSE 连接超时：30 分钟，足够最慢的 Agent 往返（沿用通知频道口径）。 */
+    private static final long DISCOVERY_STREAM_TIMEOUT_MS = 30L * 60 * 1000;
+    /** 后台转发 Python 流的线程：不占 Tomcat 线程。
+     * 每轮问答用一条虚拟线程阻塞读 Python 流直到结束；虚拟线程池化成本低，
+     * 规模由 AI 限流（每用户/每 IP 每分钟）兜底。 */
+    private static final ExecutorService DISCOVERY_STREAM_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
     /**
      * 发给 Python 的偏好字段上限。user_preferences 的列是 VARCHAR(300) 且写入侧不
      * 截断，而 Python 的 DiscoveryPreferences 是 max_length=200：库里合法存在的
@@ -176,6 +190,167 @@ public class AiGatewayService {
      * 登录用户的会话保存在 PostgreSQL；游客是不持久化的单轮请求。
      */
     public DiscoveryChatResponse discoveryChat(DiscoveryChatRequest request, String authorization, String clientIp) {
+        DiscoverySession session = prepareDiscovery(request, authorization, clientIp);
+        try {
+            DiscoveryResult result = client.discoveryChat(session.payload());
+            recordSuccess(session.requestId(), session.userId(), FEATURE_DISCOVERY, result.provider(), result.model(),
+                    session.start(), result.usage());
+            if (session.userId() != null) {
+                appendMessages(session.conversation(), session.message(), result.answer());
+            }
+            countMetric("ai.requests", FEATURE_DISCOVERY, "success");
+            return toDiscoveryResponse(session.requestId(), session.conversation(), result);
+        }
+        catch (AiUnavailableException e) {
+            recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "upstream_unavailable");
+            throw e;
+        }
+    }
+
+    /**
+     * 发现助手的流式版本：先把限流 / 会话 / 历史 / 偏好全部在请求线程上准备好
+     * （异步处理一开始 BaseContext 就被清掉，身份必须在返回 emitter 之前捕获），
+     * 然后建一条 SSE 连接，在后台线程把 Python 的 delta 逐字转发、收尾时做
+     * verifyEvents + 落库会话 + 记日志。
+     */
+    public SseEmitter openDiscoveryStream(DiscoveryChatRequest request, String authorization, String clientIp) {
+        DiscoverySession session = prepareDiscovery(request, authorization, clientIp);
+        SseEmitter emitter = new SseEmitter(DISCOVERY_STREAM_TIMEOUT_MS);
+        // 每轮回答是单次、非重连的流：客户端断开即整体放弃，不留半截。
+        Runnable relay = () -> relayDiscoveryStream(session, emitter);
+        emitter.onCompletion(() -> log.debug("discovery stream completed request_id={}", session.requestId()));
+        emitter.onTimeout(() -> {
+            log.warn("discovery stream timed out request_id={}", session.requestId());
+            recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "stream_timeout");
+            emitter.complete();
+        });
+        DISCOVERY_STREAM_EXECUTOR.execute(relay);
+        return emitter;
+    }
+
+    /** 后台线程：把 Python 流逐条转发；成功时落库会话 + 记日志，出错时发 error 事件。 */
+    private void relayDiscoveryStream(DiscoverySession session, SseEmitter emitter) {
+        StreamAccumulator accumulator = new StreamAccumulator();
+        try {
+            client.streamDiscoveryChat(session.payload(),
+                    event -> relayStreamEvent(session, emitter, accumulator, event));
+        }
+        catch (StreamSendFailure aborted) {
+            recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "client_disconnected");
+            return;
+        }
+        catch (AiUnavailableException e) {
+            recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "upstream_unavailable");
+            sendErrorBestEffort(emitter, e.getMessage());
+            return;
+        }
+        catch (RuntimeException e) {
+            // 帧解析 / 其它意外：不能把内部细节带给浏览器，统一按不可用降级。
+            log.warn("discovery stream relay failed request_id={}", session.requestId(), e);
+            recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(), "upstream_unavailable");
+            sendErrorBestEffort(emitter, AiServiceClient.UNAVAILABLE);
+            return;
+        }
+        finally {
+            emitter.complete();
+        }
+        if (accumulator.failed || !accumulator.gotResult) {
+            // Python 明确发过 error 帧，或流结束了却没给 result：不能留半截冒充完整。
+            recordFailure(session.requestId(), session.userId(), FEATURE_DISCOVERY, session.start(),
+                    accumulator.failed ? "upstream_error" : "no_result");
+            return;
+        }
+        // 成功：会话落库 + 日志 + 计量都在流结束后做（Python 的 usage 此时才有）。
+        recordSuccess(session.requestId(), session.userId(), FEATURE_DISCOVERY, accumulator.provider,
+                accumulator.model, session.start(), accumulator.usage);
+        if (session.userId() != null) {
+            appendMessages(session.conversation(), session.message(), accumulator.answer);
+        }
+        countMetric("ai.requests", FEATURE_DISCOVERY, "success");
+    }
+
+    private void relayStreamEvent(DiscoverySession session, SseEmitter emitter,
+            StreamAccumulator accumulator, DiscoveryStreamEvent event) {
+        try {
+            if ("delta".equals(event.type())) {
+                emitter.send(SseEmitter.event().name("delta")
+                        .data(Map.of("text", event.text()), MediaType.APPLICATION_JSON));
+            }
+            else if ("result".equals(event.type())) {
+                DiscoveryStreamResult result = event.result();
+                accumulator.gotResult = true;
+                accumulator.provider = result.provider();
+                accumulator.model = result.model();
+                accumulator.usage = result.usage();
+                accumulator.answer = result.answer();
+                // 活动卡片只在流结束时一次性发：verifyEvents 需要完整列表。
+                List<DiscoveryEventMention> verified = verifyEvents(toRefs(result.events()));
+                emitter.send(SseEmitter.event().name("done")
+                        .data(toStreamDone(session, result.answer(), verified,
+                                result.followUpQuestions()), MediaType.APPLICATION_JSON));
+            }
+            else if ("error".equals(event.type())) {
+                accumulator.failed = true;
+                emitter.send(SseEmitter.event().name("error")
+                        .data(Map.of("message", event.error()), MediaType.APPLICATION_JSON));
+            }
+        }
+        catch (Exception sendFailure) {
+            // 浏览器断开：转发中断。用内部信号让外层知道，别把 IO 异常泄漏成 500。
+            throw new StreamSendFailure(sendFailure);
+        }
+    }
+
+    private static void sendErrorBestEffort(SseEmitter emitter, String message) {
+        try {
+            emitter.send(SseEmitter.event().name("error")
+                    .data(Map.of("message", message), MediaType.APPLICATION_JSON));
+        }
+        catch (Exception ignored) {
+            // 浏览器也已断开，错误帧发不出去就算了。
+        }
+    }
+
+    private static List<DiscoveryEventRef> toRefs(List<DiscoveryStreamEventRef> refs) {
+        if (refs == null) {
+            return List.of();
+        }
+        return refs.stream()
+                .map(r -> new DiscoveryEventRef(r.eventId(), r.reason()))
+                .toList();
+    }
+
+    private DiscoveryChatResponse toStreamDone(DiscoverySession session, String answer,
+            List<DiscoveryEventMention> verified, List<String> followUps) {
+        return new DiscoveryChatResponse(
+                session.requestId(),
+                session.conversation() == null ? null : String.valueOf(session.conversation().getId()),
+                truncate(answer == null || answer.isBlank()
+                        ? "I could not produce an answer this time, please try again." : answer,
+                        MAX_ANSWER_CHARS),
+                verified,
+                sanitizeFollowUps(followUps));
+    }
+
+    /** 转发过程中的可变状态：lambda 需要写回，不能只靠局部变量。 */
+    private static final class StreamAccumulator {
+        private boolean gotResult;
+        private boolean failed;
+        private String provider = "unknown";
+        private String model = "unknown";
+        private AiUsage usage;
+        private String answer = "";
+    }
+
+    /** 浏览器断开导致转发中断的内部信号（不走 RuntimeException 的日志噪声）。 */
+    private static final class StreamSendFailure extends RuntimeException {
+        StreamSendFailure(Throwable cause) {
+            super(cause);
+        }
+    }
+
+    /** 流式请求与同步请求共用的准备阶段：限流、消息校验、会话 / 历史 / 偏好、载荷。 */
+    private DiscoverySession prepareDiscovery(DiscoveryChatRequest request, String authorization, String clientIp) {
         requireEnabled();
         AiUser user = resolveUser(authorization);
         Long userId = user == null ? null : user.userId();
@@ -216,22 +391,8 @@ public class AiGatewayService {
                 user,
                 contextToken,
                 preferencesOf(userId));
-
-        long start = System.currentTimeMillis();
-        try {
-            DiscoveryResult result = client.discoveryChat(payload);
-            recordSuccess(requestId, userId, FEATURE_DISCOVERY, result.provider(), result.model(),
-                    start, result.usage());
-            if (userId != null) {
-                appendMessages(conversation, message, result.answer());
-            }
-            countMetric("ai.requests", FEATURE_DISCOVERY, "success");
-            return toDiscoveryResponse(requestId, conversation, result);
-        }
-        catch (AiUnavailableException e) {
-            recordFailure(requestId, userId, FEATURE_DISCOVERY, start, "upstream_unavailable");
-            throw e;
-        }
+        return new DiscoverySession(requestId, userId, conversation, message, payload,
+                System.currentTimeMillis());
     }
 
     /**
@@ -253,6 +414,12 @@ public class AiGatewayService {
         }
         return null;
     }
+
+    /** 一次发现请求在请求线程上捕获的全部上下文（异步线程不再有 BaseContext）。 */
+    private record DiscoverySession(String requestId, Long userId, AiConversation conversation, String message,
+            DiscoveryPayload payload, long start) {
+    }
+
 
     private DiscoveryChatResponse toDiscoveryResponse(String requestId, AiConversation conversation,
             DiscoveryResult result) {

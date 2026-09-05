@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.AfterEach;
@@ -28,6 +29,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import dev.kaiwen.eventpulse.common.AppProperties;
 import dev.kaiwen.eventpulse.common.BaseContext;
@@ -667,6 +669,168 @@ class AiGatewayServiceTest {
         assertThat(seenHistory.get(0).content()).isEqualTo("a1");
         assertThat(seenHistory.get(1).content()).isEqualTo("q2");
         verify(messages, org.mockito.Mockito.times(2)).save(any());
+    }
+
+    // ---- 活动发现（流式） ----
+
+    private static org.springframework.web.servlet.mvc.method.annotation.CapturingEmitterHandler attach(SseEmitter emitter) {
+        var handler = new org.springframework.web.servlet.mvc.method.annotation.CapturingEmitterHandler();
+        handler.attachTo(emitter);
+        return handler;
+    }
+
+    /** SseEmitter.event().name(...).data(...) 内部会拆成若干帧片段（event 头字符串、
+     *  数据对象、空行）。浏览器看到的是拼好的 SSE，测试断言数据对象本体即可。 */
+    private static List<Object> payloads(org.springframework.web.servlet.mvc.method.annotation.CapturingEmitterHandler handler) {
+        return handler.received().stream()
+                .filter(item -> item instanceof Map || item instanceof DiscoveryChatResponse)
+                .toList();
+    }
+
+    private static void waitUntil(java.util.function.BooleanSupplier condition) {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            try {
+                Thread.sleep(10);
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+        throw new AssertionError("condition not met within 5s");
+    }
+
+    private static dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent streamEvent(
+            String type, String text, dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamResult result, String error) {
+        return new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent(type, text, result, error);
+    }
+
+    @Test
+    void openDiscoveryStreamRelaysDeltasAndVerifiesEventsOnDone() {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        // Python 流：先两段 delta，再一个权威 result（含一个待复核的 id）。
+        org.mockito.Mockito.doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
+            consumer.accept(streamEvent("delta", "找到一", null, null));
+            consumer.accept(streamEvent("delta", "场活动", null, null));
+            consumer.accept(streamEvent("result", null, new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamResult(
+                    "找到一场活动",
+                    List.of(new dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEventRef(1L, "周六音乐")),
+                    List.of("想要免费的？"), "openai", "gpt-test",
+                    new dev.kaiwen.eventpulse.dto.AiDtos.AiUsage(50, 20), 1), null));
+            return null;
+        }).when(client).streamDiscoveryChat(any(), any());
+        when(events.findAllById(any())).thenReturn(List.of(event(1L, EventStatus.PUBLISHED)));
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest(null, "周末有什么活动"), null, "1.2.3.4");
+        var handler = attach(emitter);
+        waitUntil(() -> payloads(handler).size() >= 3);
+
+        // delta 帧：文本逐字，不带 JSON 信封。
+        assertThat(payloads(handler).get(0)).isEqualTo(Map.of("text", "找到一"));
+        assertThat(payloads(handler).get(1)).isEqualTo(Map.of("text", "场活动"));
+        // done 帧：活动卡片经过 verifyEvents（只留真实可见的 PUBLISHED）。
+        var done = (DiscoveryChatResponse) payloads(handler).get(2);
+        assertThat(done.answer()).isEqualTo("找到一场活动");
+        assertThat(done.events()).hasSize(1);
+        assertThat(done.events().get(0).event().id()).isEqualTo(1L);
+        assertThat(done.events().get(0).reason()).isEqualTo("周六音乐");
+        // 游客：不落库会话；成功日志与计量照记。
+        verify(conversations, never()).save(any());
+        verify(requestLogs).save(any());
+        assertThat(registry.counter("ai.requests", "feature", "discovery", "status", "success").count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void openDiscoveryStreamErrorFrameDoesNotPersistConversationOrLogSuccess() {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        org.mockito.Mockito.doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
+            consumer.accept(streamEvent("delta", "找到一", null, null));
+            consumer.accept(streamEvent("error", null, null, "AI could not query events right now"));
+            return null;
+        }).when(client).streamDiscoveryChat(any(), any());
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest(null, "周末有什么活动"), null, "1.2.3.4");
+        var handler = attach(emitter);
+        waitUntil(() -> payloads(handler).size() >= 2);
+
+        assertThat(payloads(handler).get(0)).isEqualTo(Map.of("text", "找到一"));
+        assertThat(payloads(handler).get(1)).isEqualTo(Map.of("message", "AI could not query events right now"));
+        // error 帧：明确降级，不冒充成功。落库与计量发生在 relay 线程的流结束后，
+        // 与帧到达不同步，等待计数而不是直接断言（避免竞态）。
+        verify(requestLogs).save(any());
+        waitUntil(() -> registry.counter("ai.requests", "feature", "discovery", "status", "failure").count() == 1.0);
+        assertThat(registry.counter("ai.requests", "feature", "discovery", "status", "success").count())
+                .isZero();
+    }
+
+    @Test
+    void openDiscoveryStreamUpstreamFailureSendsErrorAndDoesNotAppend() {
+        BaseContext.setUserId(2L);
+        BaseContext.setRole("USER");
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        AiConversation conversation = conversationOf(7L, 2L);
+        when(conversations.findById(7L)).thenReturn(Optional.of(conversation));
+        when(messages.findByConversationIdOrderByIdDesc(eq(7L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        org.mockito.Mockito.doThrow(new AiUnavailableException(AiServiceClient.UNAVAILABLE))
+                .when(client).streamDiscoveryChat(any(), any());
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest("7", "继续"), bearer(2L, "USER"), "ip");
+        var handler = attach(emitter);
+        waitUntil(() -> payloads(handler).size() >= 1);
+
+        assertThat(payloads(handler).get(0)).isEqualTo(Map.of("message", AiServiceClient.UNAVAILABLE));
+        verify(messages, never()).save(any());
+        assertThat(registry.counter("ai.failures", "feature", "discovery", "status", "failure").count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void openDiscoveryStreamStreamWithoutResultIsRecordedAsFailure() {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(true);
+        // Python 连接结束但一条 result 都没有：异常流，不能留半截冒充完整。
+        org.mockito.Mockito.doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            var consumer = (java.util.function.Consumer<dev.kaiwen.eventpulse.dto.AiDtos.DiscoveryStreamEvent>) inv.getArgument(1);
+            consumer.accept(streamEvent("delta", "半截", null, null));
+            return null;
+        }).when(client).streamDiscoveryChat(any(), any());
+
+        SseEmitter emitter = gateway.openDiscoveryStream(
+                new DiscoveryChatRequest(null, "周末有什么活动"), null, "1.2.3.4");
+        var handler = attach(emitter);
+        waitUntil(() -> payloads(handler).size() >= 1);
+
+        assertThat(payloads(handler)).hasSize(1);
+        assertThat(registry.counter("ai.requests", "feature", "discovery", "status", "failure").count())
+                .isEqualTo(1.0);
+        verify(requestLogs).save(any());
+    }
+
+    @Test
+    void openDiscoveryStreamSharesRateLimitAndValidationWithSyncPath() {
+        when(rateLimiter.tryAcquire(anyString(), anyInt())).thenReturn(false);
+        assertThatThrownBy(() -> gateway.openDiscoveryStream(
+                new DiscoveryChatRequest(null, "hi"), null, "1.2.3.4"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus().value())
+                .isEqualTo(429);
+        assertThatThrownBy(() -> gateway.openDiscoveryStream(
+                new DiscoveryChatRequest(null, "   "), null, "ip"))
+                .isInstanceOf(BusinessException.class);
+        verify(client, never()).streamDiscoveryChat(any(), any());
     }
 
 }

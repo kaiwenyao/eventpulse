@@ -146,6 +146,36 @@ public final class AiDtos {
     public record DiscoveryEventRef(Long eventId, String reason) {
     }
 
+    /** Python 流式端点收尾事件里的活动引用（同 DiscoveryEventRef 的 JSON 形态）。 */
+    public record DiscoveryStreamEventRef(Long eventId, String reason) {
+    }
+
+    /** Python 流式端点收尾事件（delta 之外的结果载荷）。 */
+    public record DiscoveryStreamResult(
+            String answer,
+            List<DiscoveryStreamEventRef> events,
+            List<String> followUpQuestions,
+            String provider,
+            String model,
+            AiUsage usage,
+            Integer toolCalls) {
+    }
+
+    /** Python 流式端点的一条 SSE 帧：delta 文本或收尾 result（含 error）。 */
+    public record DiscoveryStreamEvent(String type, String text, DiscoveryStreamResult result, String error) {
+        public static DiscoveryStreamEvent delta(String text) {
+            return new DiscoveryStreamEvent("delta", text, null, null);
+        }
+
+        public static DiscoveryStreamEvent result(DiscoveryStreamResult result) {
+            return new DiscoveryStreamEvent("result", null, result, null);
+        }
+
+        public static DiscoveryStreamEvent error(String error) {
+            return new DiscoveryStreamEvent("error", null, null, error);
+        }
+    }
+
     public record DiscoveryResult(
             String requestId,
             String answer,
