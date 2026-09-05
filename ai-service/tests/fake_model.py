@@ -7,8 +7,8 @@ from typing import Any, Iterator
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
 
 class ScriptedChatModel(BaseChatModel):
@@ -89,6 +89,79 @@ class ExplodingChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         raise TimeoutError("simulated llm timeout")
+
+
+class StreamingScriptedChatModel(ScriptedChatModel):
+    """脚本化的流式模型：把每条脚本回复切成小份从 _stream 吐出来。
+
+    LangChain 的 create_agent 在 stream_mode="messages" 下只有模型真的实现了
+    _stream 才会逐字吐 token；ScriptedChatModel 只有 _generate，会被当整块
+    一次性 invoke。这个假模型让流式测试真的走逐字分支（_stream），而不是
+    悄悄退回一次性输出还照样绿。
+    """
+
+    chunk_size: int = 3
+
+    @property
+    def _llm_type(self) -> str:
+        return "streaming-scripted-chat-model"
+
+    def _stream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        if not self.script:
+            raise AssertionError("ScriptedChatModel ran out of scripted responses")
+        message = self.script.pop(0)
+        # 工具调用必须用 tool_call_chunks 流式表达，否则整条消息会被当文本。
+        tool_calls = getattr(message, "tool_calls", None)
+        if tool_calls:
+            chunks = [
+                {
+                    "name": tc["name"],
+                    "args": _dumps(tc["args"]),
+                    "id": tc.get("id", "call_x"),
+                    "index": 0,
+                    "type": "tool_call_chunk",
+                }
+                for tc in tool_calls
+            ]
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(content="", tool_call_chunks=chunks)
+            )
+            return
+        content = message.content if isinstance(message.content, str) else str(message.content)
+        size = max(1, self.chunk_size)
+        yielded = False
+        for index in range(0, len(content), size):
+            yielded = True
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(content=content[index : index + size])
+            )
+        # 让流式 accumulate 拿到 usage：真实 OpenAI 流在最后一个 chunk 上带它。
+        if getattr(message, "usage_metadata", None):
+            yielded = True
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(content="", usage_metadata=message.usage_metadata)
+            )
+        if not yielded:
+            # 空回复也必须至少吐一个 chunk（真实流总会有收尾 chunk，finish_reason
+            # 可能只是 length）：否则 LangChain 会因“No generations found in stream”
+            # 把空回复当成传输故障，而不是交给上层做可见的空回复重试。
+            yield ChatGenerationChunk(message=AIMessageChunk(content=""))
+
+
+def _dumps(value: dict[str, Any]) -> str:
+    import json
+
+    return json.dumps(value, ensure_ascii=False)
+
+
+def streaming_scripted_model(*messages: BaseMessage) -> StreamingScriptedChatModel:
+    return StreamingScriptedChatModel(script=list(messages))
 
 
 def tool_call_message(name: str, args: dict[str, Any], call_id: str = "call_1") -> AIMessage:

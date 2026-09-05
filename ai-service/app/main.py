@@ -12,12 +12,13 @@
 import logging
 import secrets
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Annotated, Any, AsyncGenerator
 
 from fastapi import Depends, FastAPI, HTTPException, security, status
+from fastapi.responses import StreamingResponse
 from langchain_core.language_models.chat_models import BaseChatModel
 
-from .agent import AgentExecutionError, run_discovery_agent
+from .agent import AgentExecutionError, run_discovery_agent, stream_discovery_agent
 from .backend_client import BackendClient
 from .chains import LlmOutputError, improve_event_copy
 from .config import Settings, get_settings, llm_configured
@@ -131,6 +132,75 @@ def discovery_chat(request: DiscoveryChatRequest, _: AuthDep, model: ModelDep, s
         provider=settings.llm_provider,
         model=settings.llm_model,
         usage=Usage(**usage),
+    )
+
+
+def _sse_frame(name: str, payload: dict[str, Any]) -> str:
+    """包一个 SSE 帧。StreamingResponse 不引入 sse-starlette：帧格式很简单。"""
+    import json as _json
+
+    return f"event: {name}\ndata: {_json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+async def _discovery_sse_events(
+    request: DiscoveryChatRequest,
+    model: BaseChatModel,
+    settings: Settings,
+) -> AsyncGenerator[str, None]:
+    """把 Agent 事件流包装成 SSE 帧序列。
+
+    逐字转发的字符全部来自可信的最终解析（权威收尾 result 会覆盖任何增量）；
+    中途失败发一条 error 帧（前端明确降级），而不是把半截内容冒充完整。
+    """
+    client = BackendClient(settings, request.request_id, request.user_context_token or None)
+    try:
+        try:
+            events = stream_discovery_agent(model, settings, request, client)
+            for kind, *payload in events:
+                if kind == "delta":
+                    yield _sse_frame("delta", {"text": payload[0]})
+                else:
+                    # 权威收尾：answer / events / follow_up_questions 一次给全，
+                    # 附带 provider/model/usage 供日志与计量。
+                    answer, usage, tool_calls = payload
+                    yield _sse_frame(
+                        "result",
+                        {
+                            "answer": answer.answer,
+                            "events": [
+                                {"eventId": e.event_id, "reason": e.reason}
+                                for e in answer.events
+                            ],
+                            "followUpQuestions": answer.follow_up_questions,
+                            "provider": settings.llm_provider,
+                            "model": settings.llm_model,
+                            "usage": {"inputTokens": usage.get("input_tokens"), "outputTokens": usage.get("output_tokens")},
+                            "toolCalls": tool_calls,
+                        },
+                    )
+        except AgentExecutionError as exc:
+            logger.warning("discovery stream failed (request_id=%s, error=%s)", request.request_id, exc)
+            yield _sse_frame("error", {"message": "AI could not query events right now, please retry"})
+    finally:
+        client.close()
+
+
+@app.post("/internal/v1/discovery/chat/stream")
+def discovery_chat_stream(
+    request: DiscoveryChatRequest, _: AuthDep, model: ModelDep, settings: SettingsDep
+) -> StreamingResponse:
+    """发现助手的 SSE 流式端点（Spring Boot 内网转发）。
+
+    事件：delta（answer 文本逐字）→ result（权威收尾）或 error（明确降级）。
+    服务间调用仍然先要过 require_service_auth；认证失败走普通 JSON 错误。
+    """
+    return StreamingResponse(
+        _discovery_sse_events(request, model, settings),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
