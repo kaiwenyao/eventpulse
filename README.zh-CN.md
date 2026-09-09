@@ -192,8 +192,8 @@ make test-distributed # 起多实例 + 端到端冒烟
 | 普通用户 | `yuki@eventpulse.dev` | `User123456` | Yuki Tanaka |
 
 主办方账号之间的活动互相隔离，可以用来验证越权访问被正确拦截。
-想亲手走一遍购物车 / 订单 / 钱包的验收路径，见
-[docs/acceptance-walkthrough.md](docs/acceptance-walkthrough.md)（从零开始约 15 分钟）。
+购物车、订单、钱包的架构与验收重点，见
+[项目架构总览](docs/architecture.md)。
 
 日常操作：
 
@@ -239,7 +239,7 @@ make down        # 停掉全部容器并删数据卷；下次 make up 会重跑�
 - **购物车**：登录后可在活动详情页「加入购物车」（不扣款、不占库存），数据库持久化、跨设备可见；支持数量调整、勾选、移除与清空，失效原因（取消 / 停售 / 售罄 / 价格变化…）逐项展示。结算时勾选项一次事务结清：每个活动一张独立订单，任一项不可购买或余额不足整次回滚。结算必须带 `Idempotency-Key` 头，重试 / 重复点击不会重复下单或扣款。
 - **历史订单**：「我的预订」默认展示全部真实状态（含已取消），支持服务端分页、状态筛选、时间范围和订单号 / 活动名搜索；金额一律用订单快照展示，取消原因（已取消 / 已核销 / 活动已开始…）明确标注。`GET /api/bookings` 已从全量数组改为 `{total, records}` 分页结构（与前端同仓库同版本发布）。
 - **钱包流水**：充值、下单扣款、用户取消退款、活动取消退款都在业务事务里写入 `wallet_ledger`（带正负号金额、变动前后余额、业务去重标识）；个人中心「余额明细」页可按类型 / 时间筛选并跳转关联订单。老账户迁移时自动生成一条期初余额记录，不改变余额。充值仍是演示功能，支持 `Idempotency-Key` 幂等。
-- **事件**：在原有 `booking-events` 之外新增 `wallet-events`（流水已记账公告）与 `cart-events`（购物车变更公告），独立 consumer group、按用户分区、`consumed_events` 去重；Worker 在事务提交后经 Redis 向该用户的所有页面发 SSE 刷新提醒（`/api/user/events`）。Kafka 不可用时业务照常成功，消息留在 Outbox 恢复后投递。详见 [docs/order-flow.md](docs/order-flow.md)。
+- **事件**：在原有 `booking-events` 之外新增 `wallet-events`（流水已记账公告）与 `cart-events`（购物车变更公告），独立 consumer group、按用户分区、`consumed_events` 去重；Worker 在事务提交后经 Redis 向该用户的所有页面发 SSE 刷新提醒（`/api/user/events`）。Kafka 不可用时业务照常成功，消息留在 Outbox 恢复后投递。详见 [项目架构总览](docs/architecture.md)。
 
 ---
 
@@ -371,10 +371,9 @@ compose 里同样把这几个变量放进 `.env`（已在 `docker-compose.yml` �
 
 ### k3s
 
-`k3s-home/apps/eventpulse/configmap.yaml` 已带 S3 的非敏感变量（三个角色共用
-同一套 envFrom：api 读写对象，worker 执行清理，seeder 仅需能启动），凭证
-`S3_ACCESS_KEY` / `S3_SECRET_KEY` 封进 `sealed-secret.yaml`。SeaweedFS 侧的
-身份、bucket 与权限核实见 k3s-home 仓库 README 的「S3 图片存储」。
+通过 ConfigMap 配置非敏感 S3 参数，通过部署环境的密钥管理机制注入凭证。
+API 实例需要对象读写权限，Worker 需要媒体清理权限。启用共享存储前，需核实
+bucket 与对象访问权限。
 
 ### 已有本地图片怎么办（迁移方案，未执行）
 
@@ -426,70 +425,20 @@ kubectl apply -f deploy/k8s/api-deployment.yml -f deploy/k8s/api-service.yml \
 （例如 `ghcr.io/<owner>/eventpulse-backend:<commit-sha>`）。
 所有 API 实例共享同一 `SECRET_KEY`，api / worker / seeder 共用同一套数据库连接。
 
-### Jenkins 自动更新 k3s-home
+### Jenkins CI/CD
 
-Backend 流水线通过一次 `mvn verify` 完成单测、Testcontainers 集成测试、JaCoCo
-报告、90% 行覆盖率检查及 JAR 打包；随后的 Coverage 阶段只发布报告。
-Maven 仓库使用节点本地 `hostPath`，宿主机路径为
-`/var/cache/jenkins/maven/repository`，容器挂载路径为 `/var/cache/maven/repository`，
-供同一节点上的 Java 项目和分支共享，不再按项目或任务分目录，也不使用 NFS。
-Kubelet 通过 `DirectoryOrCreate` 创建目录，Maven 容器沿用镜像默认的 root 用户写入；
-构建节点需允许该 hostPath，并将该路径保留在本地磁盘上。
-所有接入项目需统一挂载上述 hostPath、使用兼容的 Maven 3.9.x，并在 Maven 命令中
-传入以下参数，确保不同进程使用相同的文件锁协调共享仓库的读写：
+后端流水线通过 `mvn verify` 完成单测、Testcontainers 集成测试、JaCoCo 报告、
+90% 行覆盖率检查及 JAR 打包。前端和 AI 流水线在发布前执行各自的检查。
+测试结果和诊断日志可从 Jenkins 构建附件中查看。
 
-```sh
--Dmaven.repo.local=/var/cache/maven/repository \
--Daether.syncContext.named.factory=file-lock \
--Daether.syncContext.named.nameMapper=file-gav
-```
+`main` 分支检查通过后，Jenkins 将镜像发布到 GHCR，并更新 GitOps 部署仓库中
+对应的镜像版本。PR 和其他分支不更新部署配置；失败或 unstable 的流水线不继续发布。
 
-`disableConcurrentBuilds()` 只串行化同一 Jenkins 任务，跨项目的仓库并发由上述文件锁
-处理。缓存跨 Pod 保留；每个节点首次使用时需要下载依赖，其他项目可复用已有依赖。
-`cleanWs()` 不清除此缓存；维护清理应在所有使用该节点缓存的构建停止后进行。
-执行 `mvn install` 的项目应另行隔离本地产物，避免同坐标的分支产物互相覆盖；
-EventPulse 使用 `verify`，不会向共享仓库安装项目产物。
-构建日志输出所用仓库路径和 Maven verify 耗时。旧的项目专用缓存不会自动迁移或删除。
+API、Worker 和 Seeder 使用同一个后端镜像并一起更新，保证 Flyway 迁移一致。
+GitOps 更新保留无关修改，并发推送冲突时重试，不强制推送。仓库访问权限和构建
+基础设施由部署环境单独配置。
 
-Backend Jenkins 控制台保留 Maven 阶段进度、测试统计和失败摘要。Surefire 将测试的
-stdout/stderr 写入 `target/surefire-reports/*-output.txt`，成功用例的 XML 不再重复
-嵌入这些输出。无论测试成功或失败，已有测试报告都会压缩为构建附件
-`backend/target/backend-test-logs.tar.gz`，可从 Jenkins 的 Artifacts 下载排查；
-JUnit 测试结果仍正常发布，测试或覆盖率失败仍阻止后续发布。
-CI 通过 `SQL_LOG_LEVEL=WARN` 关闭逐条 SQL DEBUG 输出；Kafka 不可用测试仅将
-`AdminMetadataManager` 的重复重连 INFO 日志调到 WARN，保留警告、错误和断言。
-
-AI 流水线使用节点本地的 `emptyDir` 工作卷，把 uv 缓存和 `.venv` 放在同一
-文件系统，通过硬链接安装依赖，避免从 NFS 逐个复制大量小文件。缓存随构建 Pod
-删除，每次新构建会重新下载依赖；不再使用共享 Maven PVC 保存 uv 缓存。
-依赖同步仍使用 `uv sync --frozen --extra dev`，测试通过 `uv run --no-sync pytest`
-复用刚安装的环境。同步阶段输出 uv 缓存路径与耗时，便于比较实际 CI 性能。
-
-三个 Jenkinsfile 沿用 nightdeal 的发布方式：main 分支推送 GHCR 镜像成功后，
-在独立的 `gitops` 容器中更新 `kaiwenyao/k3s-home` 的 main 分支。PR 和普通分支
-不会写入配置仓库；流水线失败或变为 unstable 时也不会继续发布。
-
-| 流水线 | 自动更新的清单（位于 `apps/eventpulse/`） |
-| --- | --- |
-| backend | `api-deployment.yaml`、`worker-deployment.yaml`、`seeder-job.yaml` |
-| frontend | `frontend-deployment.yaml` |
-| ai-service | `ai-service-deployment.yaml` |
-
-Jenkins 需能访问与 nightdeal 相同的 `k3s-home-write` 凭据（Username with password，
-密码为拥有 k3s-home Contents 写权限的 GitHub token）。镜像推送继续使用 `ghcr-token`。
-`scripts/update-k3s-home.sh` 直接使用刚推送的 `FULL_IMAGE`，只替换对应镜像行；
-版本未变化时不创建提交，目标清单缺失或镜像不匹配时让构建失败。三个任务同时推送
-发生冲突时，会从远端最新 main 重新应用本服务的修改，最多尝试五次，不强推。
-
-API、Worker 和 Seeder 在同一次 Git 提交中更新为同一个后端镜像，保证三者携带
-一致的 Flyway 迁移文件；任一清单缺失或镜像匹配异常时，整个更新失败，不推送
-部分修改。Job 名保持 `eventpulse-seeder`；已创建 Job 的 Pod 模板不可变，镜像
-变化后由 `k3s-home/apps/eventpulse/seeder-job.yaml` 上的资源级注解
-`argocd.argoproj.io/sync-options: Force=true,Replace=true` 让 Argo CD 删除旧 Job 并重建。
-该 Job 仍在 wave 0，数据库就绪后执行、成功后才更新 wave 10 的应用；再次运行时
-`seed_runs` 会跳过已完成的播种。直接使用 `kubectl apply` 则仍需手动删除旧 Job。
-GitOps 脚本只更新镜像并保留上述注解，不修改数据库迁移历史。集成测试使用临时本地仓库，
-不访问 GitHub：
+GitOps 脚本测试使用临时本地仓库：
 
 ```bash
 python3 -m unittest discover -s scripts/tests -v

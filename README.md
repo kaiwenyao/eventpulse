@@ -201,10 +201,8 @@ Demo accounts:
 | Regular user | `yuki@eventpulse.dev` | `User123456` | Yuki Tanaka |
 
 Events owned by different organiser accounts are isolated from one another, which
-is handy for verifying that unauthorised access is properly rejected. For a
-hands-on walkthrough of the cart / orders / wallet flow, see
-[docs/acceptance-walkthrough.md](docs/acceptance-walkthrough.md) (about 15 minutes
-from scratch).
+is handy for verifying that unauthorised access is properly rejected. For the cart, order, and wallet architecture and acceptance criteria, see
+[Architecture overview](docs/architecture.md).
 
 Day to day:
 
@@ -287,7 +285,7 @@ the old name for `make down`.)
   `consumed_events`; after commit the worker sends an SSE refresh reminder over
   Redis to all of that user's pages (`/api/user/events`). If Kafka is unavailable
   the business operation still succeeds; messages wait in the Outbox and are
-  delivered after recovery. See [docs/order-flow.md](docs/order-flow.md).
+  delivered after recovery. See [Architecture overview](docs/architecture.md).
 
 ---
 
@@ -444,12 +442,10 @@ Under compose the same variables go into `.env` (already passed through in
 
 ### k3s
 
-`k3s-home/apps/eventpulse/configmap.yaml` already carries the non-sensitive S3
-variables (all three roles share one envFrom: api reads and writes objects, the
-worker runs cleanup, the seeder only needs to boot); the `S3_ACCESS_KEY` /
-`S3_SECRET_KEY` credentials are sealed in `sealed-secret.yaml`. For the
-SeaweedFS-side identity, bucket, and permission verification, see the k3s-home
-repo README's "S3 image storage" section.
+Configure non-sensitive S3 settings through a ConfigMap and inject credentials
+through the deployment environment's secret management. API instances need
+object read/write access, and workers need access for media cleanup. Verify the
+bucket and object permissions before enabling shared storage.
 
 ### What about existing local images? (migration plan, not executed)
 
@@ -508,92 +504,24 @@ before releasing (e.g. `ghcr.io/<owner>/eventpulse-backend:<commit-sha>`). All
 API instances share the same `SECRET_KEY`, and api / worker / seeder share the
 same database connection settings.
 
-### Jenkins auto-updates k3s-home
+### Jenkins CI/CD
 
-The backend pipeline runs unit tests, Testcontainers integration tests, the JaCoCo
-report, the 90% line-coverage gate, and JAR packaging in a single `mvn verify`;
-the subsequent Coverage stage only publishes the report. The Maven repository
-uses a node-local `hostPath` — host path `/var/cache/jenkins/maven/repository`,
-container mount path `/var/cache/maven/repository` — shared by Java projects and
-branches on the same node, no longer per-project or per-job directories, and no
-NFS. Kubelet creates the directory via `DirectoryOrCreate` and the Maven container
-writes with the image's default root user; build nodes must allow that hostPath
-and keep the path on local disk. Every onboarded project must mount the same
-hostPath, use a compatible Maven 3.9.x, and pass the following arguments in its
-Maven commands so that separate processes coordinate reads and writes on the
-shared repository with the same file locks:
+The backend pipeline runs unit tests, Testcontainers integration tests, JaCoCo
+reporting, the 90% line-coverage gate, and JAR packaging through `mvn verify`.
+The frontend and AI pipelines run their respective checks before release.
+Test results and diagnostic logs are available as Jenkins build artifacts.
 
-```sh
--Dmaven.repo.local=/var/cache/maven/repository \
--Daether.syncContext.named.factory=file-lock \
--Daether.syncContext.named.nameMapper=file-gav
-```
+After successful checks on `main`, Jenkins publishes images to GHCR and updates
+the corresponding image versions in the GitOps deployment repository. PRs and
+other branches do not update deployment configuration; failed or unstable
+pipelines do not proceed to release.
 
-`disableConcurrentBuilds()` only serialises builds within the same Jenkins job;
-cross-project repository concurrency is handled by the file locks above. The cache
-survives across Pods; the first build on a node downloads the dependencies, which
-other projects then reuse. `cleanWs()` does not clear this cache; maintenance
-cleanup should happen after all builds that use the node's cache have stopped.
-Projects running `mvn install` should isolate their local artifacts separately so
-same-coordinate branch artifacts never overwrite each other; EventPulse uses
-`verify` and never installs project artifacts into the shared repository. Build
-logs print the repository path in use and the Maven verify duration. Old
-per-project caches are neither migrated nor deleted automatically.
+API, Worker, and Seeder use the same backend image and are updated together to
+keep their Flyway migrations aligned. GitOps updates preserve unrelated changes,
+retry concurrent push conflicts, and never force-push. Repository access and
+build infrastructure are configured separately in the deployment environment.
 
-The backend Jenkins console keeps Maven stage progress, test statistics, and
-failure summaries. Surefire writes each test's stdout/stderr to
-`target/surefire-reports/*-output.txt`, and successful cases' XML no longer embeds
-those outputs. Whether tests pass or fail, the existing test reports are
-compressed into the build attachment `backend/target/backend-test-logs.tar.gz`,
-downloadable from Jenkins Artifacts for troubleshooting; JUnit results are still
-published as usual, and test or coverage failures still block the release. CI sets
-`SQL_LOG_LEVEL=WARN` to silence per-statement SQL DEBUG output; the
-Kafka-unavailable tests only demote `AdminMetadataManager`'s repeated reconnect
-INFO logs to WARN, keeping warnings, errors, and assertions intact.
-
-The AI pipeline uses a node-local `emptyDir` working volume, keeping the uv cache
-and `.venv` on the same filesystem and installing dependencies via hard links,
-avoiding copying large numbers of small files off NFS one by one. The cache dies
-with the build Pod — every new build re-downloads dependencies; the shared Maven
-PVC is no longer used for the uv cache. Dependency sync still uses
-`uv sync --frozen --extra dev`, and tests run via `uv run --no-sync pytest`,
-reusing the freshly installed environment. The sync stage prints the uv cache path
-and duration so actual CI performance can be compared.
-
-The three Jenkinsfiles follow nightdeal's release approach: after main pushes
-GHCR images successfully, a separate `gitops` container updates the
-`kaiwenyao/k3s-home` main branch. PRs and ordinary branches never write to the
-config repo; a failed or unstable pipeline never proceeds to release either.
-
-| Pipeline | Manifests auto-updated (under `apps/eventpulse/`) |
-| --- | --- |
-| backend | `api-deployment.yaml`, `worker-deployment.yaml`, `seeder-job.yaml` |
-| frontend | `frontend-deployment.yaml` |
-| ai-service | `ai-service-deployment.yaml` |
-
-Jenkins needs access to the same `k3s-home-write` credentials as nightdeal
-(Username with password; the password is a GitHub token with Contents write
-access to k3s-home). Image pushes keep using `ghcr-token`.
-`scripts/update-k3s-home.sh` uses the just-pushed `FULL_IMAGE` directly and only
-replaces the corresponding image lines; when the version is unchanged no commit
-is created, and a missing target manifest or an image mismatch fails the build.
-When the three jobs push at the same time and conflict, the service's change is
-re-applied on top of the latest remote main, up to five attempts, never
-force-pushing.
-
-API, Worker, and Seeder are updated to the same backend image in a single Git
-commit so all three carry the same Flyway migration files; if any manifest is
-missing or an image match looks wrong the whole update fails — no partial pushes.
-The Job name stays `eventpulse-seeder`; an already-created Job's Pod template is
-immutable, so once the image changes, the resource-level annotation
-`argocd.argoproj.io/sync-options: Force=true,Replace=true` on
-`k3s-home/apps/eventpulse/seeder-job.yaml` makes Argo CD delete the old Job and
-recreate it. The Job remains in wave 0 — it runs once the database is ready, and
-only a successful run updates the wave-10 apps; on re-runs `seed_runs` skips
-seeding that already completed. With plain `kubectl apply` you still have to
-delete the old Job manually. The GitOps script only updates images and preserves
-the annotation above; it never touches database migration history. Integration
-tests use a temporary local repository and never reach GitHub:
+GitOps script tests run against temporary local repositories:
 
 ```bash
 python3 -m unittest discover -s scripts/tests -v
