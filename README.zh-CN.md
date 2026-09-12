@@ -28,6 +28,8 @@
 Kafka 分区再均衡。本地 Docker Compose 一键起全栈，同一套镜像可直接部署到
 Kubernetes（k3s）。🎉
 
+![EventPulse —— 活动发现与购票](docs/images/events-discovery.png)
+
 | 层 | 技术 |
 | --- | --- |
 | 后端 | Java 21 · Spring Boot · PostgreSQL · Redis · Kafka |
@@ -40,6 +42,7 @@ Kubernetes（k3s）。🎉
 ## 📋 目录
 
 - [✨ 特性](#-特性)
+- [📸 界面截图](#-界面截图)
 - [🚀 快速开始](#-快速开始)
   - [🔧 环境要求](#-环境要求)
   - [🐳 Docker Compose 启动](#-docker-compose-启动)
@@ -67,6 +70,21 @@ Kubernetes（k3s）。🎉
 - **🤖 AI 助手**：自然语言找活动（LangChain Agent 经只读工具查真实活动）+ 主办方文案完善（结构化输出）；未配置 Key 时明确返回不可用，普通业务不受影响。
 - **📷 图片对象存储**：SeaweedFS S3 兼容接口，公开直连或 `/api/media/images/{id}` 代理取址可配，软删除 + 宽限期后台清理。
 - **🧪 测试与 CI**：Testcontainers 集成测试覆盖分布式路径，后端 90% 行覆盖率门槛；前端 ESLint + Vitest + Playwright；AI 服务用模拟 LLM 测试；GitHub Actions 跑全部检查，Jenkins 发布到 k3s。
+
+---
+
+## 📸 界面截图
+
+| | |
+| --- | --- |
+| ![AI 找活动](docs/images/ai-discovery.png) | ![活动详情与下单](docs/images/event-detail.png) |
+| **AI 找活动** —— 自然语言搜索，只推荐数据库里真实存在的活动 | **活动详情与下单** —— 实时库存、数量选择、一键预订 |
+| ![购物车](docs/images/cart.png) | ![历史订单](docs/images/bookings.png) |
+| **购物车** —— 多活动合并结算，一次事务结清 | **历史订单** —— 状态筛选、搜索，取消即时回补库存 |
+| ![电子票](docs/images/eticket.png) | ![钱包流水](docs/images/wallet-ledger.png) |
+| **电子票** —— 每张票独立二维码，用于入场核销 | **钱包流水** —— 每一笔变动都记录变动前后余额 |
+| ![主办方工作台](docs/images/organiser-dashboard.png) | ![数据分析](docs/images/organiser-analytics.png) |
+| **主办方工作台** —— 票务健康度、待办与最近活动 | **数据分析** —— 曝光 / 点击 / 下单转化与每日趋势 |
 
 ---
 
