@@ -30,6 +30,8 @@ out to exercise: cross-instance SSE delivery, multi-worker Outbox claiming, and
 Kafka partition rebalancing. One command brings up the full stack locally with
 Docker Compose, and the same images deploy straight to Kubernetes (k3s). 🎉
 
+![EventPulse — event discovery & booking](docs/images/events-discovery.png)
+
 | Layer | Technology |
 | --- | --- |
 | Backend | Java 21 · Spring Boot · PostgreSQL · Redis · Kafka |
@@ -42,6 +44,7 @@ Docker Compose, and the same images deploy straight to Kubernetes (k3s). 🎉
 ## 📋 Table of Contents
 
 - [✨ Features](#-features)
+- [📸 Screenshots](#-screenshots)
 - [🚀 Getting Started](#-getting-started)
   - [🔧 Prerequisites](#-prerequisites)
   - [🐳 Docker Compose Startup](#-docker-compose-startup)
@@ -69,6 +72,21 @@ Docker Compose, and the same images deploy straight to Kubernetes (k3s). 🎉
 - **🤖 AI assistant**: natural-language event discovery (a LangChain agent over read-only tools querying real events) + organiser copywriting polish (structured output); with no key configured it clearly reports unavailable and normal features are unaffected.
 - **📷 Image object storage**: S3-compatible SeaweedFS, configurable public direct URLs or `/api/media/images/{id}` proxying, soft delete + grace-period background cleanup.
 - **🧪 Tests & CI**: Testcontainers integration tests cover the distributed paths with a 90% backend line-coverage gate; the frontend has ESLint + Vitest + Playwright; the AI service is tested against a scripted LLM; GitHub Actions runs every check and Jenkins releases to k3s.
+
+---
+
+## 📸 Screenshots
+
+| | |
+| --- | --- |
+| ![AI event discovery](docs/images/ai-discovery.png) | ![Event detail & booking](docs/images/event-detail.png) |
+| **AI event discovery** — natural-language search that only recommends events that really exist | **Event detail & booking** — live stock, quantity picker, one-click booking |
+| ![Cart](docs/images/cart.png) | ![Orders](docs/images/bookings.png) |
+| **Cart** — multi-event selection settled in a single transaction per checkout | **Orders** — status filters, search, and instant stock-freeing cancellation |
+| ![E-tickets](docs/images/eticket.png) | ![Wallet ledger](docs/images/wallet-ledger.png) |
+| **E-tickets** — a QR code per ticket for check-in | **Wallet ledger** — the balance before and after every change |
+| ![Organiser desk](docs/images/organiser-dashboard.png) | ![Analytics](docs/images/organiser-analytics.png) |
+| **Organiser desk** — ticket health, to-dos, and recent events | **Analytics** — views / clicks / bookings conversion with a daily trend |
 
 ---
 
