@@ -13,6 +13,21 @@ pipeline {
     agent {
         kubernetes {
             cloud 'kubernetes'
+            // Inherit the standalone "ci-maven-base" pod template: it centrally owns
+            // node selection, topology spread, and the Maven anti-affinity (at most
+            // one maven-build pod per node; queue when all eligible nodes are busy).
+            // It does not inherit ci-base.
+            //
+            // All scheduling lives in the parent because the plugin's yaml merge()
+            // only handles a whitelist of spec fields — affinity and
+            // topologySpreadConstraints declared in the child template are silently
+            // dropped (PodTemplateUtils.combine does not process them; JENKINS-64787).
+            // The inline podAntiAffinity previously declared here was removed for
+            // that reason and is maintained by ci-maven-base.
+            inheritFrom 'ci-maven-base'
+            // merge() is essential: the plugin default override() would replace the
+            // parent spec wholesale, silently dropping the shared scheduling rules.
+            yamlMergeStrategy merge()
             defaultContainer 'maven'
             // -----------------------------------------------------------------------------
             // Three workload containers (maven + docker + gitops), plus a resource-bounded jnlp.
@@ -39,15 +54,11 @@ metadata:
     jenkins/label: eventpulse-backend-build
     ci.kaiwen.dev/workload: maven-build
 spec:
-  # Shared with firmament and dublin-bikes, including their branch/PR builds.
-  # At most one labeled Maven build per node; queue when all eligible nodes are busy.
-  affinity:
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              ci.kaiwen.dev/workload: maven-build
-          topologyKey: kubernetes.io/hostname
+  # Scheduling (nodeSelector, topologySpreadConstraints, podAntiAffinity) is owned
+  # by the ci-maven-base parent template: merge() silently drops affinity /
+  # topologySpreadConstraints declared in the child (JENKINS-64787), so they would
+  # be ineffective here. The ci.kaiwen.dev/workload label stays: labels merge
+  # correctly and it is what the parent anti-affinity labelSelector matches on.
   containers:
     - name: maven
       image: maven:3.9-eclipse-temurin-21
