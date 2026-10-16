@@ -38,3 +38,6 @@ deploy/k8s/secret.yml
 
 # ZCode session plans
 .zcode/plans/
+
+# PI agent files
+.pi/
