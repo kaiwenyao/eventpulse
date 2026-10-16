@@ -130,7 +130,12 @@ spec:
     stages {
         stage('1. Pull Code') {
             steps {
-                checkout scm
+                // Pipeline jobs do not auto-expose GIT_COMMIT (SCM-specific vars are
+                // only set in some setups, e.g. multibranch builds); capture it from
+                // the checkout return value so the image-push stage always has it.
+                script {
+                    env.GIT_COMMIT = checkout(scm).GIT_COMMIT
+                }
             }
         }
 
@@ -196,7 +201,13 @@ spec:
                         // (GitHub user + classic PAT with write:packages). Tag is the
                         // commit short SHA — immutable, no `latest`.
                         withCredentials([usernamePassword(credentialsId: 'ghcr-token', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_PASS')]) {
+                            // env.GIT_COMMIT can be empty (not auto-defined in Pipeline
+                            // jobs, and lost on stage re-run after a restart); fall back
+                            // to the revision that was actually checked out in stage 1.
                             def gitCommit = (env.GIT_COMMIT ?: '').trim()
+                            if (!(gitCommit ==~ /^[0-9a-f]{7,40}$/)) {
+                                gitCommit = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                            }
                             if (!(gitCommit ==~ /^[0-9a-f]{7,40}$/)) {
                                 error("GIT_COMMIT is missing or invalid (got: ${gitCommit})")
                             }
