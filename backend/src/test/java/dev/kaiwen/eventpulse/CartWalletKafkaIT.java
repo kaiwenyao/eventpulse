@@ -56,6 +56,9 @@ class CartWalletKafkaIT {
         registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         registry.add("eventpulse.redis-enabled", () -> "false");
         registry.add("spring.kafka.listener.auto-startup", () -> "true");
+        // Relay 对健康 broker 的发送毫秒级完成；把发送等待从默认 12s 压到 4s，
+        // 避免 broker 刚启动时的一两次 5s 级超时把整个重试窗口烧光。
+        registry.add("eventpulse.outbox.future-wait-seconds", () -> "4");
     }
 
     @Autowired
@@ -168,7 +171,10 @@ class CartWalletKafkaIT {
     }
 
     private void waitFor(String description, java.util.function.BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        // CI runner（双核 + VM 化 Docker）比本地慢数倍：启动后 relay 还要先消化
+        // 前面 api/worker 测试类遗留在 SharedPostgres 里的 sticky outbox 行。
+        // 30s 在这两次 CI 上都会被烧光（每次 broker 预热超时烧 12s），放宽到 120s。
+        long deadline = System.nanoTime() + Duration.ofSeconds(120).toNanos();
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) {
                 return;
