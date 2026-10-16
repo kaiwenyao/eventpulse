@@ -19,9 +19,12 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.flywaydb.core.Flyway;
+
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
+import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import dev.kaiwen.eventpulse.kafka.CartConsumer;
@@ -44,15 +47,32 @@ import dev.kaiwen.eventpulse.repository.OutboxRepository;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class CartWalletKafkaIT {
 
+    // 专用 Postgres（不复用 SharedPostgres）：本类是 JVM 里唯一 1s 轮询的 worker
+    // 上下文，若与前面类共享数据库，启动后 relay 会把 CartCheckoutIT 等 api
+    // profile 类遗留的 sticky outbox 行经自己的 broker / consumer 灌进来，
+    // 污染 cart_daily_stats（绝对值断言永远对不上），CI 上确定性失败。
+    // 静态字段 + 手动 start（同 SharedPostgres 的模式，供静态块先跑 Flyway）。
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18-alpine")
+            .withCommand("postgres", "-c", "max_connections=50");
+
+    static {
+        POSTGRES.start();
+        Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .locations("classpath:db/migration")
+                .load()
+                .migrate();
+    }
+
     @Container
     static final KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:4.3.1"))
             .waitingFor(Wait.forListeningPort());
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", () -> SharedPostgres.POSTGRES.getJdbcUrl());
-        registry.add("spring.datasource.username", () -> SharedPostgres.POSTGRES.getUsername());
-        registry.add("spring.datasource.password", () -> SharedPostgres.POSTGRES.getPassword());
+        registry.add("spring.datasource.url", () -> POSTGRES.getJdbcUrl());
+        registry.add("spring.datasource.username", () -> POSTGRES.getUsername());
+        registry.add("spring.datasource.password", () -> POSTGRES.getPassword());
         registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         registry.add("eventpulse.redis-enabled", () -> "false");
         registry.add("spring.kafka.listener.auto-startup", () -> "true");
